@@ -1,0 +1,40 @@
+{
+  "openapi" : "3.1.0",
+  "info" : {
+    "title" : "",
+    "version" : ""
+  },
+  "paths" : {
+    "/health" : {
+      "get" : {
+        "tags" : [ "Health" ],
+        "summary" : "Health check",
+        "operationId" : "healthCheck",
+        "responses" : {
+          "200" : {
+            "description" : "OK",
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/HealthResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components" : {
+    "schemas" : {
+      "HealthResponse" : {
+        "type" : "object",
+        "properties" : {
+          "status" : {
+            "type" : "string"
+          }
+        }
+      }
+    }
+  }
+}
