@@ -1,0 +1,36 @@
+# Development override (server-spec 3.2). Adds Postgres and repoints the URL at it.
+# The override wins on conflicting keys, so local gets `build:` instead of the published image, a port
+# bound on all interfaces for convenience, and throwaway credentials.
+#
+#   docker compose -f compose.yaml -f compose.local.yaml up
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: sudoku
+      POSTGRES_USER: sudoku
+      POSTGRES_PASSWORD: devpassword
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U sudoku" ]
+      interval: 5s
+      retries: 10
+
+  sudoku:
+    build: .
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      SUDOKU_DB_URL: "jdbc:postgresql://db:5432/sudoku"
+      SUDOKU_DB_USER: "sudoku"
+      SUDOKU_DB_PASSWORD: "devpassword"
+      SUDOKU_BOOTSTRAP_INVITE: "dev-bootstrap"
+    ports:
+      - "7000:7000"
+
+volumes:
+  pgdata:

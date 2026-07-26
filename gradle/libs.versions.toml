@@ -1,13 +1,28 @@
 [versions]
+sudoku-lib = "1.0.0"
+lutils = "10.4.0-beta.3"
 javalin = "7.2.0"
 javalin-openapi = "7.2.2"
 jackson = "3.1.3"
 nimbus = "10.9"
 log4j2 = "2.26.0"
 jspecify = "1.0.0"
-hikari = "6.3.0"
+hikari = "7.0.2"
+postgresql = "42.7.11"
+testcontainers = "1.21.4"
+guava = "33.6.0-jre"
+apacheLang = "3.20.0"
+jetbrainsAnnotations = "26.1.0"
 
 [libraries]
+# shared-core: EXACT version only, never a range or snapshot (server-spec 2.1).
+sudoku-lib = { module = "net.luis:sudoku-lib", version.ref = "sudoku-lib" }
+# LUtils: the project's own utility library; its io.database package is the SQL layer used here.
+# Its published POM declares no dependencies, so every transitive below must be listed explicitly.
+lutils = { module = "net.luis:LUtils", version.ref = "lutils" }
+guava = { module = "com.google.guava:guava", version.ref = "guava" }
+apache-commons-lang3 = { module = "org.apache.commons:commons-lang3", version.ref = "apacheLang" }
+jetbrains-annotations = { module = "org.jetbrains:annotations", version.ref = "jetbrainsAnnotations" }
 javalin = { module = "io.javalin:javalin", version.ref = "javalin" }
 javalin-bundle = { module = "io.javalin:javalin-bundle", version.ref = "javalin" }
 javalin-openapi-plugin = { module = "io.javalin.community.openapi:javalin-openapi-plugin", version.ref = "javalin-openapi" }
@@ -20,3 +35,6 @@ log4j2-core = { module = "org.apache.logging.log4j:log4j-core", version.ref = "l
 log4j2-slf4j2-impl = { module = "org.apache.logging.log4j:log4j-slf4j2-impl", version.ref = "log4j2" }
 jspecify = { module = "org.jspecify:jspecify", version.ref = "jspecify" }
 hikaricp = { module = "com.zaxxer:HikariCP", version.ref = "hikari" }
+postgresql = { module = "org.postgresql:postgresql", version.ref = "postgresql" }
+testcontainers-postgresql = { module = "org.testcontainers:postgresql", version.ref = "testcontainers" }
+testcontainers-junit = { module = "org.testcontainers:junit-jupiter", version.ref = "testcontainers" }

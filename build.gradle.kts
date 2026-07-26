@@ -13,10 +13,28 @@ java {
 }
 
 repositories {
+	// shared-core (sudoku-lib) has never been published remotely, so it resolves from ~/.m2.
+	// LUtils resolves from the Artifactory - it's reachable for fetching, just not currently
+	// publishable to (that's a separate, unrelated outage).
+	mavenLocal()
+	maven {
+		url = uri("https://maven.luis-st.net/libraries/")
+	}
 	mavenCentral()
 }
 
 dependencies {
+	// shared-core (grid, generator, solver, key derivation) - exact version, never a range
+	implementation(libs.sudoku.lib)
+
+	// LUtils - its net.luis.utils.io.database package is this server's SQL layer.
+	// The published POM carries no dependency metadata, so LUtils' own runtime requirements are
+	// declared here by hand; dropping any of them fails at runtime rather than at compile time.
+	implementation(libs.lutils)
+	implementation(libs.guava)
+	implementation(libs.apache.commons.lang3)
+	implementation(libs.jetbrains.annotations)
+
 	// Javalin
 	implementation(libs.javalin)
 	implementation(libs.javalin.bundle)
@@ -39,6 +57,7 @@ dependencies {
 	
 	// Database
 	implementation(libs.hikaricp)
+	implementation(libs.postgresql)
 	
 	// Nullability
 	implementation(libs.jspecify)
@@ -47,6 +66,11 @@ dependencies {
 	testImplementation(platform("org.junit:junit-bom:6.0.0"))
 	testImplementation("org.junit.jupiter:junit-jupiter")
 	testRuntimeOnly("org.junit.platform:junit-platform-launcher")
+
+	// Integration tests run against a real Postgres: the invariants that matter here are transactional
+	// (advisory locks, conditional updates, FOR UPDATE) and an in-memory database cannot prove them.
+	testImplementation(libs.testcontainers.postgresql)
+	testImplementation(libs.testcontainers.junit)
 }
 
 tasks.test {
@@ -95,3 +119,4 @@ tasks.shadowJar {
 		attributes("Main-Class" to "net.luis.sudoku.Application")
 	}
 }
+

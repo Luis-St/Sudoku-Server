@@ -5,6 +5,911 @@
     "version" : ""
   },
   "paths" : {
+    "/api/v1/auth/challenge" : {
+      "post" : {
+        "tags" : [ "Auth" ],
+        "summary" : "Request an authentication challenge",
+        "description" : "Returns a single-use nonce the device must sign. 404 if the key is unknown, in which case the client should register or link a device instead.",
+        "operationId" : "authChallenge",
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/ChallengeRequest"
+              }
+            }
+          }
+        },
+        "responses" : {
+          "200" : {
+            "description" : "OK",
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ChallengeResponse"
+                }
+              }
+            }
+          },
+          "403" : {
+            "description" : "USER_REVOKED",
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404" : {
+            "description" : "UNKNOWN_KEY",
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/auth/verify" : {
+      "post" : {
+        "tags" : [ "Auth" ],
+        "summary" : "Verify a signed challenge",
+        "description" : "Issues a session token. Any failure - bad signature, expired nonce, reused nonce - returns the same INVALID_SIGNATURE.",
+        "operationId" : "authVerify",
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/VerifyRequest"
+              }
+            }
+          }
+        },
+        "responses" : {
+          "200" : {
+            "description" : "OK",
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/SessionResponse"
+                }
+              }
+            }
+          },
+          "401" : {
+            "description" : "INVALID_SIGNATURE",
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/currency" : {
+      "get" : {
+        "tags" : [ "Currency" ],
+        "summary" : "Your Rhubarb balance",
+        "operationId" : "getCurrency",
+        "responses" : {
+          "200" : {
+            "description" : "OK",
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/CurrencyResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/currency/sync" : {
+      "post" : {
+        "tags" : [ "Currency" ],
+        "summary" : "Reconcile a locally accumulated balance",
+        "description" : "Called on connect. The reported balance is plausibility-checked and may be clamped SILENTLY - the response simply carries the reconciled value, with no indication that it was adjusted.",
+        "operationId" : "syncCurrency",
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/CurrencySyncRequest"
+              }
+            }
+          }
+        },
+        "responses" : {
+          "200" : {
+            "description" : "OK",
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/CurrencyResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/daily" : {
+      "get" : {
+        "tags" : [ "Daily" ],
+        "summary" : "Get today's daily puzzle key",
+        "description" : "Returns the key only; the client generates the grid locally. The first request of a date locks in that day's difficulty tier.",
+        "operationId" : "getDaily",
+        "responses" : {
+          "200" : {
+            "description" : "OK",
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/DailyResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/daily/leaderboard" : {
+      "get" : {
+        "tags" : [ "Daily" ],
+        "summary" : "Today's daily leaderboard for one tier",
+        "description" : "Ranked within a single difficulty tier. Hints used are not exposed.",
+        "operationId" : "dailyLeaderboard",
+        "parameters" : [ {
+          "name" : "difficulty",
+          "in" : "query",
+          "description" : "Tier index 1-5",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "description" : "OK",
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "type" : "array",
+                  "items" : {
+                    "$ref" : "#/components/schemas/LeaderboardEntryResponse"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/daily/result" : {
+      "post" : {
+        "tags" : [ "Daily" ],
+        "summary" : "Submit a daily result",
+        "description" : "Verified by replaying the solve order against the regenerated puzzle. A SOLVED result locks the date; FAILED results may be retried all day.",
+        "operationId" : "submitDailyResult",
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/DailyResultRequest"
+              }
+            }
+          }
+        },
+        "responses" : {
+          "200" : {
+            "description" : "OK",
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/DailyResultResponse"
+                }
+              }
+            }
+          },
+          "409" : {
+            "description" : "DAILY_ALREADY_SOLVED or DAILY_DATE_INVALID",
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/devices" : {
+      "get" : {
+        "tags" : [ "Devices" ],
+        "summary" : "List your devices",
+        "operationId" : "listDevices",
+        "responses" : {
+          "200" : {
+            "description" : "OK",
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "type" : "array",
+                  "items" : {
+                    "$ref" : "#/components/schemas/DeviceResponse"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/devices/link" : {
+      "post" : {
+        "tags" : [ "Devices" ],
+        "summary" : "Link a new device with a code",
+        "description" : "Unauthenticated - the new device has no session yet. The device inherits the user's role.",
+        "operationId" : "linkDevice",
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/LinkDeviceRequest"
+              }
+            }
+          }
+        },
+        "responses" : {
+          "201" : {
+            "description" : "Created",
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/SessionResponse"
+                }
+              }
+            }
+          },
+          "403" : {
+            "description" : "LINK_CODE_INVALID",
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429" : {
+            "description" : "RATE_LIMITED",
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/devices/link-code" : {
+      "post" : {
+        "tags" : [ "Devices" ],
+        "summary" : "Mint a device link code",
+        "description" : "Authenticated. Returns a short, single-use code to type on the new device. Supersedes any outstanding code for this user.",
+        "operationId" : "createLinkCode",
+        "responses" : {
+          "200" : {
+            "description" : "OK",
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/LinkCodeResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/devices/{id}" : {
+      "delete" : {
+        "tags" : [ "Devices" ],
+        "summary" : "Revoke a device",
+        "description" : "Revoking your current device ends your session. A user's last device may only be revoked if they are not the last admin.",
+        "operationId" : "revokeDevice",
+        "parameters" : [ {
+          "name" : "id",
+          "in" : "path",
+          "description" : "Device id",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        } ],
+        "responses" : {
+          "204" : {
+            "description" : "No Content"
+          },
+          "409" : {
+            "description" : "LAST_ADMIN",
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/invites" : {
+      "post" : {
+        "tags" : [ "Invites" ],
+        "summary" : "Create an invite",
+        "description" : "Requires CAN_INVITE. The invite always grants NEW; promotion is a separate admin action.",
+        "operationId" : "createInvite",
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/CreateInviteRequest"
+              }
+            }
+          }
+        },
+        "responses" : {
+          "201" : {
+            "description" : "Created",
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/InviteResponse"
+                }
+              }
+            }
+          },
+          "403" : {
+            "description" : "FORBIDDEN",
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get" : {
+        "tags" : [ "Invites" ],
+        "summary" : "List invites",
+        "description" : "Admins see every invite; everyone else sees only their own.",
+        "operationId" : "listInvites",
+        "responses" : {
+          "200" : {
+            "description" : "OK",
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "type" : "array",
+                  "items" : {
+                    "$ref" : "#/components/schemas/InviteResponse"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/invites/{code}" : {
+      "delete" : {
+        "tags" : [ "Invites" ],
+        "summary" : "Revoke an invite",
+        "description" : "Permitted for the invite's creator or any admin. Already-used invites cannot be revoked.",
+        "operationId" : "revokeInvite",
+        "parameters" : [ {
+          "name" : "code",
+          "in" : "path",
+          "description" : "Invite code",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        } ],
+        "responses" : {
+          "204" : {
+            "description" : "No Content"
+          },
+          "403" : {
+            "description" : "FORBIDDEN",
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/matches" : {
+      "post" : {
+        "tags" : [ "Matches" ],
+        "summary" : "Create a match",
+        "description" : "The creator chooses the configuration and settings. Difficulty LISA is rejected for every mode.",
+        "operationId" : "createMatch",
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/CreateMatchRequest"
+              }
+            }
+          }
+        },
+        "responses" : {
+          "201" : {
+            "description" : "Created",
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/CreatedMatchResponse"
+                }
+              }
+            }
+          },
+          "400" : {
+            "description" : "LISA_NOT_ALLOWED",
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/matches/{id}" : {
+      "get" : {
+        "tags" : [ "Matches" ],
+        "summary" : "Get a match",
+        "operationId" : "getMatch",
+        "parameters" : [ {
+          "name" : "id",
+          "in" : "path",
+          "description" : "Match id",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "description" : "OK",
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/MatchResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/matches/{id}/invite" : {
+      "post" : {
+        "tags" : [ "Matches" ],
+        "summary" : "Invite a player to a match",
+        "description" : "Returns the invite token to pass on. Only a participant may invite.",
+        "operationId" : "inviteToMatch",
+        "parameters" : [ {
+          "name" : "id",
+          "in" : "path",
+          "description" : "Match id",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "description" : "OK",
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/CreatedMatchResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/matches/{id}/join" : {
+      "post" : {
+        "tags" : [ "Matches" ],
+        "summary" : "Join a match",
+        "operationId" : "joinMatch",
+        "parameters" : [ {
+          "name" : "id",
+          "in" : "path",
+          "description" : "Match id",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        } ],
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/JoinMatchRequest"
+              }
+            }
+          }
+        },
+        "responses" : {
+          "200" : {
+            "description" : "OK",
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/MatchResponse"
+                }
+              }
+            }
+          },
+          "409" : {
+            "description" : "MATCH_FULL or INSUFFICIENT_BALANCE",
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/players" : {
+      "get" : {
+        "tags" : [ "Stats" ],
+        "summary" : "Browse players",
+        "operationId" : "listPlayers",
+        "responses" : {
+          "200" : {
+            "description" : "OK",
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "type" : "array",
+                  "items" : {
+                    "$ref" : "#/components/schemas/PlayerResponse"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/players/{id}/stats" : {
+      "get" : {
+        "tags" : [ "Stats" ],
+        "summary" : "A player's aggregate statistics",
+        "description" : "Grouped by difficulty tier, because solve times are only comparable within a tier.",
+        "operationId" : "playerStats",
+        "parameters" : [ {
+          "name" : "id",
+          "in" : "path",
+          "description" : "Player id",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "description" : "OK",
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "type" : "array",
+                  "items" : {
+                    "$ref" : "#/components/schemas/StatsEntryResponse"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/preferences" : {
+      "get" : {
+        "tags" : [ "Daily" ],
+        "summary" : "Get your daily preferences",
+        "operationId" : "getPreferences",
+        "responses" : {
+          "200" : {
+            "description" : "OK",
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/PreferencesResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put" : {
+        "tags" : [ "Daily" ],
+        "summary" : "Set your daily difficulty",
+        "description" : "Takes effect from the next day only; today's tier was fixed when the day began.",
+        "operationId" : "setPreferences",
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/PreferencesRequest"
+              }
+            }
+          }
+        },
+        "responses" : {
+          "200" : {
+            "description" : "OK",
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/PreferencesResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/register" : {
+      "post" : {
+        "tags" : [ "Auth" ],
+        "summary" : "Register with an invite code",
+        "description" : "Creates a user and their first device. The bootstrap invite grants ADMIN, but only while no non-revoked admin exists.",
+        "operationId" : "register",
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/RegisterRequest"
+              }
+            }
+          }
+        },
+        "responses" : {
+          "201" : {
+            "description" : "Created",
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/SessionResponse"
+                }
+              }
+            }
+          },
+          "403" : {
+            "description" : "INVITE_INVALID or ADMIN_EXISTS",
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409" : {
+            "description" : "NAME_TAKEN or KEY_TAKEN",
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/server-info" : {
+      "get" : {
+        "tags" : [ "Server" ],
+        "summary" : "Server description",
+        "description" : "Unauthenticated. Clients call this first and refuse to connect on a genVersion mismatch.",
+        "operationId" : "serverInfo",
+        "responses" : {
+          "200" : {
+            "description" : "OK",
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ServerInfoResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/stats/sync" : {
+      "post" : {
+        "tags" : [ "Stats" ],
+        "summary" : "Upload local single-player history",
+        "description" : "Called once on the offline-to-online transition. Local daily streaks are NOT merged; server streaks start fresh.",
+        "operationId" : "syncStats",
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/StatsSyncRequest"
+              }
+            }
+          }
+        },
+        "responses" : {
+          "200" : {
+            "description" : "OK",
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/StatsSyncResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/users" : {
+      "get" : {
+        "tags" : [ "Users" ],
+        "summary" : "List users",
+        "operationId" : "listUsers",
+        "responses" : {
+          "200" : {
+            "description" : "OK",
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "type" : "array",
+                  "items" : {
+                    "$ref" : "#/components/schemas/UserResponse"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/users/{id}" : {
+      "delete" : {
+        "tags" : [ "Users" ],
+        "summary" : "Kick a user",
+        "description" : "Requires CAN_KICK. Revokes every device key and ends the session; historical results are kept.",
+        "operationId" : "kickUser",
+        "parameters" : [ {
+          "name" : "id",
+          "in" : "path",
+          "description" : "User id",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        } ],
+        "responses" : {
+          "204" : {
+            "description" : "No Content"
+          },
+          "403" : {
+            "description" : "FORBIDDEN",
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409" : {
+            "description" : "LAST_ADMIN",
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/users/{id}/role" : {
+      "patch" : {
+        "tags" : [ "Users" ],
+        "summary" : "Change a user's role",
+        "description" : "Requires CAN_CHANGE_ROLE. Rejected with LAST_ADMIN if it would leave zero administrators.",
+        "operationId" : "changeUserRole",
+        "parameters" : [ {
+          "name" : "id",
+          "in" : "path",
+          "description" : "User id",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        } ],
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/ChangeRoleRequest"
+              }
+            }
+          }
+        },
+        "responses" : {
+          "200" : {
+            "description" : "OK",
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/UserResponse"
+                }
+              }
+            }
+          },
+          "403" : {
+            "description" : "FORBIDDEN",
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409" : {
+            "description" : "LAST_ADMIN",
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/health" : {
       "get" : {
         "tags" : [ "Health" ],
@@ -27,13 +932,848 @@
   },
   "components" : {
     "schemas" : {
+      "Entry" : {
+        "type" : "object",
+        "properties" : {
+          "cell" : {
+            "type" : "integer",
+            "format" : "int32"
+          },
+          "digit" : {
+            "type" : "integer",
+            "format" : "int32"
+          }
+        },
+        "required" : [ "cell", "digit" ]
+      },
+      "Difficulty" : {
+        "type" : "string",
+        "enum" : [ "ONE", "TWO", "THREE", "FOUR", "FIVE", "LISA" ]
+      },
+      "DailyOutcome" : {
+        "type" : "string",
+        "enum" : [ "SOLVED", "FAILED" ]
+      },
+      "ChallengeRequest" : {
+        "type" : "object",
+        "properties" : {
+          "decodePublicKey" : {
+            "type" : "string",
+            "format" : "binary"
+          },
+          "publicKey" : {
+            "type" : "string"
+          }
+        }
+      },
+      "ChangeRoleRequest" : {
+        "type" : "object",
+        "properties" : {
+          "requireRole" : {
+            "$ref" : "#/components/schemas/Role"
+          },
+          "role" : {
+            "type" : "string"
+          }
+        }
+      },
+      "CreateInviteRequest" : {
+        "type" : "object",
+        "properties" : {
+          "parseExpiresAt" : {
+            "type" : "string",
+            "format" : "date-time"
+          },
+          "expiresAt" : {
+            "type" : "string"
+          }
+        }
+      },
+      "CreateMatchRequest" : {
+        "type" : "object",
+        "properties" : {
+          "requireMode" : {
+            "$ref" : "#/components/schemas/MatchMode"
+          },
+          "requireConfig" : {
+            "$ref" : "#/components/schemas/Config"
+          },
+          "settingsOrDefault" : {
+            "$ref" : "#/components/schemas/Settings"
+          },
+          "mode" : {
+            "type" : "string"
+          },
+          "config" : {
+            "$ref" : "#/components/schemas/Config"
+          },
+          "settings" : {
+            "$ref" : "#/components/schemas/Settings"
+          }
+        }
+      },
+      "Config" : {
+        "type" : "object",
+        "properties" : {
+          "requireSize" : {
+            "$ref" : "#/components/schemas/GridSize"
+          },
+          "requireVariant" : {
+            "$ref" : "#/components/schemas/Variant"
+          },
+          "requireDifficulty" : {
+            "$ref" : "#/components/schemas/Difficulty"
+          },
+          "size" : {
+            "type" : "integer",
+            "format" : "int32"
+          },
+          "variant" : {
+            "type" : "string"
+          },
+          "difficulty" : {
+            "type" : "integer",
+            "format" : "int32"
+          }
+        }
+      },
+      "Settings" : {
+        "type" : "object",
+        "properties" : {
+          "livesEnabledOrDefault" : {
+            "type" : "boolean"
+          },
+          "stakeOrZero" : {
+            "type" : "integer",
+            "format" : "int32"
+          },
+          "livesEnabled" : {
+            "type" : "boolean"
+          },
+          "stake" : {
+            "type" : "integer",
+            "format" : "int32"
+          }
+        },
+        "required" : [ "livesEnabledOrDefault", "stakeOrZero" ]
+      },
+      "CurrencySyncRequest" : {
+        "type" : "object",
+        "properties" : {
+          "requireReportedBalance" : {
+            "type" : "integer",
+            "format" : "int64"
+          },
+          "gamesPlayedOrZero" : {
+            "type" : "integer",
+            "format" : "int32"
+          },
+          "reportedBalance" : {
+            "type" : "integer",
+            "format" : "int64"
+          },
+          "gamesPlayed" : {
+            "type" : "integer",
+            "format" : "int32"
+          }
+        },
+        "required" : [ "requireReportedBalance", "gamesPlayedOrZero" ]
+      },
+      "DailyResultRequest" : {
+        "type" : "object",
+        "properties" : {
+          "parseDate" : {
+            "type" : "string",
+            "format" : "date"
+          },
+          "requireDifficulty" : {
+            "type" : "integer",
+            "format" : "int32"
+          },
+          "parseOutcome" : {
+            "$ref" : "#/components/schemas/DailyOutcome"
+          },
+          "requireElapsedMs" : {
+            "type" : "integer",
+            "format" : "int64"
+          },
+          "mistakesOrZero" : {
+            "type" : "integer",
+            "format" : "int32"
+          },
+          "hintsUsedOrZero" : {
+            "type" : "integer",
+            "format" : "int32"
+          },
+          "parseSolveOrder" : {
+            "type" : "array",
+            "items" : {
+              "$ref" : "#/components/schemas/Entry"
+            }
+          },
+          "date" : {
+            "type" : "string"
+          },
+          "difficulty" : {
+            "type" : "integer",
+            "format" : "int32"
+          },
+          "outcome" : {
+            "type" : "string"
+          },
+          "elapsedMs" : {
+            "type" : "integer",
+            "format" : "int64"
+          },
+          "mistakes" : {
+            "type" : "integer",
+            "format" : "int32"
+          },
+          "hintsUsed" : {
+            "type" : "integer",
+            "format" : "int32"
+          },
+          "solveOrder" : {
+            "type" : "array",
+            "items" : {
+              "type" : "integer",
+              "format" : "int32"
+            }
+          }
+        },
+        "required" : [ "requireDifficulty", "requireElapsedMs", "mistakesOrZero", "hintsUsedOrZero" ]
+      },
+      "JoinMatchRequest" : {
+        "type" : "object",
+        "properties" : {
+          "inviteToken" : {
+            "type" : "string"
+          }
+        }
+      },
+      "LinkDeviceRequest" : {
+        "type" : "object",
+        "properties" : {
+          "decodePublicKey" : {
+            "type" : "string",
+            "format" : "binary"
+          },
+          "requireKeyAlgorithm" : {
+            "type" : "string"
+          },
+          "requireLinkCode" : {
+            "type" : "string"
+          },
+          "deviceLabelOrDefault" : {
+            "type" : "string"
+          },
+          "publicKey" : {
+            "type" : "string"
+          },
+          "keyAlgorithm" : {
+            "type" : "string"
+          },
+          "linkCode" : {
+            "type" : "string"
+          },
+          "deviceLabel" : {
+            "type" : "string"
+          }
+        }
+      },
+      "PreferencesRequest" : {
+        "type" : "object",
+        "properties" : {
+          "requireDailyDifficulty" : {
+            "type" : "integer",
+            "format" : "int32"
+          },
+          "dailyDifficulty" : {
+            "type" : "integer",
+            "format" : "int32"
+          }
+        },
+        "required" : [ "requireDailyDifficulty" ]
+      },
+      "RegisterRequest" : {
+        "type" : "object",
+        "properties" : {
+          "decodePublicKey" : {
+            "type" : "string",
+            "format" : "binary"
+          },
+          "requireKeyAlgorithm" : {
+            "type" : "string"
+          },
+          "requireInviteCode" : {
+            "type" : "string"
+          },
+          "requireDisplayName" : {
+            "type" : "string"
+          },
+          "deviceLabelOrDefault" : {
+            "type" : "string"
+          },
+          "publicKey" : {
+            "type" : "string"
+          },
+          "keyAlgorithm" : {
+            "type" : "string"
+          },
+          "inviteCode" : {
+            "type" : "string"
+          },
+          "displayName" : {
+            "type" : "string"
+          },
+          "deviceLabel" : {
+            "type" : "string"
+          }
+        }
+      },
+      "StatsSyncRequest" : {
+        "type" : "object",
+        "properties" : {
+          "parseEntries" : {
+            "type" : "array",
+            "items" : {
+              "$ref" : "#/components/schemas/SyncEntry"
+            }
+          },
+          "entries" : {
+            "type" : "array",
+            "items" : {
+              "$ref" : "#/components/schemas/LocalStats"
+            }
+          }
+        }
+      },
+      "LocalStats" : {
+        "type" : "object",
+        "properties" : {
+          "toSyncEntry" : {
+            "$ref" : "#/components/schemas/SyncEntry"
+          },
+          "size" : {
+            "type" : "integer",
+            "format" : "int32"
+          },
+          "variant" : {
+            "type" : "string"
+          },
+          "difficulty" : {
+            "type" : "integer",
+            "format" : "int32"
+          },
+          "gamesPlayed" : {
+            "type" : "integer",
+            "format" : "int32"
+          },
+          "solved" : {
+            "type" : "integer",
+            "format" : "int32"
+          },
+          "failed" : {
+            "type" : "integer",
+            "format" : "int32"
+          },
+          "bestTimeMs" : {
+            "type" : "integer",
+            "format" : "int64"
+          },
+          "totalTimeMs" : {
+            "type" : "integer",
+            "format" : "int64"
+          },
+          "hintsUsed" : {
+            "type" : "integer",
+            "format" : "int32"
+          }
+        }
+      },
+      "VerifyRequest" : {
+        "type" : "object",
+        "properties" : {
+          "decodeNonce" : {
+            "type" : "string",
+            "format" : "binary"
+          },
+          "decodeSignature" : {
+            "type" : "string",
+            "format" : "binary"
+          },
+          "nonce" : {
+            "type" : "string"
+          },
+          "signature" : {
+            "type" : "string"
+          }
+        }
+      },
+      "ChallengeResponse" : {
+        "type" : "object",
+        "properties" : {
+          "nonce" : {
+            "type" : "string"
+          },
+          "expiresAt" : {
+            "type" : "string"
+          }
+        }
+      },
+      "CreatedMatchResponse" : {
+        "type" : "object",
+        "properties" : {
+          "matchId" : {
+            "type" : "string"
+          },
+          "inviteToken" : {
+            "type" : "string"
+          }
+        }
+      },
+      "CurrencyResponse" : {
+        "type" : "object",
+        "properties" : {
+          "balance" : {
+            "type" : "integer",
+            "format" : "int64"
+          }
+        },
+        "required" : [ "balance" ]
+      },
+      "DailyResponse" : {
+        "type" : "object",
+        "properties" : {
+          "date" : {
+            "type" : "string"
+          },
+          "puzzleKey" : {
+            "$ref" : "#/components/schemas/PuzzleKeyResponse"
+          }
+        }
+      },
+      "DailyResultResponse" : {
+        "type" : "object",
+        "properties" : {
+          "accepted" : {
+            "type" : "boolean"
+          },
+          "verified" : {
+            "type" : "boolean"
+          },
+          "attemptNo" : {
+            "type" : "integer",
+            "format" : "int32"
+          },
+          "streak" : {
+            "$ref" : "#/components/schemas/StreakResponse"
+          }
+        },
+        "required" : [ "accepted", "verified", "attemptNo" ]
+      },
+      "StreakResponse" : {
+        "type" : "object",
+        "properties" : {
+          "current" : {
+            "type" : "integer",
+            "format" : "int32"
+          },
+          "longest" : {
+            "type" : "integer",
+            "format" : "int32"
+          }
+        },
+        "required" : [ "current", "longest" ]
+      },
+      "DeviceResponse" : {
+        "type" : "object",
+        "properties" : {
+          "id" : {
+            "type" : "string"
+          },
+          "label" : {
+            "type" : "string"
+          },
+          "keyAlgorithm" : {
+            "type" : "string"
+          },
+          "createdAt" : {
+            "type" : "string"
+          },
+          "lastSeenAt" : {
+            "type" : "string"
+          },
+          "revoked" : {
+            "type" : "boolean"
+          },
+          "current" : {
+            "type" : "boolean"
+          }
+        },
+        "required" : [ "revoked", "current" ]
+      },
+      "ErrorResponse" : {
+        "type" : "object",
+        "properties" : {
+          "error" : {
+            "type" : "string"
+          },
+          "message" : {
+            "type" : "string"
+          },
+          "details" : {
+            "type" : "object",
+            "additionalProperties" : {
+              "type" : "object"
+            }
+          }
+        }
+      },
       "HealthResponse" : {
         "type" : "object",
         "properties" : {
           "status" : {
             "type" : "string"
+          },
+          "schemaVersion" : {
+            "type" : "integer",
+            "format" : "int32"
+          },
+          "activeMatches" : {
+            "type" : "integer",
+            "format" : "int32"
+          }
+        },
+        "required" : [ "schemaVersion", "activeMatches" ]
+      },
+      "InviteResponse" : {
+        "type" : "object",
+        "properties" : {
+          "code" : {
+            "type" : "string"
+          },
+          "grantsRole" : {
+            "type" : "string"
+          },
+          "expiresAt" : {
+            "type" : "string"
+          },
+          "consumedAt" : {
+            "type" : "string"
+          },
+          "revoked" : {
+            "type" : "boolean"
+          }
+        },
+        "required" : [ "revoked" ]
+      },
+      "LeaderboardEntryResponse" : {
+        "type" : "object",
+        "properties" : {
+          "userId" : {
+            "type" : "string"
+          },
+          "displayName" : {
+            "type" : "string"
+          },
+          "elapsedMs" : {
+            "type" : "integer",
+            "format" : "int64"
+          },
+          "attempts" : {
+            "type" : "integer",
+            "format" : "int32"
+          }
+        },
+        "required" : [ "elapsedMs", "attempts" ]
+      },
+      "LinkCodeResponse" : {
+        "type" : "object",
+        "properties" : {
+          "code" : {
+            "type" : "string"
+          },
+          "expiresAt" : {
+            "type" : "string"
           }
         }
+      },
+      "MatchResponse" : {
+        "type" : "object",
+        "properties" : {
+          "matchId" : {
+            "type" : "string"
+          },
+          "mode" : {
+            "type" : "string"
+          },
+          "state" : {
+            "type" : "string"
+          },
+          "puzzleKey" : {
+            "$ref" : "#/components/schemas/PuzzleKeyResponse"
+          },
+          "livesEnabled" : {
+            "type" : "boolean"
+          },
+          "stake" : {
+            "type" : "integer",
+            "format" : "int32"
+          },
+          "winnerId" : {
+            "type" : "string"
+          },
+          "endReason" : {
+            "type" : "string"
+          },
+          "participants" : {
+            "type" : "array",
+            "items" : {
+              "$ref" : "#/components/schemas/ParticipantResponse"
+            }
+          }
+        },
+        "required" : [ "livesEnabled", "stake" ]
+      },
+      "ParticipantResponse" : {
+        "type" : "object",
+        "properties" : {
+          "userId" : {
+            "type" : "string"
+          },
+          "displayName" : {
+            "type" : "string"
+          },
+          "result" : {
+            "type" : "string"
+          }
+        }
+      },
+      "PlayerResponse" : {
+        "type" : "object",
+        "properties" : {
+          "id" : {
+            "type" : "string"
+          },
+          "displayName" : {
+            "type" : "string"
+          },
+          "role" : {
+            "type" : "string"
+          },
+          "streak" : {
+            "type" : "integer",
+            "format" : "int32"
+          },
+          "lastSeenAt" : {
+            "type" : "string"
+          }
+        },
+        "required" : [ "streak" ]
+      },
+      "PreferencesResponse" : {
+        "type" : "object",
+        "properties" : {
+          "dailyDifficulty" : {
+            "type" : "integer",
+            "format" : "int32"
+          }
+        },
+        "required" : [ "dailyDifficulty" ]
+      },
+      "PuzzleKeyResponse" : {
+        "type" : "object",
+        "properties" : {
+          "genVersion" : {
+            "type" : "integer",
+            "format" : "int32"
+          },
+          "size" : {
+            "type" : "integer",
+            "format" : "int32"
+          },
+          "variant" : {
+            "type" : "string"
+          },
+          "difficulty" : {
+            "type" : "integer",
+            "format" : "int32"
+          },
+          "seed" : {
+            "type" : "string"
+          }
+        },
+        "required" : [ "genVersion", "size", "difficulty" ]
+      },
+      "ServerInfoResponse" : {
+        "type" : "object",
+        "properties" : {
+          "serverId" : {
+            "type" : "string"
+          },
+          "serverName" : {
+            "type" : "string"
+          },
+          "timezone" : {
+            "type" : "string"
+          },
+          "dailySize" : {
+            "type" : "integer",
+            "format" : "int32"
+          },
+          "dailyVariant" : {
+            "type" : "string"
+          },
+          "genVersion" : {
+            "type" : "integer",
+            "format" : "int32"
+          },
+          "apiVersion" : {
+            "type" : "integer",
+            "format" : "int32"
+          }
+        },
+        "required" : [ "dailySize", "genVersion", "apiVersion" ]
+      },
+      "SessionResponse" : {
+        "type" : "object",
+        "properties" : {
+          "sessionToken" : {
+            "type" : "string"
+          },
+          "expiresAt" : {
+            "type" : "string"
+          },
+          "user" : {
+            "$ref" : "#/components/schemas/UserResponse"
+          }
+        }
+      },
+      "StatsEntryResponse" : {
+        "type" : "object",
+        "properties" : {
+          "size" : {
+            "type" : "integer",
+            "format" : "int32"
+          },
+          "variant" : {
+            "type" : "string"
+          },
+          "difficulty" : {
+            "type" : "integer",
+            "format" : "int32"
+          },
+          "gamesPlayed" : {
+            "type" : "integer",
+            "format" : "int32"
+          },
+          "solved" : {
+            "type" : "integer",
+            "format" : "int32"
+          },
+          "failed" : {
+            "type" : "integer",
+            "format" : "int32"
+          },
+          "bestTimeMs" : {
+            "type" : "integer",
+            "format" : "int64"
+          },
+          "averageTimeMs" : {
+            "type" : "integer",
+            "format" : "int64"
+          },
+          "hintsUsed" : {
+            "type" : "integer",
+            "format" : "int32"
+          }
+        },
+        "required" : [ "size", "difficulty", "gamesPlayed", "solved", "failed", "hintsUsed" ]
+      },
+      "StatsSyncResponse" : {
+        "type" : "object",
+        "properties" : {
+          "merged" : {
+            "type" : "integer",
+            "format" : "int32"
+          }
+        },
+        "required" : [ "merged" ]
+      },
+      "UserResponse" : {
+        "type" : "object",
+        "properties" : {
+          "id" : {
+            "type" : "string"
+          },
+          "displayName" : {
+            "type" : "string"
+          },
+          "role" : {
+            "type" : "string"
+          }
+        }
+      },
+      "GridSize" : {
+        "type" : "string",
+        "enum" : [ "FOUR", "SIX", "NINE", "TWELVE", "SIXTEEN" ]
+      },
+      "Variant" : {
+        "type" : "string",
+        "enum" : [ "CLASSIC", "CHAOS" ]
+      },
+      "MatchMode" : {
+        "type" : "string",
+        "enum" : [ "RACE", "DUEL", "COOP" ]
+      },
+      "Role" : {
+        "type" : "string",
+        "enum" : [ "NEW", "MEMBER", "ADMIN" ]
+      },
+      "SyncEntry" : {
+        "type" : "object",
+        "properties" : {
+          "validate" : {
+            "type" : "object"
+          },
+          "size" : {
+            "type" : "integer",
+            "format" : "int32"
+          },
+          "variant" : {
+            "type" : "string"
+          },
+          "difficulty" : {
+            "type" : "integer",
+            "format" : "int32"
+          },
+          "gamesPlayed" : {
+            "type" : "integer",
+            "format" : "int32"
+          },
+          "solved" : {
+            "type" : "integer",
+            "format" : "int32"
+          },
+          "failed" : {
+            "type" : "integer",
+            "format" : "int32"
+          },
+          "bestTimeMs" : {
+            "type" : "integer",
+            "format" : "int64"
+          },
+          "totalTimeMs" : {
+            "type" : "integer",
+            "format" : "int64"
+          },
+          "hintsUsed" : {
+            "type" : "integer",
+            "format" : "int32"
+          }
+        },
+        "required" : [ "size", "difficulty", "gamesPlayed", "solved", "failed", "totalTimeMs", "hintsUsed" ]
       }
     }
   }
