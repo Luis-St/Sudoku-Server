@@ -20,8 +20,7 @@ import static net.luis.sudoku.db.schema.Schema.*;
  */
 public final class AuthChallengeRepository {
 	
-	public void create(@NonNull SqlTransaction transaction, byte @NonNull [] nonce, byte @NonNull [] publicKey,
-	                   @NonNull Instant expiresAt) throws SqlException {
+	public void create(@NonNull SqlTransaction transaction, byte @NonNull [] nonce, byte @NonNull [] publicKey, @NonNull Instant expiresAt) throws SqlException {
 		Schema.AuthChallengeRow draft = new Schema.AuthChallengeRow(nonce, publicKey, expiresAt);
 		transaction.from(AUTH_CHALLENGES).insert(draft).execute();
 	}

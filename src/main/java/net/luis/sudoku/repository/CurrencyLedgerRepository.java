@@ -33,8 +33,7 @@ public final class CurrencyLedgerRepository {
 	 * clock that decides "which day is it" must be the same one that stamps the row. Letting the
 	 * database stamp it makes the cap silently wrong whenever the two disagree.
 	 */
-	public void append(@NonNull SqlTransaction transaction, @NonNull UUID userId, int delta, @NonNull LedgerReason reason,
-	                   @Nullable UUID matchId, @NonNull Instant createdAt) throws SqlException {
+	public void append(@NonNull SqlTransaction transaction, @NonNull UUID userId, int delta, @NonNull LedgerReason reason, @Nullable UUID matchId, @NonNull Instant createdAt) throws SqlException {
 		String sql = "INSERT INTO currency_ledger (user_id, delta, reason, match_id, created_at) VALUES (?, ?, ?, ?, ?)";
 		try (PreparedStatement statement = transaction.getConnection().prepareStatement(sql)) {
 			statement.setObject(1, userId);
@@ -52,8 +51,7 @@ public final class CurrencyLedgerRepository {
 	 * @return the player's balance, summed over the whole ledger
 	 */
 	public long balance(@NonNull SqlTransaction transaction, @NonNull UUID userId) throws SqlException {
-		Integer sum = transaction.from(CURRENCY_LEDGER).select(Sql.sum(LEDGER_DELTA))
-			.where(Sql.equalTo(LEDGER_USER_ID, userId)).fetchOneOrNull();
+		Integer sum = transaction.from(CURRENCY_LEDGER).select(Sql.sum(LEDGER_DELTA)).where(Sql.equalTo(LEDGER_USER_ID, userId)).fetchOneOrNull();
 		return sum == null ? 0L : sum;
 	}
 	
@@ -72,8 +70,7 @@ public final class CurrencyLedgerRepository {
 	 * @return how many {@link LedgerReason#EARN_GAME} rows exist for a player on a date, which is what
 	 *   the daily earning cap counts
 	 */
-	public int countEarnGamesOn(@NonNull SqlTransaction transaction, @NonNull UUID userId, @NonNull LocalDate date,
-	                            @NonNull ZoneId zone) throws SqlException {
+	public int countEarnGamesOn(@NonNull SqlTransaction transaction, @NonNull UUID userId, @NonNull LocalDate date, @NonNull ZoneId zone) throws SqlException {
 		// The date is evaluated in the server zone, matching how every other date in the schema is
 		// computed (spec 5). No portable expression for "timestamptz AT TIME ZONE ... ::date" exists in
 		// the query builder, so the predicate stays raw SQL while the rest of the query goes through it.
@@ -97,8 +94,7 @@ public final class CurrencyLedgerRepository {
 	/**
 	 * @return whether the daily bonus has already been paid for a date, which must happen at most once
 	 */
-	public boolean hasEarnedDailyOn(@NonNull SqlTransaction transaction, @NonNull UUID userId, @NonNull LocalDate date,
-	                                @NonNull ZoneId zone) throws SqlException {
+	public boolean hasEarnedDailyOn(@NonNull SqlTransaction transaction, @NonNull UUID userId, @NonNull LocalDate date, @NonNull ZoneId zone) throws SqlException {
 		String sql = """
 			SELECT 1 FROM currency_ledger
 			 WHERE user_id = ? AND reason = 'EARN_DAILY' AND (created_at AT TIME ZONE ?)::date = ?

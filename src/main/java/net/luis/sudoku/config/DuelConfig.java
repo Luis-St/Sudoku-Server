@@ -30,12 +30,12 @@ public record DuelConfig(
 		requirePositive(EnvKeys.DUEL_MAX_BANK, maxBank);
 		requirePositive(EnvKeys.DUEL_MIN_TURN, minTurn);
 		requirePositive(EnvKeys.DUEL_MAX_HANDOVERS, maxHandovers);
+		
 		if (regenRatio < 0.0 || regenRatio > 1.0) {
 			throw new ConfigException(EnvKeys.DUEL_REGEN_RATIO + " must be within [0.0, 1.0], got: " + regenRatio);
 		}
 		if (initialBank > maxBank) {
-			throw new ConfigException(EnvKeys.DUEL_INITIAL_BANK + " (" + initialBank + ") must not exceed "
-				+ EnvKeys.DUEL_MAX_BANK + " (" + maxBank + ")");
+			throw new ConfigException(EnvKeys.DUEL_INITIAL_BANK + " (" + initialBank + ") must not exceed " + EnvKeys.DUEL_MAX_BANK + " (" + maxBank + ")");
 		}
 	}
 	

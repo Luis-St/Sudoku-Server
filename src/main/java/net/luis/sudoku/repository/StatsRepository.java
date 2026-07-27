@@ -29,8 +29,7 @@ public final class StatsRepository {
 	 * express (it only ever assigns {@code col = EXCLUDED.col}), so this stays raw SQL like
 	 * {@code daily_leaderboard}'s write path.
 	 */
-	public void record(@NonNull SqlTransaction transaction, @NonNull UUID userId, int size, @NonNull String variant,
-	                   int difficulty, boolean solved, long elapsedMs, int hintsUsed) throws SqlException {
+	public void record(@NonNull SqlTransaction transaction, @NonNull UUID userId, int size, @NonNull String variant, int difficulty, boolean solved, long elapsedMs, int hintsUsed) throws SqlException {
 		String sql = """
 			INSERT INTO stats (user_id, size, variant, difficulty, games_played, solved, failed, best_time_ms,
 			                   total_time_ms, hints_used)
@@ -73,9 +72,9 @@ public final class StatsRepository {
 	 * Merges a batch of locally accumulated history in one statement per entry (spec 9). Raw SQL for the
 	 * same reason as {@link #record}.
 	 */
-	public void merge(@NonNull SqlTransaction transaction, @NonNull UUID userId, int size, @NonNull String variant,
-	                  int difficulty, int gamesPlayed, int solved, int failed, Long bestTimeMs, long totalTimeMs,
-	                  int hintsUsed) throws SqlException {
+	public void merge(
+		@NonNull SqlTransaction transaction, @NonNull UUID userId, int size, @NonNull String variant, int difficulty, int gamesPlayed, int solved, int failed, Long bestTimeMs, long totalTimeMs, int hintsUsed
+	) throws SqlException {
 		String sql = """
 			INSERT INTO stats (user_id, size, variant, difficulty, games_played, solved, failed, best_time_ms,
 			                   total_time_ms, hints_used)

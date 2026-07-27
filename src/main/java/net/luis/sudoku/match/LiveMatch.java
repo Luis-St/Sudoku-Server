@@ -45,8 +45,7 @@ public abstract class LiveMatch {
 		this.config = config;
 		this.callbacks = callbacks;
 		this.state = match.state();
-		this.queue = Executors.newSingleThreadScheduledExecutor(runnable ->
-			Thread.ofPlatform().name("match-" + match.id()).daemon().unstarted(runnable));
+		this.queue = Executors.newSingleThreadScheduledExecutor(runnable -> Thread.ofPlatform().name("match-" + match.id()).daemon().unstarted(runnable));
 	}
 	
 	public @NonNull UUID id() {
@@ -109,8 +108,7 @@ public abstract class LiveMatch {
 	 */
 	public void onConnect(@NonNull Connection connection) {
 		UUID userId = connection.userId();
-		ParticipantState participant = this.participants.computeIfAbsent(userId,
-			id -> new ParticipantState(id, connection.displayName()));
+		ParticipantState participant = this.participants.computeIfAbsent(userId, id -> new ParticipantState(id, connection.displayName()));
 		
 		if (participant.reconnects > 0) {
 			// Returning from a drop: the grace timer stops and the match resumes.
@@ -135,6 +133,7 @@ public abstract class LiveMatch {
 		if (participant == null || this.ended) {
 			return;
 		}
+		
 		this.connections.remove(userId);
 		participant.connected = false;
 		
@@ -176,10 +175,12 @@ public abstract class LiveMatch {
 	private void startGrace() {
 		this.cancelGrace();
 		int seconds = this.config.reconnectGraceSeconds();
+		
 		this.broadcast(MessageEnvelope.of(MessageType.MATCH_STATE, Map.of(
 			"paused", true,
 			"graceSeconds", seconds
 		)));
+		
 		this.graceTimer = this.schedule(() -> {
 			log.info("Match {}: reconnect grace expired", this.match.id());
 			this.endMatch(null, EndReason.DISCONNECTED);

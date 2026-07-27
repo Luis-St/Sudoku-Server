@@ -39,8 +39,7 @@ public final class UserRepository {
 		return transaction.from(USERS).select().where(Sql.equalTo(USER_ID, id)).forUpdate().fetchOneOrNull();
 	}
 	
-	public @NonNull User create(@NonNull SqlTransaction transaction, @NonNull String displayName, @NonNull Role role,
-	                            @NonNull Instant now) throws SqlException {
+	public @NonNull User create(@NonNull SqlTransaction transaction, @NonNull String displayName, @NonNull Role role, @NonNull Instant now) throws SqlException {
 		User draft = new User(UUID.randomUUID(), displayName, role, now, false);
 		return transaction.from(USERS).insert(draft).returning().getFirst();
 	}

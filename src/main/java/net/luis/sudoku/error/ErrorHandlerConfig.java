@@ -59,8 +59,7 @@ public final class ErrorHandlerConfig {
 		});
 	}
 	
-	private static void respond(@NonNull Context ctx, @NonNull ErrorCode code, @Nullable String message,
-	                            @NonNull Map<String, Object> details) {
+	private static void respond(@NonNull Context ctx, @NonNull ErrorCode code, @Nullable String message, @NonNull Map<String, Object> details) {
 		ctx.attribute(HANDLED, Boolean.TRUE);
 		ctx.status(code.status());
 		ctx.json(new ErrorResponse(code.name(), message == null ? code.name() : message, details));

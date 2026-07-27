@@ -44,8 +44,7 @@ public class MatchSocketHandler implements Consumer<WsConfig> {
 	
 	private final Map<String, SocketState> states = new ConcurrentHashMap<>();
 	
-	public MatchSocketHandler(@NonNull Authentication authentication, @NonNull SessionService sessions,
-	                          @NonNull MatchService matches, @NonNull RateLimiter rateLimiter, @NonNull Clock clock) {
+	public MatchSocketHandler(@NonNull Authentication authentication, @NonNull SessionService sessions, @NonNull MatchService matches, @NonNull RateLimiter rateLimiter, @NonNull Clock clock) {
 		this.authentication = authentication;
 		this.sessions = sessions;
 		this.matches = matches;
@@ -199,8 +198,7 @@ public class MatchSocketHandler implements Consumer<WsConfig> {
 		private long windowStartedAtMs;
 		private int messagesInWindow;
 		
-		private SocketState(@NonNull UUID matchId, @NonNull UUID userId, @NonNull LiveMatch live,
-		                    @NonNull SocketConnection connection) {
+		private SocketState(@NonNull UUID matchId, @NonNull UUID userId, @NonNull LiveMatch live, @NonNull SocketConnection connection) {
 			this.matchId = matchId;
 			this.userId = userId;
 			this.live = live;
@@ -211,8 +209,7 @@ public class MatchSocketHandler implements Consumer<WsConfig> {
 		 * @return true if this sequence number is new, false if it is a replay
 		 */
 		private boolean accept(long seq) {
-			return this.highestSeq.updateAndGet(current -> Math.max(current, seq)) == seq
-				&& this.highestSeq.get() == seq;
+			return this.highestSeq.updateAndGet(current -> Math.max(current, seq)) == seq && this.highestSeq.get() == seq;
 		}
 		
 		private synchronized boolean allowMessage(long nowMs) {
@@ -225,46 +222,46 @@ public class MatchSocketHandler implements Consumer<WsConfig> {
 	}
 	
 	/**
-		 * Adapts a Javalin {@link WsContext} to the transport-free {@link Connection} the match logic uses.
-		 */
-		private record SocketConnection(WsContext context, Principal principal) implements Connection {
-			
-			private SocketConnection(@NonNull WsContext context, @NonNull Principal principal) {
-				this.context = context;
-				this.principal = principal;
-			}
-			
-			@Override
-			public @NonNull UUID userId() {
-				return this.principal.userId();
-			}
-			
-			@Override
-			public @NonNull String displayName() {
-				return this.principal.user().displayName();
-			}
-			
-			@Override
-			public void send(@NonNull MessageEnvelope message) {
-				try {
-					this.context.send(message);
-				} catch (RuntimeException e) {
-					log.debug("Failed to send on a closed match socket", e);
-				}
-			}
-			
-			@Override
-			public void close(@NonNull String reason) {
-				try {
-					this.context.closeSession(4000, reason);
-				} catch (RuntimeException e) {
-					log.debug("Failed to close a match socket", e);
-				}
-			}
-			
-			@Override
-			public boolean isOpen() {
-				return this.context.session.isOpen();
+	 * Adapts a Javalin {@link WsContext} to the transport-free {@link Connection} the match logic uses.
+	 */
+	private record SocketConnection(WsContext context, Principal principal) implements Connection {
+		
+		private SocketConnection(@NonNull WsContext context, @NonNull Principal principal) {
+			this.context = context;
+			this.principal = principal;
+		}
+		
+		@Override
+		public @NonNull UUID userId() {
+			return this.principal.userId();
+		}
+		
+		@Override
+		public @NonNull String displayName() {
+			return this.principal.user().displayName();
+		}
+		
+		@Override
+		public void send(@NonNull MessageEnvelope message) {
+			try {
+				this.context.send(message);
+			} catch (RuntimeException e) {
+				log.debug("Failed to send on a closed match socket", e);
 			}
 		}
+		
+		@Override
+		public void close(@NonNull String reason) {
+			try {
+				this.context.closeSession(4000, reason);
+			} catch (RuntimeException e) {
+				log.debug("Failed to close a match socket", e);
+			}
+		}
+		
+		@Override
+		public boolean isOpen() {
+			return this.context.session.isOpen();
+		}
+	}
 }

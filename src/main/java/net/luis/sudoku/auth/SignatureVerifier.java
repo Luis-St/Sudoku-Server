@@ -8,6 +8,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.security.*;
+import java.security.interfaces.ECPublicKey;
 import java.security.spec.X509EncodedKeySpec;
 
 /**
@@ -26,7 +27,7 @@ public final class SignatureVerifier {
 	 * happily verify against a weaker curve the client chose instead.
 	 */
 	private static boolean isP256(@NonNull PublicKey key) {
-		if (key instanceof java.security.interfaces.ECPublicKey ec) {
+		if (key instanceof ECPublicKey ec) {
 			return ec.getParams().getOrder().bitLength() == 256;
 		}
 		return false;
@@ -39,11 +40,9 @@ public final class SignatureVerifier {
 	 * structurally invalid signature, is a failed authentication attempt and must be indistinguishable
 	 * from a wrong one.
 	 */
-	public boolean verify(@NonNull KeyAlgorithm algorithm, byte @NonNull [] publicKey, byte @NonNull [] nonce,
-	                      byte @NonNull [] signature) {
+	public boolean verify(@NonNull KeyAlgorithm algorithm, byte @NonNull [] publicKey, byte @NonNull [] nonce, byte @NonNull [] signature) {
 		try {
-			PublicKey key = KeyFactory.getInstance(algorithm.keyFactoryAlgorithm())
-				.generatePublic(new X509EncodedKeySpec(publicKey));
+			PublicKey key = KeyFactory.getInstance(algorithm.keyFactoryAlgorithm()).generatePublic(new X509EncodedKeySpec(publicKey));
 			
 			Signature verifier = Signature.getInstance(algorithm.signatureAlgorithm());
 			verifier.initVerify(key);
@@ -63,8 +62,7 @@ public final class SignatureVerifier {
 	 */
 	public void requireParsable(@NonNull KeyAlgorithm algorithm, byte @NonNull [] publicKey) {
 		try {
-			PublicKey key = KeyFactory.getInstance(algorithm.keyFactoryAlgorithm())
-				.generatePublic(new X509EncodedKeySpec(publicKey));
+			PublicKey key = KeyFactory.getInstance(algorithm.keyFactoryAlgorithm()).generatePublic(new X509EncodedKeySpec(publicKey));
 			if (algorithm == KeyAlgorithm.ECDSA_P256 && !isP256(key)) {
 				throw new ApiException(ErrorCode.BAD_REQUEST, "Key is an EC key but not on the P-256 curve");
 			}

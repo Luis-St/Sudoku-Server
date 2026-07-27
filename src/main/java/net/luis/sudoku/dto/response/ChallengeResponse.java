@@ -14,9 +14,6 @@ import java.util.Base64;
 public record ChallengeResponse(@NonNull String nonce, @NonNull String expiresAt) {
 	
 	public static @NonNull ChallengeResponse of(@NonNull Challenge challenge) {
-		return new ChallengeResponse(
-			Base64.getEncoder().encodeToString(challenge.nonce()),
-			challenge.expiresAt().toString()
-		);
+		return new ChallengeResponse(Base64.getEncoder().encodeToString(challenge.nonce()), challenge.expiresAt().toString());
 	}
 }

@@ -74,8 +74,7 @@ public final class ServiceGraph implements AutoCloseable {
 	private final MatchService matchService;
 	private final PuzzleQueue puzzleQueue;
 	
-	private final ScheduledExecutorService housekeeping =
-		Executors.newSingleThreadScheduledExecutor(runnable -> Thread.ofPlatform().name("housekeeping").daemon().unstarted(runnable));
+	private final ScheduledExecutorService housekeeping = Executors.newSingleThreadScheduledExecutor(runnable -> Thread.ofPlatform().name("housekeeping").daemon().unstarted(runnable));
 	
 	public ServiceGraph(@NonNull ServerConfig config) {
 		this(config, Clock.systemUTC());
@@ -93,29 +92,22 @@ public final class ServiceGraph implements AutoCloseable {
 		// The registry is the socket closer: this is what makes SESSION_SUPERSEDED (spec 6.2) and a kick
 		// (spec 7.2) take effect on a live connection rather than only in the database.
 		SessionCloser closer = this.matchRegistry::closeSocketsFor;
-		this.sessionService = new SessionService(this.database, this.sessions, this.users, this.devices,
-			this.codes, closer);
+		this.sessionService = new SessionService(this.database, this.sessions, this.users, this.devices, this.codes, closer);
 		this.authentication = new Authentication(this.sessionService, clock);
-		this.challengeService = new ChallengeService(this.database, this.challenges, this.devices, this.users,
-			this.sessionService, this.signatureVerifier, this.codes, clock);
-		this.registrationService = new RegistrationService(this.database, this.users, this.devices, this.invites,
-			this.sessionService, this.signatureVerifier, clock);
+		this.challengeService = new ChallengeService(this.database, this.challenges, this.devices, this.users, this.sessionService, this.signatureVerifier, this.codes, clock);
+		this.registrationService = new RegistrationService(this.database, this.users, this.devices, this.invites, this.sessionService, this.signatureVerifier, clock);
 		
 		this.inviteService = new InviteService(this.database, this.invites, this.codes, clock);
 		this.userAdminService = new UserAdminService(this.database, this.users, this.devices, this.sessions, closer);
 		
-		this.deviceLinkService = new DeviceLinkService(this.database, this.linkCodes, this.devices, this.users,
-			this.sessionService, this.signatureVerifier, this.codes, clock);
+		this.deviceLinkService = new DeviceLinkService(this.database, this.linkCodes, this.devices, this.users, this.sessionService, this.signatureVerifier, this.codes, clock);
 		
-		this.statsService = new StatsService(this.database, this.stats, this.users, this.streaks, this.dailyResults,
-			this.dailyLeaderboard, config, clock);
+		this.statsService = new StatsService(this.database, this.stats, this.users, this.streaks, this.dailyResults, this.dailyLeaderboard, config, clock);
 		this.currencyService = new CurrencyService(this.database, this.ledger, this.stats, config, clock);
-		this.dailyService = new DailyService(this.database, config, this.serverId, this.preferences,
-			this.dailyResults, this.streaks, this.dailyLeaderboard, this.currencyService, this.statsService, clock);
+		this.dailyService = new DailyService(this.database, config, this.serverId, this.preferences, this.dailyResults, this.streaks, this.dailyLeaderboard, this.currencyService, this.statsService, clock);
 		this.puzzleQueue = new PuzzleQueue(this::activePlayerCount);
 		
-		this.matchService = new MatchService(this.database, this.matchRepository, this.matchRegistry, this.puzzleQueue,
-			this.currencyService, config, this.codes, clock);
+		this.matchService = new MatchService(this.database, this.matchRepository, this.matchRegistry, this.puzzleQueue, this.currencyService, config, this.codes, clock);
 		
 		this.registrationService.ensureBootstrapInvite(config.bootstrapInvite());
 		// Live board state is memory-resident, so anything left running is wreckage: abandon and refund

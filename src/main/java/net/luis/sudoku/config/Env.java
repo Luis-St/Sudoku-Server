@@ -3,6 +3,7 @@ package net.luis.sudoku.config;
 import org.jspecify.annotations.NonNull;
 import org.jspecify.annotations.Nullable;
 
+import java.util.Arrays;
 import java.util.Map;
 import java.util.function.UnaryOperator;
 
@@ -55,6 +56,7 @@ public final class Env {
 		if (value == null) {
 			return defaultValue;
 		}
+		
 		String normalized = value.trim().toLowerCase();
 		return switch (normalized) {
 			case "true", "yes", "1", "on" -> true;
@@ -68,6 +70,7 @@ public final class Env {
 		if (value == null) {
 			return defaultValue;
 		}
+		
 		try {
 			return Integer.parseInt(value.trim());
 		} catch (NumberFormatException e) {
@@ -80,6 +83,7 @@ public final class Env {
 		if (value == null) {
 			return defaultValue;
 		}
+		
 		try {
 			return Double.parseDouble(value.trim());
 		} catch (NumberFormatException e) {
@@ -92,11 +96,11 @@ public final class Env {
 		if (value == null) {
 			return defaultValue;
 		}
+		
 		try {
 			return Enum.valueOf(defaultValue.getDeclaringClass(), value.trim().toUpperCase());
 		} catch (IllegalArgumentException e) {
-			throw new ConfigException("Environment variable " + key + " must be one of "
-				+ java.util.Arrays.toString(defaultValue.getDeclaringClass().getEnumConstants()) + ", got: " + value, e);
+			throw new ConfigException("Environment variable " + key + " must be one of " + Arrays.toString(defaultValue.getDeclaringClass().getEnumConstants()) + ", got: " + value, e);
 		}
 	}
 }

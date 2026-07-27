@@ -8,20 +8,12 @@ import net.luis.sudoku.generation.GeneratedPuzzle;
 import net.luis.sudoku.grid.GridSize;
 import net.luis.sudoku.grid.Variant;
 import net.luis.sudoku.key.PuzzleKey;
-import net.luis.sudoku.match.EndReason;
-import net.luis.sudoku.match.LiveMatch;
-import net.luis.sudoku.match.MatchMode;
-import net.luis.sudoku.match.MatchState;
-import net.luis.sudoku.match.MessageEnvelope;
-import net.luis.sudoku.match.MessageType;
+import net.luis.sudoku.match.*;
 import net.luis.sudoku.puzzle.PuzzleFactory;
 import org.jspecify.annotations.NonNull;
 
 import java.time.Instant;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Map;
-import java.util.UUID;
+import java.util.*;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 
@@ -29,20 +21,20 @@ import java.util.concurrent.TimeUnit;
  * Builders and helpers for the match-mode tests.
  */
 public final class MatchFixture {
-
+	
 	/**
 	 * A 4x4 grid keeps solve-to-completion tests fast while exercising the identical code path.
 	 */
 	public static final GridSize SIZE = GridSize.FOUR;
-
+	
 	private MatchFixture() {}
-
+	
 	public static @NonNull GeneratedPuzzle puzzle() {
 		return PuzzleFactory.generate(PuzzleKey.of(SIZE, Variant.CLASSIC, Difficulty.TWO, 20260725L));
 	}
-
+	
 	public static @NonNull Match match(@NonNull MatchMode mode, boolean livesEnabled, int stake,
-									   @NonNull GeneratedPuzzle puzzle) {
+	                                   @NonNull GeneratedPuzzle puzzle) {
 		return new Match(
 			UUID.randomUUID(),
 			mode,
@@ -62,22 +54,22 @@ public final class MatchFixture {
 			null
 		);
 	}
-
+	
 	public static @NonNull MatchConfig matchConfig() {
 		return new MatchConfig(60, 3);
 	}
-
+	
 	public static @NonNull DuelConfig duelConfig() {
 		return new DuelConfig(90, 6, 20, 180, 10, 0.5, 40);
 	}
-
+	
 	/**
 	 * A duel config with tiny values, so handover happens within a test's patience.
 	 */
 	public static @NonNull DuelConfig fastDuelConfig() {
 		return new DuelConfig(1, 6, 20, 180, 1, 0.5, 2);
 	}
-
+	
 	/**
 	 * Tuned for the stalemate path specifically.
 	 * <p>
@@ -88,7 +80,7 @@ public final class MatchFixture {
 	public static @NonNull DuelConfig stalemateDuelConfig() {
 		return new DuelConfig(1, 1, 1, 2, 1, 0.5, 2);
 	}
-
+	
 	/**
 	 * Runs work on the match queue and blocks until it has been processed.
 	 * <p>
@@ -107,28 +99,28 @@ public final class MatchFixture {
 			throw new IllegalStateException("Interrupted while draining the match queue", e);
 		}
 	}
-
+	
 	public static void connect(@NonNull LiveMatch match, @NonNull FakeConnection connection) {
 		match.submit(() -> match.onConnect(connection));
 		drain(match);
 	}
-
+	
 	public static void send(@NonNull LiveMatch match, @NonNull FakeConnection from, @NonNull MessageType type,
-							@NonNull Map<String, Object> payload) {
+	                        @NonNull Map<String, Object> payload) {
 		match.submit(() -> match.onMessage(from.userId(), type, payload));
 		drain(match);
 	}
-
+	
 	public static void ready(@NonNull LiveMatch match, @NonNull FakeConnection... connections) {
 		for (FakeConnection connection : connections) {
 			send(match, connection, MessageType.READY, Map.of());
 		}
 	}
-
+	
 	public static void place(@NonNull LiveMatch match, @NonNull FakeConnection from, int cell, int digit) {
 		send(match, from, MessageType.PLACE, Map.of("cell", cell, "digit", digit));
 	}
-
+	
 	/**
 	 * @return every empty cell index, in order, for the fixture puzzle
 	 */
@@ -141,7 +133,7 @@ public final class MatchFixture {
 		}
 		return holes;
 	}
-
+	
 	/**
 	 * @return the digit that is NOT the solution for a cell, for driving mistake paths
 	 */
@@ -149,7 +141,7 @@ public final class MatchFixture {
 		int correct = puzzle.solutionAt(cell);
 		return correct == 1 ? 2 : 1;
 	}
-
+	
 	public static @NonNull EndReason reasonOf(@NonNull MessageEnvelope ended) {
 		return EndReason.valueOf(String.valueOf(ended.payloadOrEmpty().get("reason")));
 	}

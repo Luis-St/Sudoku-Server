@@ -18,13 +18,13 @@ import static org.junit.jupiter.api.Assertions.*;
  * Test class for {@link PuzzleQueue}.
  */
 class PuzzleQueueTest {
-
+	
 	@Test
 	void take_fromAColdQueue_stillReturnsAPuzzle() {
 		// A miss falls back to inline generation: a cold queue is slower, never wrong.
 		try (PuzzleQueue queue = new PuzzleQueue(() -> 0)) {
 			GeneratedPuzzle puzzle = queue.take(GridSize.NINE, Variant.CLASSIC, Difficulty.THREE);
-
+			
 			assertAll(
 				() -> assertEquals(GridSize.NINE, puzzle.puzzle().size()),
 				() -> assertEquals(Variant.CLASSIC, puzzle.puzzle().variant()),
@@ -32,7 +32,7 @@ class PuzzleQueueTest {
 			);
 		}
 	}
-
+	
 	@Test
 	void take_repeatedly_yieldsDistinctPuzzles() {
 		// Seeds come from SecureRandom, so pooled puzzles must not repeat.
@@ -44,37 +44,37 @@ class PuzzleQueueTest {
 			assertEquals(8, seeds.size());
 		}
 	}
-
+	
 	@Test
 	void take_afterTheWorkerHasRun_servesFromThePool() throws Exception {
 		try (PuzzleQueue queue = new PuzzleQueue(() -> 2)) {
 			queue.take(GridSize.NINE, Variant.CLASSIC, Difficulty.ONE);
-
+			
 			// The refill is asynchronous; poll rather than sleeping a fixed amount.
 			int depth = 0;
 			for (int attempt = 0; attempt < 100 && depth == 0; attempt++) {
 				Thread.sleep(50);
 				depth = queue.depth(GridSize.NINE, Variant.CLASSIC, Difficulty.ONE);
 			}
-
+			
 			assertTrue(depth > 0, "the worker should have topped the bucket up");
 		}
 	}
-
+	
 	@Test
 	void targetDepth_scalesWithTheActivePlayerCount_withinBounds() {
 		AtomicInteger players = new AtomicInteger(0);
 		try (PuzzleQueue queue = new PuzzleQueue(players::get)) {
 			assertEquals(4, queue.targetDepth(), "a floor applies with nobody connected");
-
+			
 			players.set(6);
 			assertEquals(12, queue.targetDepth(), "twice the active-player count");
-
+			
 			players.set(1000);
 			assertEquals(32, queue.targetDepth(), "capped so memory stays bounded");
 		}
 	}
-
+	
 	@Test
 	void take_withLisa_isRejected() {
 		// The queue only serves normal and match play, and Lisa is single-player only.
@@ -84,7 +84,7 @@ class PuzzleQueueTest {
 			assertEquals(ErrorCode.LISA_NOT_ALLOWED, e.code());
 		}
 	}
-
+	
 	@Test
 	void take_aChaosPuzzle_isServedToo() {
 		try (PuzzleQueue queue = new PuzzleQueue(() -> 0)) {

@@ -17,7 +17,6 @@ public record PlayerResponse(@NonNull String id, @NonNull String displayName, @N
                              @Nullable String lastSeenAt) {
 	
 	public static @NonNull PlayerResponse of(@NonNull PlayerSummary summary) {
-		return new PlayerResponse(summary.id().toString(), summary.displayName(), summary.role(), summary.streak(),
-			summary.lastSeenAt());
+		return new PlayerResponse(summary.id().toString(), summary.displayName(), summary.role(), summary.streak(), summary.lastSeenAt());
 	}
 }

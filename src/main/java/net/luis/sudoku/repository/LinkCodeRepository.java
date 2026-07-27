@@ -19,8 +19,7 @@ import static net.luis.sudoku.db.schema.Schema.*;
  */
 public final class LinkCodeRepository {
 	
-	public void create(@NonNull SqlTransaction transaction, @NonNull String code, @NonNull UUID userId,
-	                   @NonNull Instant expiresAt, @NonNull Instant now) throws SqlException {
+	public void create(@NonNull SqlTransaction transaction, @NonNull String code, @NonNull UUID userId, @NonNull Instant expiresAt, @NonNull Instant now) throws SqlException {
 		Schema.LinkCodeRow draft = new Schema.LinkCodeRow(code, userId, expiresAt, null, now);
 		transaction.from(LINK_CODES).insert(draft).execute();
 	}

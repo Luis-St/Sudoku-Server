@@ -51,8 +51,7 @@ public class CurrencyHandler {
 		Principal actor = this.authentication.require(ctx);
 		CurrencySyncRequest request = ctx.bodyAsClass(CurrencySyncRequest.class);
 		
-		long reconciled = this.currency.sync(actor.userId(), request.requireReportedBalance(),
-			request.gamesPlayedOrZero());
+		long reconciled = this.currency.sync(actor.userId(), request.requireReportedBalance(), request.gamesPlayedOrZero());
 		ctx.json(new CurrencyResponse(reconciled));
 	}
 }

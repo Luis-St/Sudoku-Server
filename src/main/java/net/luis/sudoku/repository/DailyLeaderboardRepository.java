@@ -28,8 +28,7 @@ public final class DailyLeaderboardRepository {
 	 * which the query builder's generic upsert supports (single conflict column, always
 	 * {@code col = EXCLUDED.col}), so this stays raw SQL.
 	 */
-	public void record(@NonNull SqlTransaction transaction, @NonNull UUID userId, @NonNull LocalDate date, int difficulty,
-	                   long elapsedMs, int attempts, int hintsUsed) throws SqlException {
+	public void record(@NonNull SqlTransaction transaction, @NonNull UUID userId, @NonNull LocalDate date, int difficulty, long elapsedMs, int attempts, int hintsUsed) throws SqlException {
 		String sql = """
 			INSERT INTO daily_leaderboard (date, difficulty, user_id, elapsed_ms, attempts, hints_used)
 			VALUES (?, ?, ?, ?, ?, ?)

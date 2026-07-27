@@ -25,6 +25,7 @@ public final class Requests {
 	
 	public static byte @NonNull [] decodeBase64(@Nullable String value, @NonNull String field) {
 		String present = require(value, field);
+		
 		try {
 			// Accept both the standard and URL-safe alphabets: clients differ, and it costs nothing.
 			return Base64.getDecoder().decode(present.replace('-', '+').replace('_', '/'));

@@ -39,8 +39,7 @@ public final class CurrencyService {
 	private final ServerConfig config;
 	private final Clock clock;
 	
-	public CurrencyService(@NonNull Database database, @NonNull CurrencyLedgerRepository ledger,
-	                       @NonNull StatsRepository stats, @NonNull ServerConfig config, @NonNull Clock clock) {
+	public CurrencyService(@NonNull Database database, @NonNull CurrencyLedgerRepository ledger, @NonNull StatsRepository stats, @NonNull ServerConfig config, @NonNull Clock clock) {
 		this.database = database;
 		this.ledger = ledger;
 		this.stats = stats;
@@ -59,8 +58,7 @@ public final class CurrencyService {
 	 *
 	 * @return the amount awarded, or 0 once the daily cap is reached
 	 */
-	public int awardForGame(@NonNull SqlTransaction connection, @NonNull UUID userId, @NonNull Difficulty difficulty)
-		throws SqlException {
+	public int awardForGame(@NonNull SqlTransaction connection, @NonNull UUID userId, @NonNull Difficulty difficulty) throws SqlException {
 		LocalDate today = this.today();
 		int alreadyEarned = this.ledger.countEarnGamesOn(connection, userId, today, this.config.timezone());
 		if (alreadyEarned >= this.config.currencyDailyGameCap()) {
@@ -78,8 +76,7 @@ public final class CurrencyService {
 	 *
 	 * @return the amount awarded, or 0 if the bonus was already paid for that date
 	 */
-	public int awardForDaily(@NonNull SqlTransaction connection, @NonNull UUID userId, @NonNull Difficulty difficulty,
-	                         @NonNull LocalDate date) throws SqlException {
+	public int awardForDaily(@NonNull SqlTransaction connection, @NonNull UUID userId, @NonNull Difficulty difficulty, @NonNull LocalDate date) throws SqlException {
 		if (this.ledger.hasEarnedDailyOn(connection, userId, date, this.config.timezone())) {
 			return 0;
 		}
@@ -131,8 +128,7 @@ public final class CurrencyService {
 	 * values every one of them at the maximum tier. Generous by design: this is a sanity bound on an
 	 * unverifiable number, and false accusations cost more than false acceptances (spec 1.2).
 	 */
-	private long plausibleCeiling(@NonNull SqlTransaction connection, @NonNull UUID userId, int reportedGamesPlayed)
-		throws SqlException {
+	private long plausibleCeiling(@NonNull SqlTransaction connection, @NonNull UUID userId, int reportedGamesPlayed) throws SqlException {
 		int recorded = this.stats.totalGamesPlayed(connection, userId);
 		long games = Math.max(0, Math.max(recorded, reportedGamesPlayed));
 		int maxPerGame = PER_DIFFICULTY_INDEX * Difficulty.LISA.index() + DAILY_BONUS;
@@ -144,29 +140,26 @@ public final class CurrencyService {
 	 *
 	 * @throws ApiException {@code INSUFFICIENT_BALANCE} if the balance is below the stake
 	 */
-	public void escrowStake(@NonNull SqlTransaction connection, @NonNull UUID userId, int stake, @NonNull UUID matchId)
-		throws SqlException {
+	public void escrowStake(@NonNull SqlTransaction connection, @NonNull UUID userId, int stake, @NonNull UUID matchId) throws SqlException {
 		if (stake <= 0) {
 			// Stake 0 means anyone may join, including a player with an empty balance.
 			return;
 		}
+		
 		long balance = this.ledger.balanceForUpdate(connection, userId);
 		if (balance < stake) {
-			throw new ApiException(ErrorCode.INSUFFICIENT_BALANCE,
-				"You need " + stake + " Rhubarb to join this match");
+			throw new ApiException(ErrorCode.INSUFFICIENT_BALANCE, "You need " + stake + " Rhubarb to join this match");
 		}
 		this.ledger.append(connection, userId, -stake, LedgerReason.STAKE, matchId, this.clock.instant());
 	}
 	
-	public void payout(@NonNull SqlTransaction connection, @NonNull UUID winnerId, int pot, @NonNull UUID matchId)
-		throws SqlException {
+	public void payout(@NonNull SqlTransaction connection, @NonNull UUID winnerId, int pot, @NonNull UUID matchId) throws SqlException {
 		if (pot > 0) {
 			this.ledger.append(connection, winnerId, pot, LedgerReason.PAYOUT, matchId, this.clock.instant());
 		}
 	}
 	
-	public void refund(@NonNull SqlTransaction connection, @NonNull UUID userId, int stake, @NonNull UUID matchId)
-		throws SqlException {
+	public void refund(@NonNull SqlTransaction connection, @NonNull UUID userId, int stake, @NonNull UUID matchId) throws SqlException {
 		if (stake > 0) {
 			this.ledger.append(connection, userId, stake, LedgerReason.REFUND, matchId, this.clock.instant());
 		}

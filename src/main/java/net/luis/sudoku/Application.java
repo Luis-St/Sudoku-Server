@@ -33,8 +33,7 @@ public class Application {
 		ServiceGraph services = new ServiceGraph(config);
 		Runtime.getRuntime().addShutdownHook(new Thread(services::close, "services-shutdown"));
 		
-		log.info("Server id {} (daily {}x{} {}, rollover zone {})", services.serverId(), config.dailySize().n(),
-			config.dailySize().n(), config.dailyVariant(), config.timezone().getId());
+		log.info("Server id {} (daily {}x{} {}, rollover zone {})", services.serverId(), config.dailySize().n(), config.dailySize().n(), config.dailyVariant(), config.timezone().getId());
 		log.info("shared-core genVersion {}, API version {}", GenVersion.CURRENT, ApiVersion.CURRENT);
 		
 		Javalin app = Javalin.create(javalin -> configure(javalin, services));
@@ -77,19 +76,16 @@ public class Application {
 		
 		var healthHandler = new HealthHandler(services.schemaVersion(), services.matchRegistry()::activeCount);
 		var serverInfoHandler = new ServerInfoHandler(services.config(), services.serverId());
-		var registerHandler = new RegisterHandler(services.registrationService(), services.rateLimiter(),
-			services.config().trustProxy());
+		var registerHandler = new RegisterHandler(services.registrationService(), services.rateLimiter(), services.config().trustProxy());
 		var authHandler = new AuthHandler(services.challengeService(), services.rateLimiter(), services.config().trustProxy());
 		var userHandler = new UserHandler(services.authentication(), services.userAdminService());
 		var inviteHandler = new InviteHandler(services.authentication(), services.inviteService());
-		var deviceHandler = new DeviceHandler(services.authentication(), services.deviceLinkService(),
-			services.userAdminService(), services.rateLimiter(), services.config().trustProxy());
+		var deviceHandler = new DeviceHandler(services.authentication(), services.deviceLinkService(), services.userAdminService(), services.rateLimiter(), services.config().trustProxy());
 		var dailyHandler = new DailyHandler(services.authentication(), services.dailyService());
 		var statsHandler = new StatsHandler(services.authentication(), services.statsService());
 		var currencyHandler = new CurrencyHandler(services.authentication(), services.currencyService());
 		var matchHandler = new MatchHandler(services.authentication(), services.matchService());
-		var matchSocketHandler = new MatchSocketHandler(services.authentication(), services.sessionService(),
-			services.matchService(), services.rateLimiter(), services.clock());
+		var matchSocketHandler = new MatchSocketHandler(services.authentication(), services.sessionService(), services.matchService(), services.rateLimiter(), services.clock());
 		
 		// Health
 		javalin.routes.get("/health", healthHandler::health);

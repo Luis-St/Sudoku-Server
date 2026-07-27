@@ -24,6 +24,7 @@ public final class RateLimiter {
 	
 	private final Clock clock;
 	private final Map<String, Window> windows = new ConcurrentHashMap<>();
+	
 	public RateLimiter() {
 		this(Clock.systemUTC());
 	}
@@ -50,9 +51,7 @@ public final class RateLimiter {
 		});
 		
 		if (window.count.incrementAndGet() > bucket.limit()) {
-			throw new ApiException(ErrorCode.RATE_LIMITED,
-				"Too many attempts; try again after " + window.expiresAt,
-				Map.of("retryAfterSeconds", Math.max(1, Duration.between(now, window.expiresAt).toSeconds())));
+			throw new ApiException(ErrorCode.RATE_LIMITED, "Too many attempts; try again after " + window.expiresAt, Map.of("retryAfterSeconds", Math.max(1, Duration.between(now, window.expiresAt).toSeconds())));
 		}
 	}
 	

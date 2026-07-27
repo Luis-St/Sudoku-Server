@@ -8,18 +8,21 @@ import net.luis.sudoku.error.ApiException;
 import net.luis.sudoku.grid.GridSize;
 import net.luis.sudoku.grid.Variant;
 import net.luis.sudoku.repository.*;
+import net.luis.utils.io.database.Sql;
 import net.luis.utils.io.database.exception.SqlException;
+import net.luis.utils.io.database.query.row.SqlRow5;
 import net.luis.utils.io.database.transaction.SqlTransaction;
 import org.jspecify.annotations.NonNull;
 import org.jspecify.annotations.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.sql.*;
-import java.time.Clock;
-import java.time.LocalDate;
+import java.sql.SQLException;
+import java.time.*;
 import java.util.List;
 import java.util.UUID;
+
+import static net.luis.sudoku.db.schema.Schema.*;
 
 /**
  * Statistics storage, the offline-to-online sync, and the daily rollover job (server-spec 9).
@@ -40,10 +43,10 @@ public final class StatsService {
 	private final ServerConfig config;
 	private final Clock clock;
 	
-	public StatsService(@NonNull Database database, @NonNull StatsRepository stats, @NonNull UserRepository users,
-	                    @NonNull StreakRepository streaks, @NonNull DailyResultRepository dailyResults,
-	                    @NonNull DailyLeaderboardRepository leaderboard, @NonNull ServerConfig config,
-	                    @NonNull Clock clock) {
+	public StatsService(
+		@NonNull Database database, @NonNull StatsRepository stats, @NonNull UserRepository users, @NonNull StreakRepository streaks, @NonNull DailyResultRepository dailyResults,
+		@NonNull DailyLeaderboardRepository leaderboard, @NonNull ServerConfig config, @NonNull Clock clock
+	) {
 		this.database = database;
 		this.stats = stats;
 		this.users = users;
@@ -55,17 +58,9 @@ public final class StatsService {
 	}
 	
 	private static @Nullable String lastSeen(@NonNull SqlTransaction connection, @NonNull UUID userId) throws SqlException {
-		String sql = "SELECT max(last_seen_at) FROM devices WHERE user_id = ?";
-		try (PreparedStatement statement = connection.getConnection().prepareStatement(sql)) {
-			statement.setObject(1, userId);
-			try (ResultSet result = statement.executeQuery()) {
-				result.next();
-				java.sql.Timestamp seen = result.getTimestamp(1);
-				return seen == null ? null : seen.toInstant().toString();
-			}
-		} catch (SQLException e) {
-			throw new SqlException("Failed to read last-seen timestamp", e);
-		}
+		Instant seen = connection.from(DEVICES).select(Sql.max(DEVICE_LAST_SEEN_AT))
+			.where(Sql.equalTo(DEVICE_USER_ID, userId)).fetchOneOrNull();
+		return seen == null ? null : seen.toString();
 	}
 	
 	public @NonNull List<StatsEntry> forUser(@NonNull UUID userId) {
@@ -82,6 +77,7 @@ public final class StatsService {
 				if (user.revoked()) {
 					continue;
 				}
+				
 				summaries.add(new PlayerSummary(
 					user.id(),
 					user.displayName(),
@@ -124,9 +120,7 @@ public final class StatsService {
 	/**
 	 * Records a finished game into the aggregates, inside the caller's transaction.
 	 */
-	public void record(@NonNull SqlTransaction connection, @NonNull UUID userId, @NonNull GridSize size,
-	                   @NonNull Variant variant, int difficulty, boolean solved, long elapsedMs, int hintsUsed)
-		throws SqlException {
+	public void record(@NonNull SqlTransaction connection, @NonNull UUID userId, @NonNull GridSize size, @NonNull Variant variant, int difficulty, boolean solved, long elapsedMs, int hintsUsed) throws SqlException {
 		this.stats.record(connection, userId, size.n(), variant.name(), difficulty, solved, elapsedMs, hintsUsed);
 	}
 	
@@ -142,32 +136,23 @@ public final class StatsService {
 		LocalDate today = LocalDate.ofInstant(this.clock.instant(), this.config.timezone());
 		
 		return this.database.transaction(connection -> {
-			int folded;
 			try {
 				Database.advisoryTransactionLock(connection.getConnection(), AdvisoryLocks.DAILY_ROLLOVER);
-				
-				folded = 0;
-				String sql = """
-					SELECT user_id, difficulty, outcome, elapsed_ms, hints_used
-					  FROM daily_results
-					 WHERE date < ? AND verified
-					""";
-				try (PreparedStatement statement = connection.getConnection().prepareStatement(sql)) {
-					statement.setObject(1, today);
-					try (ResultSet result = statement.executeQuery()) {
-						while (result.next()) {
-							boolean solved = "SOLVED".equals(result.getString("outcome"));
-							this.stats.record(connection, result.getObject("user_id", UUID.class),
-								this.config.dailySize().n(), this.config.dailyVariant().name(),
-								result.getInt("difficulty"), solved, result.getLong("elapsed_ms"),
-								result.getInt("hints_used"));
-							folded++;
-						}
-					}
-				}
 			} catch (SQLException e) {
-				throw new SqlException("Failed to run stats rollover", e);
+				throw new SqlException("Failed to take the daily-rollover lock", e);
 			}
+			
+			List<SqlRow5<UUID, Integer, DailyOutcome, Long, Integer>> unfolded = connection.from(DAILY_RESULTS)
+				.select(RESULT_USER_ID, RESULT_DIFFICULTY, RESULT_OUTCOME, RESULT_ELAPSED_MS, RESULT_HINTS_USED)
+				.where(Sql.lessThan(RESULT_DATE, today))
+				.where(Sql.equalTo(RESULT_VERIFIED, true))
+				.fetch();
+			
+			for (SqlRow5<UUID, Integer, DailyOutcome, Long, Integer> row : unfolded) {
+				this.stats.record(connection, row.first(), this.config.dailySize().n(), this.config.dailyVariant().name(),
+					row.second(), row.third() == DailyOutcome.SOLVED, row.fourth(), row.fifth());
+			}
+			int folded = unfolded.size();
 			
 			// Prune only after the fold, and in the same transaction, so a crash between the two cannot
 			// lose results (spec 8.6).
@@ -190,8 +175,7 @@ public final class StatsService {
 	 * @param streak current daily streak
 	 * @param lastSeenAt ISO-8601 last authentication, or null
 	 */
-	public record PlayerSummary(@NonNull UUID id, @NonNull String displayName, @NonNull String role, int streak,
-	                            @Nullable String lastSeenAt) {}
+	public record PlayerSummary(@NonNull UUID id, @NonNull String displayName, @NonNull String role, int streak, @Nullable String lastSeenAt) {}
 	
 	/**
 	 * One uploaded aggregate from a client's local history.
@@ -206,8 +190,7 @@ public final class StatsService {
 	 * @param totalTimeMs summed solve time
 	 * @param hintsUsed hints consumed
 	 */
-	public record SyncEntry(int size, @NonNull String variant, int difficulty, int gamesPlayed, int solved, int failed,
-	                        @Nullable Long bestTimeMs, long totalTimeMs, int hintsUsed) {
+	public record SyncEntry(int size, @NonNull String variant, int difficulty, int gamesPlayed, int solved, int failed, @Nullable Long bestTimeMs, long totalTimeMs, int hintsUsed) {
 		
 		void validate() {
 			try {

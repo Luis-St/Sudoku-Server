@@ -45,8 +45,7 @@ public final class ClientIp {
 	 * @param peer the socket peer address, used when no header is usable
 	 * @param trustProxy whether the headers may be believed at all
 	 */
-	static @NonNull String resolve(@Nullable String realIp, @Nullable String forwardedFor, @NonNull String peer,
-	                               boolean trustProxy) {
+	static @NonNull String resolve(@Nullable String realIp, @Nullable String forwardedFor, @NonNull String peer, boolean trustProxy) {
 		if (!trustProxy) {
 			return peer;
 		}
@@ -71,6 +70,7 @@ public final class ClientIp {
 		if (value == null) {
 			return null;
 		}
+		
 		String trimmed = value.trim();
 		return trimmed.isEmpty() ? null : trimmed;
 	}

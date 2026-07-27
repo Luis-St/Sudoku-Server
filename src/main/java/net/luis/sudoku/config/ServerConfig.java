@@ -87,8 +87,7 @@ public record ServerConfig(
 		try {
 			return GridSize.ofEdgeLength(edgeLength);
 		} catch (IllegalArgumentException e) {
-			throw new ConfigException(EnvKeys.DAILY_SIZE + " must be a supported grid edge length (4, 6, 9, 12, 16), got: "
-				+ edgeLength, e);
+			throw new ConfigException(EnvKeys.DAILY_SIZE + " must be a supported grid edge length (4, 6, 9, 12, 16), got: " + edgeLength, e);
 		}
 	}
 	

@@ -5,6 +5,7 @@ import com.zaxxer.hikari.HikariDataSource;
 import net.luis.sudoku.config.DatabaseConfig;
 import net.luis.utils.io.database.SqlDatabase;
 import net.luis.utils.io.database.dialect.SqlDialects;
+import net.luis.utils.io.database.exception.database.SqlConnectionException;
 import org.jspecify.annotations.NonNull;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -46,11 +47,10 @@ public final class DataSourceFactory {
 	 */
 	public static @NonNull SqlDatabase createDatabase(@NonNull DatabaseConfig config) {
 		HikariDataSource dataSource = create(config);
+		
 		try {
-			return SqlDatabase.builder(dataSource, SqlDialects.POSTGRESQL)
-				.autoCloseDataSource(true)
-				.build();
-		} catch (net.luis.utils.io.database.exception.database.SqlConnectionException e) {
+			return SqlDatabase.builder(dataSource, SqlDialects.POSTGRESQL).autoCloseDataSource(true).build();
+		} catch (SqlConnectionException e) {
 			dataSource.close();
 			throw new DatabaseException("Failed to open the database on " + config.safeUrl(), e);
 		}
@@ -75,6 +75,7 @@ public final class DataSourceFactory {
 			dataSource.close();
 			throw e;
 		}
+		
 		log.info("Connected to database {} (pool size {})", config.safeUrl(), config.poolSize());
 		return dataSource;
 	}
@@ -92,13 +93,16 @@ public final class DataSourceFactory {
 			} catch (SQLException e) {
 				last = e;
 			}
+			
 			log.warn("Database {} not reachable yet, retrying in {}s", config.safeUrl(), backoff.toSeconds());
+			
 			try {
 				Thread.sleep(backoff);
 			} catch (InterruptedException e) {
 				Thread.currentThread().interrupt();
 				throw new DatabaseException("Interrupted while waiting for the database", e);
 			}
+			
 			backoff = min(backoff.multipliedBy(2), MAX_BACKOFF);
 		}
 		throw new DatabaseException("Database " + config.safeUrl() + " did not become reachable within " + MAX_WAIT, last);

@@ -41,6 +41,7 @@ public record DailyResultRequest(
 	
 	public @NonNull LocalDate parseDate() {
 		String value = Requests.require(this.date, "date");
+		
 		try {
 			return LocalDate.parse(value);
 		} catch (DateTimeParseException e) {

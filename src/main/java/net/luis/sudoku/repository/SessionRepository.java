@@ -38,6 +38,7 @@ public final class SessionRepository {
 		if (previous != null) {
 			this.deleteByUser(transaction, session.userId());
 		}
+		
 		transaction.from(SESSIONS).insert(session).execute();
 		return previous;
 	}

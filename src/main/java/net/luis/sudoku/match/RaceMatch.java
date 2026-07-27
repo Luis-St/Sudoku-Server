@@ -26,8 +26,7 @@ public final class RaceMatch extends LiveMatch {
 	private final Map<UUID, Board> boards = new LinkedHashMap<>();
 	private final int holes;
 	
-	public RaceMatch(@NonNull Match match, @NonNull GeneratedPuzzle puzzle, @NonNull MatchConfig config,
-	                 @NonNull MatchCallbacks callbacks) {
+	public RaceMatch(@NonNull Match match, @NonNull GeneratedPuzzle puzzle, @NonNull MatchConfig config, @NonNull MatchCallbacks callbacks) {
 		super(match, puzzle, config, callbacks);
 		
 		int empty = 0;
@@ -48,8 +47,7 @@ public final class RaceMatch extends LiveMatch {
 			// NOTE is private to the sender and never authoritative (spec 10.5); nothing to do server-side
 			// in race, where boards are independent anyway.
 			case NOTE, PRESENCE, HELLO -> {}
-			default -> this.sendTo(userId, MessageEnvelope.of(MessageType.ERROR,
-				Map.of("error", "UNSUPPORTED", "message", type + " is not valid in a race")));
+			default -> this.sendTo(userId, MessageEnvelope.of(MessageType.ERROR, Map.of("error", "UNSUPPORTED", "message", type + " is not valid in a race")));
 		}
 	}
 	
@@ -83,8 +81,7 @@ public final class RaceMatch extends LiveMatch {
 		Integer cell = MatchPayloads.cell(payload, this.size());
 		Integer digit = MatchPayloads.digit(payload, this.size());
 		if (cell == null || digit == null) {
-			this.sendTo(userId, MessageEnvelope.of(MessageType.ERROR,
-				Map.of("error", "BAD_REQUEST", "message", "cell and digit must be valid for this grid")));
+			this.sendTo(userId, MessageEnvelope.of(MessageType.ERROR, Map.of("error", "BAD_REQUEST", "message", "cell and digit must be valid for this grid")));
 			return;
 		}
 		if (this.puzzle.puzzle().cell(cell).isGiven() || board.filled.get(cell)) {
@@ -156,8 +153,7 @@ public final class RaceMatch extends LiveMatch {
 		Board own = this.boards.get(forUser);
 		
 		Map<String, Object> progress = new LinkedHashMap<>();
-		this.boards.forEach((userId, board) ->
-			progress.put(userId.toString(), this.holes == 0 ? 100 : board.correct * 100 / this.holes));
+		this.boards.forEach((userId, board) -> progress.put(userId.toString(), this.holes == 0 ? 100 : board.correct * 100 / this.holes));
 		
 		Map<String, Object> payload = new HashMap<>();
 		payload.put("matchId", this.id().toString());

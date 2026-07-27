@@ -3,11 +3,7 @@ package net.luis.sudoku.support;
 import net.luis.sudoku.domain.KeyAlgorithm;
 import org.jspecify.annotations.NonNull;
 
-import java.security.GeneralSecurityException;
-import java.security.KeyPair;
-import java.security.KeyPairGenerator;
-import java.security.SecureRandom;
-import java.security.Signature;
+import java.security.*;
 import java.security.spec.ECGenParameterSpec;
 
 /**
@@ -18,15 +14,15 @@ import java.security.spec.ECGenParameterSpec;
  * (server-spec 5).
  */
 public final class TestKeys {
-
+	
 	private final KeyAlgorithm algorithm;
 	private final KeyPair keyPair;
-
+	
 	private TestKeys(@NonNull KeyAlgorithm algorithm, @NonNull KeyPair keyPair) {
 		this.algorithm = algorithm;
 		this.keyPair = keyPair;
 	}
-
+	
 	/**
 	 * Generates a fresh keypair. Seeded deterministically per {@code label} so a failing test reproduces
 	 * with the same key, which matters when the failure is inside signature verification.
@@ -35,7 +31,7 @@ public final class TestKeys {
 		try {
 			SecureRandom random = SecureRandom.getInstance("SHA1PRNG");
 			random.setSeed(label.getBytes(java.nio.charset.StandardCharsets.UTF_8));
-
+			
 			KeyPairGenerator generator;
 			if (algorithm == KeyAlgorithm.ED25519) {
 				generator = KeyPairGenerator.getInstance("Ed25519");
@@ -49,26 +45,26 @@ public final class TestKeys {
 			throw new IllegalStateException("Failed to generate a " + algorithm + " keypair", e);
 		}
 	}
-
+	
 	public static @NonNull TestKeys ed25519(@NonNull String label) {
 		return generate(KeyAlgorithm.ED25519, label);
 	}
-
+	
 	public static @NonNull TestKeys ecdsa(@NonNull String label) {
 		return generate(KeyAlgorithm.ECDSA_P256, label);
 	}
-
+	
 	public @NonNull KeyAlgorithm algorithm() {
 		return this.algorithm;
 	}
-
+	
 	/**
 	 * @return the X.509-encoded public key, exactly as a client would send it
 	 */
 	public byte @NonNull [] publicKey() {
 		return this.keyPair.getPublic().getEncoded();
 	}
-
+	
 	public byte @NonNull [] sign(byte @NonNull [] message) {
 		try {
 			Signature signature = Signature.getInstance(this.algorithm.signatureAlgorithm());

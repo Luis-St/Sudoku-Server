@@ -80,8 +80,7 @@ public class AuthHandler {
 		this.rateLimiter.check(RateLimiter.Bucket.AUTH_VERIFY, ClientIp.of(ctx, this.trustProxy));
 		
 		VerifyRequest request = ctx.bodyAsClass(VerifyRequest.class);
-		ChallengeService.Authenticated authenticated =
-			this.challenges.verify(request.decodeNonce(), request.decodeSignature());
+		ChallengeService.Authenticated authenticated = this.challenges.verify(request.decodeNonce(), request.decodeSignature());
 		
 		ctx.json(SessionResponse.of(authenticated.session(), authenticated.user()));
 	}

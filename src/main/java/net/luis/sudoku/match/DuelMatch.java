@@ -65,8 +65,7 @@ public final class DuelMatch extends LiveMatch {
 			case BACKGROUNDED -> this.onBackgrounded(userId);
 			// Notes are private and never broadcast, even though the pen layer is shared (spec 10.5).
 			case NOTE, PRESENCE, HELLO -> {}
-			default -> this.sendTo(userId, MessageEnvelope.of(MessageType.ERROR,
-				Map.of("error", "UNSUPPORTED", "message", type + " is not valid in a duel")));
+			default -> this.sendTo(userId, MessageEnvelope.of(MessageType.ERROR, Map.of("error", "UNSUPPORTED", "message", type + " is not valid in a duel")));
 		}
 	}
 	
@@ -122,8 +121,7 @@ public final class DuelMatch extends LiveMatch {
 		long maxBankMs = this.duel.maxBank() * 1000L;
 		for (Map.Entry<UUID, Player> entry : this.players.entrySet()) {
 			if (!entry.getKey().equals(this.controller)) {
-				entry.getValue().bankMs = Math.min(maxBankMs,
-					entry.getValue().bankMs + (long) (elapsed * this.duel.regenRatio()));
+				entry.getValue().bankMs = Math.min(maxBankMs, entry.getValue().bankMs + (long) (elapsed * this.duel.regenRatio()));
 			}
 		}
 		
@@ -189,16 +187,14 @@ public final class DuelMatch extends LiveMatch {
 		}
 		if (!userId.equals(this.controller)) {
 			// Spec 11.2: an entry from the non-controlling player is rejected outright.
-			this.sendTo(userId, MessageEnvelope.of(MessageType.ERROR,
-				Map.of("error", "NOT_YOUR_TURN", "message", "You do not have the board")));
+			this.sendTo(userId, MessageEnvelope.of(MessageType.ERROR, Map.of("error", "NOT_YOUR_TURN", "message", "You do not have the board")));
 			return;
 		}
 		
 		Integer cell = MatchPayloads.cell(payload, this.size());
 		Integer digit = MatchPayloads.digit(payload, this.size());
 		if (cell == null || digit == null) {
-			this.sendTo(userId, MessageEnvelope.of(MessageType.ERROR,
-				Map.of("error", "BAD_REQUEST", "message", "cell and digit must be valid for this grid")));
+			this.sendTo(userId, MessageEnvelope.of(MessageType.ERROR, Map.of("error", "BAD_REQUEST", "message", "cell and digit must be valid for this grid")));
 			return;
 		}
 		if (this.puzzle.puzzle().cell(cell).isGiven() || this.filled.get(cell)) {

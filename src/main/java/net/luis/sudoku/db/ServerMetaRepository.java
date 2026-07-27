@@ -1,12 +1,17 @@
 package net.luis.sudoku.db;
 
-import net.luis.utils.io.database.exception.SqlException;
+import net.luis.sudoku.db.schema.Schema;
+import net.luis.utils.io.database.Sql;
+import net.luis.utils.io.database.SqlConnectionSource;
+import net.luis.utils.io.database.query.crud.SqlInsertQuery;
 import org.jspecify.annotations.NonNull;
 import org.jspecify.annotations.Nullable;
 
 import java.security.SecureRandom;
-import java.sql.*;
 import java.util.HexFormat;
+import java.util.List;
+
+import static net.luis.sudoku.db.schema.Schema.*;
 
 /**
  * Key/value access to {@code server_meta}, and the home of the {@code server_id} bootstrap.
@@ -24,36 +29,15 @@ public final class ServerMetaRepository {
 		this.database = database;
 	}
 	
-	private static @Nullable String read(@NonNull Connection connection, @NonNull String key) throws SQLException {
-		try (PreparedStatement statement = connection.prepareStatement("SELECT value FROM server_meta WHERE key = ?")) {
-			statement.setString(1, key);
-			try (ResultSet result = statement.executeQuery()) {
-				return result.next() ? result.getString(1) : null;
-			}
-		}
-	}
-	
 	public @Nullable String find(@NonNull String key) {
-		return this.database.read(transaction -> {
-			try {
-				return read(transaction.getConnection(), key);
-			} catch (SQLException e) {
-				throw new SqlException("Failed to read server_meta", e);
-			}
-		});
+		return this.database.read(transaction -> transaction.from(SERVER_META).select(META_VALUE).where(Sql.equalTo(META_KEY, key)).fetchOneOrNull());
 	}
 	
+	/**
+	 * Whole-row upsert: the only other column, {@code value}, always moves to the given value.
+	 */
 	public void put(@NonNull String key, @NonNull String value) {
-		String sql = "INSERT INTO server_meta (key, value) VALUES (?, ?) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value";
-		this.database.execute(transaction -> {
-			try (PreparedStatement statement = transaction.getConnection().prepareStatement(sql)) {
-				statement.setString(1, key);
-				statement.setString(2, value);
-				statement.executeUpdate();
-			} catch (SQLException e) {
-				throw new SqlException("Failed to write server_meta", e);
-			}
-		});
+		this.database.execute(transaction -> SqlInsertQuery.upsert(SERVER_META, transaction.getDialect(), SqlConnectionSource.fixed(transaction.getConnection()), transaction.getQueryTimeout(), resultSet -> null, List.of(new Schema.ServerMetaRow(key, value)), META_KEY).execute());
 	}
 	
 	/**
@@ -76,16 +60,7 @@ public final class ServerMetaRepository {
 		new SecureRandom().nextBytes(random);
 		String generated = HexFormat.of().formatHex(random);
 		
-		String sql = "INSERT INTO server_meta (key, value) VALUES (?, ?) ON CONFLICT (key) DO NOTHING";
-		this.database.execute(transaction -> {
-			try (PreparedStatement statement = transaction.getConnection().prepareStatement(sql)) {
-				statement.setString(1, SERVER_ID_KEY);
-				statement.setString(2, generated);
-				statement.executeUpdate();
-			} catch (SQLException e) {
-				throw new SqlException("Failed to bootstrap server id", e);
-			}
-		});
+		this.database.execute(transaction -> transaction.from(SERVER_META).insert(new Schema.ServerMetaRow(SERVER_ID_KEY, generated), META_KEY).execute());
 		
 		String stored = this.find(SERVER_ID_KEY);
 		if (stored == null) {

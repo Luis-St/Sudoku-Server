@@ -17,7 +17,6 @@ import org.jspecify.annotations.NonNull;
 public record LeaderboardEntryResponse(@NonNull String userId, @NonNull String displayName, long elapsedMs, int attempts) {
 	
 	public static @NonNull LeaderboardEntryResponse of(@NonNull Entry entry) {
-		return new LeaderboardEntryResponse(entry.userId().toString(), entry.displayName(), entry.elapsedMs(),
-			entry.attempts());
+		return new LeaderboardEntryResponse(entry.userId().toString(), entry.displayName(), entry.elapsedMs(), entry.attempts());
 	}
 }

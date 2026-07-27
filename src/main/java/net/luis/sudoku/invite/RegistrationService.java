@@ -42,9 +42,10 @@ public final class RegistrationService {
 	private final SignatureVerifier signatureVerifier;
 	private final Clock clock;
 	
-	public RegistrationService(@NonNull Database database, @NonNull UserRepository users, @NonNull DeviceRepository devices,
-	                           @NonNull InviteRepository invites, @NonNull SessionService sessionService,
-	                           @NonNull SignatureVerifier signatureVerifier, @NonNull Clock clock) {
+	public RegistrationService(
+		@NonNull Database database, @NonNull UserRepository users, @NonNull DeviceRepository devices, @NonNull InviteRepository invites, @NonNull SessionService sessionService,
+		@NonNull SignatureVerifier signatureVerifier, @NonNull Clock clock
+	) {
 		this.database = database;
 		this.users = users;
 		this.devices = devices;
@@ -57,8 +58,7 @@ public final class RegistrationService {
 	public static @NonNull String validateDisplayName(@NonNull String displayName) {
 		String trimmed = displayName.trim();
 		if (trimmed.length() < MIN_DISPLAY_NAME || trimmed.length() > MAX_DISPLAY_NAME) {
-			throw ApiException.badRequest("Display name must be between " + MIN_DISPLAY_NAME + " and "
-				+ MAX_DISPLAY_NAME + " characters");
+			throw ApiException.badRequest("Display name must be between " + MIN_DISPLAY_NAME + " and " + MAX_DISPLAY_NAME + " characters");
 		}
 		// Control characters would corrupt logs and render unpredictably in the client's player list.
 		if (trimmed.chars().anyMatch(Character::isISOControl)) {
@@ -101,8 +101,7 @@ public final class RegistrationService {
 	 *   {@code ADMIN_EXISTS} if a bootstrap claim arrives after an admin exists; {@code NAME_TAKEN} or
 	 *   {@code KEY_TAKEN} on a collision
 	 */
-	public @NonNull Registered register(@NonNull String inviteCode, @NonNull String displayName, byte @NonNull [] publicKey,
-	                                    @NonNull KeyAlgorithm algorithm, @NonNull String deviceLabel) {
+	public @NonNull Registered register(@NonNull String inviteCode, @NonNull String displayName, byte @NonNull [] publicKey, @NonNull KeyAlgorithm algorithm, @NonNull String deviceLabel) {
 		String code = CodeGenerator.normalize(inviteCode);
 		String name = validateDisplayName(displayName);
 		String label = validateDeviceLabel(deviceLabel);
@@ -165,6 +164,5 @@ public final class RegistrationService {
 	 * @param session the issued session
 	 * @param displaced any session this replaced, which is normally null during registration
 	 */
-	public record Registered(@NonNull User user, @NonNull Device device, @NonNull Session session,
-	                         @Nullable Session displaced) {}
+	public record Registered(@NonNull User user, @NonNull Device device, @NonNull Session session, @Nullable Session displaced) {}
 }

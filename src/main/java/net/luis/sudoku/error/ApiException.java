@@ -37,8 +37,6 @@ public class ApiException extends RuntimeException {
 		return new ApiException(ErrorCode.UNAUTHORIZED, message);
 	}
 	
-	// Shorthands for the codes thrown from more than one place.
-	
 	public static @NonNull ApiException forbidden(@NonNull String message) {
 		return new ApiException(ErrorCode.FORBIDDEN, message);
 	}

@@ -21,8 +21,7 @@ public class RegisterHandler {
 	private final RateLimiter rateLimiter;
 	private final boolean trustProxy;
 	
-	public RegisterHandler(@NonNull RegistrationService registrations, @NonNull RateLimiter rateLimiter,
-	                       boolean trustProxy) {
+	public RegisterHandler(@NonNull RegistrationService registrations, @NonNull RateLimiter rateLimiter, boolean trustProxy) {
 		this.registrations = registrations;
 		this.rateLimiter = rateLimiter;
 		this.trustProxy = trustProxy;

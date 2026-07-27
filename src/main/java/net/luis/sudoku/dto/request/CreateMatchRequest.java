@@ -44,6 +44,7 @@ public record CreateMatchRequest(@Nullable String mode, @Nullable Config config,
 			if (this.size == null) {
 				throw ApiException.badRequest("Missing required field: config.size");
 			}
+			
 			try {
 				return GridSize.ofEdgeLength(this.size);
 			} catch (IllegalArgumentException e) {
@@ -53,6 +54,7 @@ public record CreateMatchRequest(@Nullable String mode, @Nullable Config config,
 		
 		public @NonNull Variant requireVariant() {
 			String value = Requests.require(this.variant, "config.variant");
+			
 			try {
 				return Variant.valueOf(value.trim().toUpperCase());
 			} catch (IllegalArgumentException e) {

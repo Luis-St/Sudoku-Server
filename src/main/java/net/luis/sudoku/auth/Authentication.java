@@ -43,6 +43,7 @@ public final class Authentication {
 				return token;
 			}
 		}
+		
 		String query = ctx.queryParam(TOKEN_QUERY_PARAM);
 		return query == null || query.isBlank() ? null : query;
 	}

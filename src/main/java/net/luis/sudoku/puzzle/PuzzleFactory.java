@@ -37,8 +37,7 @@ public final class PuzzleFactory {
 	 * @throws ApiException {@code LISA_NOT_ALLOWED} if Lisa is requested, or {@code BAD_REQUEST} if the
 	 *   variant is unsupported at that size
 	 */
-	public static @NonNull PuzzleKey key(@NonNull GridSize size, @NonNull Variant variant,
-	                                     @NonNull Difficulty difficulty, long seed) {
+	public static @NonNull PuzzleKey key(@NonNull GridSize size, @NonNull Variant variant, @NonNull Difficulty difficulty, long seed) {
 		requireMultiplayerSafe(difficulty);
 		if (!variant.isSupportedAt(size)) {
 			throw ApiException.badRequest(variant + " is not supported at " + size.n() + "x" + size.n());

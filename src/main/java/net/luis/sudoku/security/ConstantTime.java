@@ -4,6 +4,8 @@ import org.jspecify.annotations.Nullable;
 
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
+import java.util.Arrays;
+import java.util.Objects;
 
 /**
  * Constant-time comparison for codes and tokens (server-spec 12).
@@ -17,14 +19,14 @@ public final class ConstantTime {
 	
 	public static boolean equals(@Nullable String a, @Nullable String b) {
 		if (a == null || b == null) {
-			return a == b;
+			return Objects.equals(a, b);
 		}
 		return MessageDigest.isEqual(a.getBytes(StandardCharsets.UTF_8), b.getBytes(StandardCharsets.UTF_8));
 	}
 	
 	public static boolean equals(byte @Nullable [] a, byte @Nullable [] b) {
 		if (a == null || b == null) {
-			return a == b;
+			return Arrays.equals(a, b);
 		}
 		return MessageDigest.isEqual(a, b);
 	}

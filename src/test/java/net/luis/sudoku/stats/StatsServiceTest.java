@@ -1,39 +1,20 @@
 package net.luis.sudoku.stats;
 
-import net.luis.sudoku.auth.SessionCloser;
-import net.luis.sudoku.auth.SessionService;
-import net.luis.sudoku.auth.SignatureVerifier;
-import net.luis.sudoku.config.Env;
-import net.luis.sudoku.config.EnvKeys;
-import net.luis.sudoku.config.ServerConfig;
-import net.luis.sudoku.domain.DailyOutcome;
-import net.luis.sudoku.domain.Principal;
-import net.luis.sudoku.domain.StatsEntry;
+import net.luis.sudoku.auth.*;
+import net.luis.sudoku.config.*;
+import net.luis.sudoku.domain.*;
 import net.luis.sudoku.error.ApiException;
 import net.luis.sudoku.invite.RegistrationService;
 import net.luis.sudoku.permission.Role;
-import net.luis.sudoku.repository.DailyLeaderboardRepository;
-import net.luis.sudoku.repository.DailyResultRepository;
-import net.luis.sudoku.repository.DeviceRepository;
-import net.luis.sudoku.repository.InviteRepository;
-import net.luis.sudoku.repository.SessionRepository;
-import net.luis.sudoku.repository.StatsRepository;
-import net.luis.sudoku.repository.StreakRepository;
-import net.luis.sudoku.repository.UserRepository;
+import net.luis.sudoku.repository.*;
 import net.luis.sudoku.security.CodeGenerator;
 import net.luis.sudoku.support.PostgresTest;
 import net.luis.sudoku.support.TestKeys;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
-import java.time.Clock;
-import java.time.Instant;
-import java.time.LocalDate;
-import java.time.ZoneId;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.UUID;
+import java.time.*;
+import java.util.*;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -42,13 +23,13 @@ import static org.junit.jupiter.api.Assertions.*;
  * Test class for {@link StatsService}, covering server-spec 9 and the rollover in 8.6.
  */
 class StatsServiceTest extends PostgresTest {
-
+	
 	private static final String BOOTSTRAP = "BOOTSTRAP1";
 	private static final ZoneId ZONE = ZoneId.of("Europe/Berlin");
 	private static final Instant NOW = Instant.parse("2026-07-25T10:00:00Z");
-
+	
 	private final AtomicReference<Instant> now = new AtomicReference<>(NOW);
-
+	
 	private StatsRepository statsRepository;
 	private DailyResultRepository dailyResults;
 	private DailyLeaderboardRepository leaderboard;
@@ -56,7 +37,12 @@ class StatsServiceTest extends PostgresTest {
 	private RegistrationService registrations;
 	private StatsService stats;
 	private ServerConfig config;
-
+	
+	private static StatsService.SyncEntry entry(int size, String variant, int difficulty, int played, int solved,
+	                                            int failed, Long best, long total, int hints) {
+		return new StatsService.SyncEntry(size, variant, difficulty, played, solved, failed, best, total, hints);
+	}
+	
 	@BeforeEach
 	void createServices() {
 		this.now.set(NOW);
@@ -65,18 +51,18 @@ class StatsServiceTest extends PostgresTest {
 			public ZoneId getZone() {
 				return ZONE;
 			}
-
+			
 			@Override
 			public Clock withZone(ZoneId zone) {
 				return this;
 			}
-
+			
 			@Override
 			public Instant instant() {
 				return StatsServiceTest.this.now.get();
 			}
 		};
-
+		
 		Map<String, String> env = new HashMap<>();
 		env.put(EnvKeys.DB_URL, "jdbc:postgresql://db:5432/sudoku");
 		env.put(EnvKeys.DB_USER, "sudoku");
@@ -84,7 +70,7 @@ class StatsServiceTest extends PostgresTest {
 		env.put(EnvKeys.BOOTSTRAP_INVITE, BOOTSTRAP);
 		env.put(EnvKeys.TIMEZONE, ZONE.getId());
 		this.config = ServerConfig.from(Env.of(env));
-
+		
 		this.statsRepository = new StatsRepository();
 		this.dailyResults = new DailyResultRepository();
 		this.leaderboard = new DailyLeaderboardRepository();
@@ -92,7 +78,7 @@ class StatsServiceTest extends PostgresTest {
 		UserRepository users = new UserRepository();
 		DeviceRepository devices = new DeviceRepository();
 		StreakRepository streaks = new StreakRepository();
-
+		
 		SessionService sessionService = new SessionService(database, new SessionRepository(), users, devices,
 			new CodeGenerator(), SessionCloser.NONE);
 		this.registrations = new RegistrationService(database, users, devices, this.invites, sessionService,
@@ -101,7 +87,7 @@ class StatsServiceTest extends PostgresTest {
 			this.leaderboard, this.config, clock);
 		this.registrations.ensureBootstrapInvite(BOOTSTRAP);
 	}
-
+	
 	private Principal player(String name) {
 		String code = BOOTSTRAP;
 		if (!name.equals("Owner")) {
@@ -114,37 +100,32 @@ class StatsServiceTest extends PostgresTest {
 			this.registrations.register(code, name, keys.publicKey(), keys.algorithm(), "Phone");
 		return new Principal(registered.user(), registered.device(), registered.session());
 	}
-
-	private static StatsService.SyncEntry entry(int size, String variant, int difficulty, int played, int solved,
-												int failed, Long best, long total, int hints) {
-		return new StatsService.SyncEntry(size, variant, difficulty, played, solved, failed, best, total, hints);
-	}
-
+	
 	// --- player browsing ---
-
+	
 	@Test
 	void players_listsEveryNonRevokedPlayer() {
 		this.player("Owner");
 		this.player("Second");
-
+		
 		List<StatsService.PlayerSummary> players = this.stats.players();
-
+		
 		assertAll(
 			() -> assertEquals(2, players.size()),
 			() -> assertTrue(players.stream().anyMatch(p -> p.displayName().equals("Owner"))),
 			() -> assertTrue(players.stream().anyMatch(p -> p.displayName().equals("Second")))
 		);
 	}
-
+	
 	@Test
 	void players_excludesKickedPlayers() {
 		this.player("Owner");
 		Principal kicked = this.player("Gone");
 		database.execute(connection -> new UserRepository().revoke(connection, kicked.userId()));
-
+		
 		assertEquals(1, this.stats.players().size());
 	}
-
+	
 	@Test
 	void players_reportsLastSeen() {
 		Principal player = this.player("Owner");
@@ -153,21 +134,21 @@ class StatsServiceTest extends PostgresTest {
 			.filter(p -> p.id().equals(player.userId()))
 			.findFirst()
 			.orElseThrow();
-
+		
 		assertNotNull(summary.lastSeenAt());
 	}
-
+	
 	// --- sync (spec 9) ---
-
+	
 	@Test
 	void sync_mergesLocalHistoryIntoTheAggregates() {
 		Principal player = this.player("Owner");
-
+		
 		this.stats.sync(player, List.of(
 			entry(9, "CLASSIC", 3, 10, 8, 2, 45_000L, 400_000L, 3),
 			entry(16, "CHAOS", 5, 2, 1, 1, 900_000L, 900_000L, 0)
 		));
-
+		
 		List<StatsEntry> merged = this.stats.forUser(player.userId());
 		assertAll(
 			() -> assertEquals(2, merged.size()),
@@ -177,15 +158,15 @@ class StatsServiceTest extends PostgresTest {
 			() -> assertEquals(50_000L, merged.getFirst().averageTimeMs())
 		);
 	}
-
+	
 	@Test
 	void sync_ontoExistingAggregates_addsRatherThanReplaces() {
 		Principal player = this.player("Owner");
 		database.execute(connection ->
 			this.statsRepository.record(connection, player.userId(), 9, "CLASSIC", 3, true, 30_000, 1));
-
+		
 		this.stats.sync(player, List.of(entry(9, "CLASSIC", 3, 4, 3, 1, 45_000L, 150_000L, 2)));
-
+		
 		StatsEntry merged = this.stats.forUser(player.userId()).getFirst();
 		assertAll(
 			() -> assertEquals(5, merged.gamesPlayed(), "1 seeded + 4 uploaded"),
@@ -195,75 +176,75 @@ class StatsServiceTest extends PostgresTest {
 			() -> assertEquals(3, merged.hintsUsed())
 		);
 	}
-
+	
 	@Test
 	void sync_keepsTheExistingBestWhenTheUploadHasNone() {
 		Principal player = this.player("Owner");
 		database.execute(connection ->
 			this.statsRepository.record(connection, player.userId(), 9, "CLASSIC", 3, true, 30_000, 0));
-
+		
 		this.stats.sync(player, List.of(entry(9, "CLASSIC", 3, 1, 0, 1, null, 0, 0)));
-
+		
 		assertEquals(30_000L, this.stats.forUser(player.userId()).getFirst().bestTimeMs());
 	}
-
+	
 	@Test
 	void sync_acceptsLisaAsASinglePlayerTier() {
 		// Lisa never reaches multiplayer, but it is a real tier in a player's own history.
 		Principal player = this.player("Owner");
-
+		
 		assertDoesNotThrow(() -> this.stats.sync(player, List.of(entry(9, "CLASSIC", 6, 1, 1, 0, 1000L, 1000L, 0))));
 		assertEquals(6, this.stats.forUser(player.userId()).getFirst().difficulty());
 	}
-
+	
 	@Test
 	void sync_anUnsupportedSize_isRejected() {
 		Principal player = this.player("Owner");
 		assertThrows(ApiException.class,
 			() -> this.stats.sync(player, List.of(entry(7, "CLASSIC", 3, 1, 1, 0, 1000L, 1000L, 0))));
 	}
-
+	
 	@Test
 	void sync_anUnknownVariant_isRejected() {
 		Principal player = this.player("Owner");
 		assertThrows(ApiException.class,
 			() -> this.stats.sync(player, List.of(entry(9, "SPIRAL", 3, 1, 1, 0, 1000L, 1000L, 0))));
 	}
-
+	
 	@Test
 	void sync_negativeCounters_areRejected() {
 		Principal player = this.player("Owner");
 		assertThrows(ApiException.class,
 			() -> this.stats.sync(player, List.of(entry(9, "CLASSIC", 3, -1, 0, 0, null, 0, 0))));
 	}
-
+	
 	@Test
 	void sync_moreOutcomesThanGames_isRejected() {
 		Principal player = this.player("Owner");
 		assertThrows(ApiException.class,
 			() -> this.stats.sync(player, List.of(entry(9, "CLASSIC", 3, 1, 5, 5, null, 0, 0))));
 	}
-
+	
 	@Test
 	void sync_anEmptyUpload_isAccepted() {
 		Principal player = this.player("Owner");
 		assertEquals(0, this.stats.sync(player, List.of()));
 	}
-
+	
 	// --- rollover (spec 8.6) ---
-
+	
 	@Test
 	void runRollover_foldsFinishedDaysIntoStatsAndPrunesThem() {
 		Principal player = this.player("Owner");
 		LocalDate yesterday = LocalDate.ofInstant(NOW, ZONE).minusDays(1);
-
+		
 		database.execute(connection -> {
 			this.dailyResults.insert(connection, player.userId(), yesterday, 3, 1, DailyOutcome.SOLVED, 60_000, 0, 1, true);
 			this.leaderboard.record(connection, player.userId(), yesterday, 3, 60_000, 1, 1);
 		});
-
+		
 		int folded = this.stats.runRollover();
-
+		
 		List<StatsEntry> aggregates = this.stats.forUser(player.userId());
 		// Both source tables must be empty afterwards: they are not retained historically (spec 8.2).
 		List<DailyLeaderboardRepository.Entry> remaining =
@@ -279,7 +260,7 @@ class StatsServiceTest extends PostgresTest {
 				throw new net.luis.utils.io.database.exception.SqlException("Failed to count remaining daily results", e);
 			}
 		});
-
+		
 		assertAll(
 			() -> assertEquals(1, folded),
 			() -> assertEquals(1, aggregates.size()),
@@ -290,62 +271,62 @@ class StatsServiceTest extends PostgresTest {
 			() -> assertEquals(0, remainingResults, "the daily result should have been pruned")
 		);
 	}
-
+	
 	@Test
 	void runRollover_leavesTodayAlone() {
 		Principal player = this.player("Owner");
 		LocalDate today = LocalDate.ofInstant(NOW, ZONE);
 		database.execute(connection ->
 			this.dailyResults.insert(connection, player.userId(), today, 3, 1, DailyOutcome.SOLVED, 60_000, 0, 0, true));
-
+		
 		int folded = this.stats.runRollover();
-
+		
 		assertAll(
 			() -> assertEquals(0, folded, "today is still in progress"),
 			() -> assertTrue(this.stats.forUser(player.userId()).isEmpty())
 		);
 	}
-
+	
 	@Test
 	void runRollover_skipsUnverifiedResults() {
 		Principal player = this.player("Owner");
 		LocalDate yesterday = LocalDate.ofInstant(NOW, ZONE).minusDays(1);
 		database.execute(connection ->
 			this.dailyResults.insert(connection, player.userId(), yesterday, 3, 1, DailyOutcome.SOLVED, 1, 0, 0, false));
-
+		
 		int folded = this.stats.runRollover();
-
+		
 		assertAll(
 			() -> assertEquals(0, folded),
 			() -> assertTrue(this.stats.forUser(player.userId()).isEmpty())
 		);
 	}
-
+	
 	@Test
 	void runRollover_runTwice_doesNotDoubleCount() {
 		Principal player = this.player("Owner");
 		LocalDate yesterday = LocalDate.ofInstant(NOW, ZONE).minusDays(1);
 		database.execute(connection ->
 			this.dailyResults.insert(connection, player.userId(), yesterday, 3, 1, DailyOutcome.SOLVED, 60_000, 0, 0, true));
-
+		
 		this.stats.runRollover();
 		int second = this.stats.runRollover();
-
+		
 		assertAll(
 			() -> assertEquals(0, second, "the rows were pruned by the first pass"),
 			() -> assertEquals(1, this.stats.forUser(player.userId()).getFirst().gamesPlayed())
 		);
 	}
-
+	
 	@Test
 	void runRollover_foldsAFailedDailyAsAFailure() {
 		Principal player = this.player("Owner");
 		LocalDate yesterday = LocalDate.ofInstant(NOW, ZONE).minusDays(1);
 		database.execute(connection ->
 			this.dailyResults.insert(connection, player.userId(), yesterday, 3, 1, DailyOutcome.FAILED, 30_000, 5, 0, true));
-
+		
 		this.stats.runRollover();
-
+		
 		StatsEntry entry = this.stats.forUser(player.userId()).getFirst();
 		assertAll(
 			() -> assertEquals(1, entry.gamesPlayed()),

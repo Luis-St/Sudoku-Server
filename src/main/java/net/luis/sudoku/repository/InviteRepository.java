@@ -32,8 +32,7 @@ public final class InviteRepository {
 		return query.orderBy(INVITE_CREATED_AT.descending()).fetch();
 	}
 	
-	public @NonNull Invite create(@NonNull SqlTransaction transaction, @NonNull String code, @Nullable UUID createdBy,
-	                              @NonNull Role grantsRole, @Nullable Instant expiresAt, @NonNull Instant now) throws SqlException {
+	public @NonNull Invite create(@NonNull SqlTransaction transaction, @NonNull String code, @Nullable UUID createdBy, @NonNull Role grantsRole, @Nullable Instant expiresAt, @NonNull Instant now) throws SqlException {
 		Invite draft = new Invite(code, createdBy, grantsRole, expiresAt, null, null, false, now);
 		return transaction.from(INVITES).insert(draft).returning().getFirst();
 	}
@@ -58,8 +57,7 @@ public final class InviteRepository {
 	 *
 	 * @return true if this caller burned it, false if it was already gone
 	 */
-	public boolean consume(@NonNull SqlTransaction transaction, @NonNull String code, @NonNull UUID deviceId,
-	                       @NonNull Instant now) throws SqlException {
+	public boolean consume(@NonNull SqlTransaction transaction, @NonNull String code, @NonNull UUID deviceId, @NonNull Instant now) throws SqlException {
 		return transaction.from(INVITES).update()
 			.set(INVITE_CONSUMED_BY_DEVICE, deviceId)
 			.set(INVITE_CONSUMED_AT, now)

@@ -32,8 +32,7 @@ public final class DeviceRepository {
 			.orderBy(DEVICE_CREATED_AT.ascending()).fetch();
 	}
 	
-	public @NonNull Device create(@NonNull SqlTransaction transaction, @NonNull UUID userId, byte @NonNull [] publicKey,
-	                              @NonNull KeyAlgorithm algorithm, @NonNull String label, @NonNull Instant now) throws SqlException {
+	public @NonNull Device create(@NonNull SqlTransaction transaction, @NonNull UUID userId, byte @NonNull [] publicKey, @NonNull KeyAlgorithm algorithm, @NonNull String label, @NonNull Instant now) throws SqlException {
 		Device draft = new Device(UUID.randomUUID(), userId, publicKey, algorithm, label, now, null, false);
 		return transaction.from(DEVICES).insert(draft).returning().getFirst();
 	}

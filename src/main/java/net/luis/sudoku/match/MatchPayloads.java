@@ -50,7 +50,6 @@ final class MatchPayloads {
 	static @Nullable Integer integer(@Nullable Object value) {
 		return switch (value) {
 			case Integer i -> i;
-			case Long l -> l.intValue();
 			case Number n -> n.intValue();
 			case String s -> {
 				try {

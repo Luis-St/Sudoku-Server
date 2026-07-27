@@ -48,8 +48,7 @@ public final class PuzzleQueue implements AutoCloseable {
 		this.activePlayerCount = activePlayerCount;
 		// Single-threaded on purpose: generation is CPU-bound and this must never compete with request
 		// threads for cores on a small self-hosted box.
-		this.worker = Executors.newSingleThreadExecutor(runnable ->
-			Thread.ofPlatform().name("puzzle-queue").daemon().unstarted(runnable));
+		this.worker = Executors.newSingleThreadExecutor(runnable -> Thread.ofPlatform().name("puzzle-queue").daemon().unstarted(runnable));
 	}
 	
 	/**
@@ -80,6 +79,7 @@ public final class PuzzleQueue implements AutoCloseable {
 		if (!pending.compareAndSet(0, 1)) {
 			return;
 		}
+		
 		try {
 			this.worker.execute(() -> {
 				try {
@@ -90,7 +90,7 @@ public final class PuzzleQueue implements AutoCloseable {
 					pending.set(0);
 				}
 			});
-		} catch (java.util.concurrent.RejectedExecutionException e) {
+		} catch (RejectedExecutionException e) {
 			// Shutting down; inline generation still serves every caller correctly.
 			pending.set(0);
 		}

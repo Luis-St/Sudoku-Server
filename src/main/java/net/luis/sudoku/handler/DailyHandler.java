@@ -85,8 +85,7 @@ public class DailyHandler {
 		requestBody = @OpenApiRequestBody(content = @OpenApiContent(from = DailyResultRequest.class)),
 		responses = {
 			@OpenApiResponse(status = "200", content = @OpenApiContent(from = DailyResultResponse.class)),
-			@OpenApiResponse(status = "409", description = "DAILY_ALREADY_SOLVED or DAILY_DATE_INVALID",
-				content = @OpenApiContent(from = ErrorResponse.class))
+			@OpenApiResponse(status = "409", description = "DAILY_ALREADY_SOLVED or DAILY_DATE_INVALID", content = @OpenApiContent(from = ErrorResponse.class))
 		}
 	)
 	public void submitResult(@NonNull Context ctx) {

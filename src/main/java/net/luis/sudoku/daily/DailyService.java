@@ -19,6 +19,7 @@ import org.slf4j.LoggerFactory;
 import java.time.*;
 import java.util.List;
 import java.util.UUID;
+import java.util.concurrent.atomic.AtomicReference;
 
 /**
  * The daily puzzle: key issuance, difficulty preference, result verification and streaks
@@ -43,13 +44,12 @@ public final class DailyService {
 	private final Clock clock;
 	
 	/** Last date the rollover job ran, so it is attempted once per date rather than per request. */
-	private final java.util.concurrent.atomic.AtomicReference<LocalDate> lastRollover =
-		new java.util.concurrent.atomic.AtomicReference<>();
+	private final AtomicReference<LocalDate> lastRollover = new AtomicReference<>();
 	
-	public DailyService(@NonNull Database database, @NonNull ServerConfig config, @NonNull String serverId,
-	                    @NonNull PreferenceRepository preferences, @NonNull DailyResultRepository results,
-	                    @NonNull StreakRepository streaks, @NonNull DailyLeaderboardRepository leaderboard,
-	                    @NonNull CurrencyService currency, @NonNull StatsService stats, @NonNull Clock clock) {
+	public DailyService(
+		@NonNull Database database, @NonNull ServerConfig config, @NonNull String serverId, @NonNull PreferenceRepository preferences, @NonNull DailyResultRepository results,
+		@NonNull StreakRepository streaks, @NonNull DailyLeaderboardRepository leaderboard, @NonNull CurrencyService currency, @NonNull StatsService stats, @NonNull Clock clock
+	) {
 		this.database = database;
 		this.config = config;
 		this.serverId = serverId;
@@ -137,9 +137,7 @@ public final class DailyService {
 			}
 			
 			int attemptNo = this.results.nextAttemptNo(connection, actor.userId(), submit.date(), submit.difficulty());
-			DailyResult stored = this.results.insert(connection, actor.userId(), submit.date(), submit.difficulty(),
-				attemptNo, submit.outcome(), submit.elapsedMs(), submit.mistakes(), submit.hintsUsed(),
-				verification.verified());
+			DailyResult stored = this.results.insert(connection, actor.userId(), submit.date(), submit.difficulty(), attemptNo, submit.outcome(), submit.elapsedMs(), submit.mistakes(), submit.hintsUsed(), verification.verified());
 			
 			Streak streak = this.streaks.findForUpdate(connection, actor.userId());
 			int awarded = 0;
@@ -148,8 +146,7 @@ public final class DailyService {
 				// late still lands on the right day (spec 8.4).
 				streak = streak.completedOn(submit.date());
 				this.streaks.save(connection, streak);
-				this.leaderboard.record(connection, actor.userId(), submit.date(), submit.difficulty(),
-					submit.elapsedMs(), attemptNo, submit.hintsUsed());
+				this.leaderboard.record(connection, actor.userId(), submit.date(), submit.difficulty(), submit.elapsedMs(), attemptNo, submit.hintsUsed());
 				// Currency is minted only on a verified success, in the same transaction as the result
 				// (spec 9a.1). The daily bonus sits outside the normal-game cap.
 				awarded = this.currency.awardForDaily(connection, actor.userId(), difficulty, submit.date());
@@ -174,6 +171,7 @@ public final class DailyService {
 		if (!this.lastRollover.compareAndSet(this.lastRollover.get(), date)) {
 			return;
 		}
+		
 		try {
 			this.stats.runRollover();
 		} catch (RuntimeException e) {
@@ -243,6 +241,5 @@ public final class DailyService {
 	 * @param streak the streak after this submission
 	 * @param currencyAwarded Rhubarb minted by this submission, 0 unless it was a verified first solve
 	 */
-	public record Submission(boolean accepted, boolean verified, @NonNull DailyResult result, @NonNull Streak streak,
-	                         int currencyAwarded) {}
+	public record Submission(boolean accepted, boolean verified, @NonNull DailyResult result, @NonNull Streak streak, int currencyAwarded) {}
 }

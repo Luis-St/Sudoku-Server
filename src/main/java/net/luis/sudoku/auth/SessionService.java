@@ -36,8 +36,7 @@ public final class SessionService {
 	private final CodeGenerator codes;
 	private final SessionCloser closer;
 	
-	public SessionService(@NonNull Database database, @NonNull SessionRepository sessions, @NonNull UserRepository users,
-	                      @NonNull DeviceRepository devices, @NonNull CodeGenerator codes, @NonNull SessionCloser closer) {
+	public SessionService(@NonNull Database database, @NonNull SessionRepository sessions, @NonNull UserRepository users, @NonNull DeviceRepository devices, @NonNull CodeGenerator codes, @NonNull SessionCloser closer) {
 		this.database = database;
 		this.sessions = sessions;
 		this.users = users;
@@ -55,8 +54,7 @@ public final class SessionService {
 	 *
 	 * @return the newly issued session, and the displaced one if there was any
 	 */
-	public @NonNull Issued issue(@NonNull SqlTransaction connection, @NonNull UUID userId, @NonNull UUID deviceId,
-	                             @NonNull Instant now) throws SqlException {
+	public @NonNull Issued issue(@NonNull SqlTransaction connection, @NonNull UUID userId, @NonNull UUID deviceId, @NonNull Instant now) throws SqlException {
 		Session session = new Session(this.codes.sessionToken(), userId, deviceId, now, now.plus(SESSION_TTL));
 		Session displaced = this.sessions.replace(connection, session);
 		this.devices.touch(connection, deviceId, now);
@@ -91,7 +89,6 @@ public final class SessionService {
 			User user = this.users.find(connection, session.userId());
 			Device device = this.devices.find(connection, session.deviceId());
 			if (user == null || device == null) {
-				// The session outlived what it points at; treat it as gone rather than 500.
 				throw new ApiException(ErrorCode.UNAUTHORIZED, "Session no longer resolves to a device");
 			}
 			if (user.revoked()) {

@@ -11,9 +11,7 @@ import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.testcontainers.containers.PostgreSQLContainer;
 
-import java.sql.Connection;
-import java.sql.SQLException;
-import java.sql.Statement;
+import java.sql.*;
 
 /**
  * Base class for tests that need a real Postgres.
@@ -26,13 +24,13 @@ import java.sql.Statement;
  * schema re-created between tests. Starting a container per class would dominate the runtime.
  */
 public abstract class PostgresTest {
-
+	
 	private static PostgreSQLContainer<?> container;
 	private static HikariDataSource dataSource;
 	private static SqlDatabase sqlDatabase;
-
+	
 	protected static Database database;
-
+	
 	@BeforeAll
 	static void startDatabase() throws net.luis.utils.io.database.exception.database.SqlConnectionException {
 		if (container != null) {
@@ -43,7 +41,7 @@ public abstract class PostgresTest {
 			.withUsername("sudoku")
 			.withPassword("test");
 		container.start();
-
+		
 		HikariConfig config = new HikariConfig();
 		config.setJdbcUrl(container.getJdbcUrl());
 		config.setUsername(container.getUsername());
@@ -52,11 +50,19 @@ public abstract class PostgresTest {
 		// pool exhaustion rather than on the lock actually under test.
 		config.setMaximumPoolSize(8);
 		dataSource = new HikariDataSource(config);
-
+		
 		sqlDatabase = SqlDatabase.builder(dataSource, SqlDialects.POSTGRESQL).build();
 		database = new Database(sqlDatabase);
 	}
-
+	
+	protected static @NonNull SqlDatabase sqlDatabase() {
+		return sqlDatabase;
+	}
+	
+	protected static @NonNull HikariDataSource dataSource() {
+		return dataSource;
+	}
+	
 	/**
 	 * Drops and re-applies the schema, so each test starts from an empty database.
 	 * <p>
@@ -70,13 +76,5 @@ public abstract class PostgresTest {
 			statement.execute("CREATE SCHEMA public");
 		}
 		Migrations.migrate(database);
-	}
-
-	protected static @NonNull SqlDatabase sqlDatabase() {
-		return sqlDatabase;
-	}
-
-	protected static @NonNull HikariDataSource dataSource() {
-		return dataSource;
 	}
 }

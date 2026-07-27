@@ -34,8 +34,7 @@ public final class PreferenceRepository {
 	 * Every non-key column always moves to the given value, which matches what the query builder's
 	 * generic upsert expresses.
 	 */
-	public void setDailyDifficulty(@NonNull SqlTransaction transaction, @NonNull UUID userId, int difficulty,
-	                               @NonNull Instant now) throws SqlException {
+	public void setDailyDifficulty(@NonNull SqlTransaction transaction, @NonNull UUID userId, int difficulty, @NonNull Instant now) throws SqlException {
 		Schema.PreferenceRow draft = new Schema.PreferenceRow(userId, difficulty, now);
 		SqlInsertQuery.upsert(DAILY_PREFERENCES, transaction.getDialect(), SqlConnectionSource.fixed(transaction.getConnection()),
 			transaction.getQueryTimeout(), resultSet -> null, List.of(draft), PREFERENCE_USER_ID).execute();
@@ -45,8 +44,7 @@ public final class PreferenceRepository {
 	 * Returns the difficulty already locked in for this date, or null if the day has not started for
 	 * this player yet.
 	 */
-	public @Nullable Integer assignedDifficulty(@NonNull SqlTransaction transaction, @NonNull UUID userId,
-	                                            @NonNull LocalDate date) throws SqlException {
+	public @Nullable Integer assignedDifficulty(@NonNull SqlTransaction transaction, @NonNull UUID userId, @NonNull LocalDate date) throws SqlException {
 		Schema.AssignmentRow row = transaction.from(DAILY_ASSIGNMENTS).select()
 			.where(Sql.equalTo(ASSIGNMENT_USER_ID, userId)).where(Sql.equalTo(ASSIGNMENT_DATE, date)).fetchOneOrNull();
 		return row == null ? null : row.difficulty();
@@ -61,8 +59,7 @@ public final class PreferenceRepository {
 	 *
 	 * @return the difficulty now in force for that date, which may be an earlier one
 	 */
-	public int assign(@NonNull SqlTransaction transaction, @NonNull UUID userId, @NonNull LocalDate date, int difficulty)
-		throws SqlException {
+	public int assign(@NonNull SqlTransaction transaction, @NonNull UUID userId, @NonNull LocalDate date, int difficulty) throws SqlException {
 		Schema.AssignmentRow draft = new Schema.AssignmentRow(userId, date, difficulty);
 		transaction.from(DAILY_ASSIGNMENTS).insert(draft, ASSIGNMENT_USER_ID, ASSIGNMENT_DATE).execute();
 		Integer assigned = this.assignedDifficulty(transaction, userId, date);

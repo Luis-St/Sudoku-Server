@@ -9,6 +9,7 @@ import net.luis.sudoku.domain.Principal;
 import net.luis.sudoku.dto.request.CreateMatchRequest;
 import net.luis.sudoku.dto.request.JoinMatchRequest;
 import net.luis.sudoku.dto.response.*;
+import net.luis.sudoku.error.ApiException;
 import net.luis.sudoku.match.MatchService;
 import org.jspecify.annotations.NonNull;
 
@@ -117,7 +118,7 @@ public class MatchHandler {
 		
 		Match match = this.matches.get(matchId);
 		if (!this.matches.isParticipant(matchId, actor.userId())) {
-			throw net.luis.sudoku.error.ApiException.forbidden("Only a participant may invite others");
+			throw ApiException.forbidden("Only a participant may invite others");
 		}
 		ctx.json(new CreatedMatchResponse(match.id().toString(), match.inviteToken()));
 	}

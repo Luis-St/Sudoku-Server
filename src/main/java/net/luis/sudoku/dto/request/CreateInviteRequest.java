@@ -18,6 +18,7 @@ public record CreateInviteRequest(@Nullable String expiresAt) {
 		if (this.expiresAt == null || this.expiresAt.isBlank()) {
 			return null;
 		}
+		
 		try {
 			return Instant.parse(this.expiresAt);
 		} catch (DateTimeParseException e) {

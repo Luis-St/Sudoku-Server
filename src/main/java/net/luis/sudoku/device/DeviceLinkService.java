@@ -42,10 +42,10 @@ public final class DeviceLinkService {
 	private final CodeGenerator codes;
 	private final Clock clock;
 	
-	public DeviceLinkService(@NonNull Database database, @NonNull LinkCodeRepository linkCodes,
-	                         @NonNull DeviceRepository devices, @NonNull UserRepository users,
-	                         @NonNull SessionService sessionService, @NonNull SignatureVerifier signatureVerifier,
-	                         @NonNull CodeGenerator codes, @NonNull Clock clock) {
+	public DeviceLinkService(
+		@NonNull Database database, @NonNull LinkCodeRepository linkCodes, @NonNull DeviceRepository devices, @NonNull UserRepository users,
+		@NonNull SessionService sessionService, @NonNull SignatureVerifier signatureVerifier, @NonNull CodeGenerator codes, @NonNull Clock clock
+	) {
 		this.database = database;
 		this.linkCodes = linkCodes;
 		this.devices = devices;
@@ -83,8 +83,7 @@ public final class DeviceLinkService {
 	 * @throws ApiException {@code LINK_CODE_INVALID} if the code is unknown, expired or spent;
 	 *   {@code KEY_TAKEN} if the key is already registered
 	 */
-	public @NonNull Linked link(@NonNull String rawCode, byte @NonNull [] publicKey, @NonNull KeyAlgorithm algorithm,
-	                            @NonNull String deviceLabel) {
+	public @NonNull Linked link(@NonNull String rawCode, byte @NonNull [] publicKey, @NonNull KeyAlgorithm algorithm, @NonNull String deviceLabel) {
 		String code = CodeGenerator.normalize(rawCode);
 		String label = RegistrationService.validateDeviceLabel(deviceLabel);
 		RegistrationService.validatePublicKey(publicKey);
@@ -135,6 +134,5 @@ public final class DeviceLinkService {
 	 * @param session the session issued to it
 	 * @param displaced any session this replaced
 	 */
-	public record Linked(@NonNull User user, @NonNull Device device, @NonNull Session session,
-	                     @Nullable Session displaced) {}
+	public record Linked(@NonNull User user, @NonNull Device device, @NonNull Session session, @Nullable Session displaced) {}
 }

@@ -35,8 +35,7 @@ public final class SolveVerifier {
 	 * @param elapsedMs wall time claimed
 	 * @return the verification outcome, with a reason when it fails
 	 */
-	public static @NonNull Verification verify(@NonNull GeneratedPuzzle puzzle, @NonNull List<Entry> solveOrder,
-	                                           long elapsedMs) {
+	public static @NonNull Verification verify(@NonNull GeneratedPuzzle puzzle, @NonNull List<Entry> solveOrder, long elapsedMs) {
 		Puzzle grid = puzzle.puzzle();
 		GridSize size = grid.size();
 		int cellCount = size.cellCount();

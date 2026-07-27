@@ -18,8 +18,7 @@ import static net.luis.sudoku.db.schema.Schema.*;
  */
 public final class DailyResultRepository {
 	
-	private static final String COLUMNS =
-		"id, user_id, date, difficulty, attempt_no, outcome, elapsed_ms, mistakes, hints_used, verified, created_at";
+	private static final String COLUMNS = "id, user_id, date, difficulty, attempt_no, outcome, elapsed_ms, mistakes, hints_used, verified, created_at";
 	
 	static @NonNull DailyResult map(@NonNull ResultSet result) throws SQLException {
 		return new DailyResult(
@@ -66,9 +65,9 @@ public final class DailyResultRepository {
 	 * so this stays raw SQL and relies on {@code RETURNING} to read the generated id (and DB-defaulted
 	 * {@code created_at}) back, same carve-out as {@code currency_ledger}.
 	 */
-	public @NonNull DailyResult insert(@NonNull SqlTransaction transaction, @NonNull UUID userId, @NonNull LocalDate date,
-	                                   int difficulty, int attemptNo, @NonNull DailyOutcome outcome, long elapsedMs,
-	                                   int mistakes, int hintsUsed, boolean verified) throws SqlException {
+	public @NonNull DailyResult insert(
+		@NonNull SqlTransaction transaction, @NonNull UUID userId, @NonNull LocalDate date, int difficulty, int attemptNo, @NonNull DailyOutcome outcome, long elapsedMs, int mistakes, int hintsUsed, boolean verified
+	) throws SqlException {
 		String sql = """
 			INSERT INTO daily_results (user_id, date, difficulty, attempt_no, outcome, elapsed_ms, mistakes, hints_used, verified)
 			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)

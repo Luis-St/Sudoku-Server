@@ -36,10 +36,10 @@ public final class ChallengeService {
 	private final CodeGenerator codes;
 	private final Clock clock;
 	
-	public ChallengeService(@NonNull Database database, @NonNull AuthChallengeRepository challenges,
-	                        @NonNull DeviceRepository devices, @NonNull UserRepository users,
-	                        @NonNull SessionService sessionService, @NonNull SignatureVerifier verifier,
-	                        @NonNull CodeGenerator codes, @NonNull Clock clock) {
+	public ChallengeService(
+		@NonNull Database database, @NonNull AuthChallengeRepository challenges, @NonNull DeviceRepository devices, @NonNull UserRepository users, @NonNull SessionService sessionService,
+		@NonNull SignatureVerifier verifier, @NonNull CodeGenerator codes, @NonNull Clock clock
+	) {
 		this.database = database;
 		this.challenges = challenges;
 		this.devices = devices;
@@ -124,8 +124,7 @@ public final class ChallengeService {
 		});
 		
 		this.sessionService.announceSuperseded(authenticated.displaced());
-		log.info("User {} ({}) authenticated on device {}", authenticated.user().displayName(),
-			authenticated.user().id(), authenticated.device().id());
+		log.info("User {} ({}) authenticated on device {}", authenticated.user().displayName(), authenticated.user().id(), authenticated.device().id());
 		return authenticated;
 	}
 	
@@ -151,6 +150,5 @@ public final class ChallengeService {
 	 * @param session the freshly issued session
 	 * @param displaced any session this replaced
 	 */
-	public record Authenticated(@NonNull User user, @NonNull Device device, @NonNull Session session,
-	                            @Nullable Session displaced) {}
+	public record Authenticated(@NonNull User user, @NonNull Device device, @NonNull Session session, @Nullable Session displaced) {}
 }

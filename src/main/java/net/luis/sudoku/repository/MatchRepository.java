@@ -25,12 +25,11 @@ import static net.luis.sudoku.db.schema.Schema.*;
  */
 public final class MatchRepository {
 	
-	public @NonNull Match create(@NonNull SqlTransaction transaction, @NonNull MatchMode mode, @NonNull UUID creatorId,
-	                             @NonNull GridSize size, @NonNull Variant variant, @NonNull Difficulty difficulty,
-	                             long seed, boolean livesEnabled, int stake, @NonNull String inviteToken,
-	                             @NonNull Instant now) throws SqlException {
-		Match draft = new Match(UUID.randomUUID(), mode, MatchState.WAITING, creatorId, size, variant, difficulty, seed,
-			livesEnabled, stake, inviteToken, null, null, now, null, null);
+	public @NonNull Match create(
+		@NonNull SqlTransaction transaction, @NonNull MatchMode mode, @NonNull UUID creatorId, @NonNull GridSize size, @NonNull Variant variant, @NonNull Difficulty difficulty,
+		long seed, boolean livesEnabled, int stake, @NonNull String inviteToken, @NonNull Instant now
+	) throws SqlException {
+		Match draft = new Match(UUID.randomUUID(), mode, MatchState.WAITING, creatorId, size, variant, difficulty, seed, livesEnabled, stake, inviteToken, null, null, now, null, null);
 		return transaction.from(MATCHES).insert(draft).returning().getFirst();
 	}
 	
@@ -58,8 +57,7 @@ public final class MatchRepository {
 			.where(Sql.equalTo(MATCH_ID, id)).execute();
 	}
 	
-	public void markEnded(@NonNull SqlTransaction transaction, @NonNull UUID id, @NonNull MatchState state,
-	                      @Nullable UUID winnerId, @NonNull EndReason reason, @NonNull Instant at) throws SqlException {
+	public void markEnded(@NonNull SqlTransaction transaction, @NonNull UUID id, @NonNull MatchState state, @Nullable UUID winnerId, @NonNull EndReason reason, @NonNull Instant at) throws SqlException {
 		transaction.from(MATCHES).update()
 			.set(MATCH_STATE, state)
 			.set(MATCH_WINNER_ID, winnerId)
@@ -69,14 +67,12 @@ public final class MatchRepository {
 			.execute();
 	}
 	
-	public void addParticipant(@NonNull SqlTransaction transaction, @NonNull UUID matchId, @NonNull UUID userId,
-	                           @NonNull Instant joinedAt) throws SqlException {
+	public void addParticipant(@NonNull SqlTransaction transaction, @NonNull UUID matchId, @NonNull UUID userId, @NonNull Instant joinedAt) throws SqlException {
 		Schema.ParticipantRow draft = new Schema.ParticipantRow(matchId, userId, joinedAt, null);
 		transaction.from(MATCH_PARTICIPANTS).insert(draft, PARTICIPANT_MATCH_ID, PARTICIPANT_USER_ID).execute();
 	}
 	
-	public void setResult(@NonNull SqlTransaction transaction, @NonNull UUID matchId, @NonNull UUID userId,
-	                      @NonNull MatchResult result) throws SqlException {
+	public void setResult(@NonNull SqlTransaction transaction, @NonNull UUID matchId, @NonNull UUID userId, @NonNull MatchResult result) throws SqlException {
 		transaction.from(MATCH_PARTICIPANTS).update().set(PARTICIPANT_RESULT, result)
 			.where(Sql.equalTo(PARTICIPANT_MATCH_ID, matchId)).where(Sql.equalTo(PARTICIPANT_USER_ID, userId)).execute();
 	}

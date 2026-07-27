@@ -28,8 +28,7 @@ public final class StreakRepository {
 	 * {@link Streak#completedOn} already folds in the previous state before this is called.
 	 */
 	public void save(@NonNull SqlTransaction transaction, @NonNull Streak streak) throws SqlException {
-		SqlInsertQuery.upsert(STREAKS, transaction.getDialect(), SqlConnectionSource.fixed(transaction.getConnection()),
-			transaction.getQueryTimeout(), resultSet -> null, List.of(streak), STREAK_USER_ID).execute();
+		SqlInsertQuery.upsert(STREAKS, transaction.getDialect(), SqlConnectionSource.fixed(transaction.getConnection()), transaction.getQueryTimeout(), resultSet -> null, List.of(streak), STREAK_USER_ID).execute();
 	}
 	
 	/**

@@ -27,8 +27,7 @@ public final class CoopMatch extends LiveMatch {
 	
 	private int sharedLivesLeft = SHARED_LIVES;
 	
-	public CoopMatch(@NonNull Match match, @NonNull GeneratedPuzzle puzzle, @NonNull MatchConfig config,
-	                 @NonNull MatchCallbacks callbacks) {
+	public CoopMatch(@NonNull Match match, @NonNull GeneratedPuzzle puzzle, @NonNull MatchConfig config, @NonNull MatchCallbacks callbacks) {
 		super(match, puzzle, config, callbacks);
 		this.filled = new BitSet(puzzle.puzzle().size().cellCount());
 		
@@ -49,8 +48,7 @@ public final class CoopMatch extends LiveMatch {
 			case PRESENCE -> this.onPresence(userId, payload);
 			case RESIGN -> this.onResign(userId);
 			case NOTE, HELLO -> {}
-			default -> this.sendTo(userId, MessageEnvelope.of(MessageType.ERROR,
-				Map.of("error", "UNSUPPORTED", "message", type + " is not valid in a co-op match")));
+			default -> this.sendTo(userId, MessageEnvelope.of(MessageType.ERROR, Map.of("error", "UNSUPPORTED", "message", type + " is not valid in a co-op match")));
 		}
 	}
 	
@@ -74,8 +72,7 @@ public final class CoopMatch extends LiveMatch {
 		Integer cell = MatchPayloads.cell(payload, this.size());
 		Integer digit = MatchPayloads.digit(payload, this.size());
 		if (cell == null || digit == null) {
-			this.sendTo(userId, MessageEnvelope.of(MessageType.ERROR,
-				Map.of("error", "BAD_REQUEST", "message", "cell and digit must be valid for this grid")));
+			this.sendTo(userId, MessageEnvelope.of(MessageType.ERROR, Map.of("error", "BAD_REQUEST", "message", "cell and digit must be valid for this grid")));
 			return;
 		}
 		if (this.puzzle.puzzle().cell(cell).isGiven()) {

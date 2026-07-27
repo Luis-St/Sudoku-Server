@@ -29,8 +29,7 @@ public final class InviteService {
 	private final CodeGenerator codes;
 	private final Clock clock;
 	
-	public InviteService(@NonNull Database database, @NonNull InviteRepository invites, @NonNull CodeGenerator codes,
-	                     @NonNull Clock clock) {
+	public InviteService(@NonNull Database database, @NonNull InviteRepository invites, @NonNull CodeGenerator codes, @NonNull Clock clock) {
 		this.database = database;
 		this.invites = invites;
 		this.codes = codes;
@@ -52,8 +51,7 @@ public final class InviteService {
 		
 		String code = CodeGenerator.normalize(this.codes.inviteCode());
 		Instant now = this.clock.instant();
-		Invite invite = this.database.transaction(connection ->
-			this.invites.create(connection, code, actor.userId(), Role.NEW, expiresAt, now));
+		Invite invite = this.database.transaction(connection -> this.invites.create(connection, code, actor.userId(), Role.NEW, expiresAt, now));
 		
 		log.info("Admin action: {} ({}) created invite {}", actor.user().displayName(), actor.userId(), code);
 		return invite;
@@ -64,8 +62,7 @@ public final class InviteService {
 	 */
 	public @NonNull List<Invite> list(@NonNull Principal actor) {
 		actor.require(Permission.CAN_INVITE);
-		return this.database.read(connection ->
-			this.invites.findByCreator(connection, actor.user().isAdmin() ? null : actor.userId()));
+		return this.database.read(connection -> this.invites.findByCreator(connection, actor.user().isAdmin() ? null : actor.userId()));
 	}
 	
 	/**

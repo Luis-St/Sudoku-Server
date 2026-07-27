@@ -215,14 +215,19 @@ so the first entry is client-supplied — reading it, the common mistake, is a f
 `repository/` are built on the LUtils query builder (`transaction.from(TABLE).select()/.insert()/
 .update()/.delete()`), each taking the `SqlTransaction` itself rather than a bare `Connection`.
 
-**DDL is deliberately plain SQL**, not LUtils' `SqlMigrationRunner`. The runner snapshots the schema it
-creates by reading it back through `SqlJdbcTypeMapper`; on LUtils 10.4.0-beta.2, PostgreSQL's `UUID`
-columns came back as JDBC `OTHER` (1111), a code the mapper had no case for, so the runner rolled the
-whole migration back. **Fixed in LUtils 10.4.0-beta.3** (adds a `Types.OTHER`-aware
-`resolveNativeType`), but DDL stays plain SQL anyway: the migrations here were never rewritten onto
-`SqlMigrationRunner`, and there is no remaining reason to — see `LUtils/BUG_REPORT_io_database_postgres.md`
-for the original two-bug report (this one and `SqlTypes.BYTES` rendering `VARBINARY`, which PostgreSQL
-lacks — use `LARGE_BYTES`).
+**The migration *scripts* are deliberately plain SQL**, not LUtils' `SqlMigrationRunner` — they're
+arbitrary hand-written multi-statement `.sql` files, and there's no builder API for "run this opaque
+text," so that part is raw JDBC regardless of anything else. (Separately: the runner used to snapshot the
+schema it creates by reading it back through `SqlJdbcTypeMapper`, and on LUtils 10.4.0-beta.2 PostgreSQL's
+`UUID` columns came back as JDBC `OTHER` (1111), a code the mapper had no case for, rolling the whole
+migration back. **Fixed in LUtils 10.4.0-beta.3** — see `LUtils/BUG_REPORT_io_database_postgres.md` for
+that original two-bug report (this one and `SqlTypes.BYTES` rendering `VARBINARY`) — but since the scripts
+were never `SqlMigrationRunner` migrations to begin with, there was nothing to switch over even once it
+was fixed.) The `server_meta` bookkeeping *around* the scripts — creating the table, reading/writing the
+applied version — has no such excuse and is now LUtils `SqlTableProvider`/query builder (`db/Migrations`),
+same as `db/ServerMetaRepository`'s key/value reads and upserts. What's left raw is exactly the two things
+a portable query builder cannot express: the scripts themselves, and the Postgres-specific
+`pg_advisory_lock`/`unlock` pair (session-scoped; `AdvisoryLocks` covers the transaction-scoped ones).
 
 **`Schema.UUID_TYPE` must be the literal `SqlTypes.UUID` singleton, not a lookalike.** An earlier
 revision built a `FIXED_STRING(36)`-based copy to dodge the beta.2 introspection bug above. That broke
@@ -234,19 +239,21 @@ uuid but expression is of type character"). Since DDL never goes through `SqlMig
 introspection bug this was working around never applied here — using `SqlTypes.UUID` directly is correct
 and was the fix.
 
-**Six tables have no independent domain concept** (auth_challenges, link_codes, daily_results' peers
-streaks/stats already had one, daily_leaderboard, currency_ledger, daily_preferences,
-daily_assignments) and needed a persistence-only row record — the query builder's entity row mapper
-matches column values positionally against a constructor, so even a table you only ever touch through
-`update()`/`delete()` needs a real type with the right arity, not `Void`. Those live as nested records on
-`Schema` (`Schema.LinkCodeRow`, `.AuthChallengeRow`, `.LeaderboardRow`, `.LedgerRow`, `.PreferenceRow`,
-`.AssignmentRow`, `.ParticipantRow`). Every enum/value-object column (`Role`, `KeyAlgorithm`, `MatchMode`,
+**Seven tables have no independent domain concept** (server_meta, auth_challenges, link_codes,
+daily_results' peers streaks/stats already had one, daily_leaderboard, currency_ledger,
+daily_preferences, daily_assignments) and needed a persistence-only row record — the query builder's
+entity row mapper matches column values positionally against a constructor, so even a table you only
+ever touch through `update()`/`delete()`/`createIfNotExists()` needs a real type with the right arity,
+not `Void`. Those live as nested records on `Schema` (`Schema.ServerMetaRow`, `.LinkCodeRow`,
+`.AuthChallengeRow`, `.LeaderboardRow`, `.LedgerRow`, `.PreferenceRow`, `.AssignmentRow`,
+`.ParticipantRow`). Every enum/value-object column (`Role`, `KeyAlgorithm`, `MatchMode`,
 `MatchState`, `Variant`, `GridSize`, `Difficulty`, `EndReason`, `MatchResult`, `DailyOutcome`,
 `LedgerReason`) is `SqlType.map()`-wrapped for the same reason: the auto row mapper needs the column's
 Java type to match the domain constructor's parameter type exactly, not the raw string/int a hand-rolled
 getter used to compute.
 
-**A handful of writes stay raw SQL — a narrow, documented carve-out, not a partial conversion:**
+**A handful of writes stay raw SQL — a narrow, documented carve-out, not a partial conversion. All
+three underlying gaps were filed upstream as `LUtils/BUG_REPORT_io_database_query_builder_gaps.md`:**
 - `StatsRepository.record/merge`, `DailyLeaderboardRepository.record` — incremental upserts
   (`col = col + EXCLUDED.col`, a null-aware `least()`, and a composite conflict key). The query builder's
   generic `upsert()` only supports a single conflict column and always assigns `col = EXCLUDED.col`

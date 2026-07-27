@@ -45,9 +45,10 @@ public final class MatchService {
 	private final CodeGenerator codes;
 	private final Clock clock;
 	
-	public MatchService(@NonNull Database database, @NonNull MatchRepository matches, @NonNull MatchRegistry registry,
-	                    @NonNull PuzzleQueue puzzles, @NonNull CurrencyService currency, @NonNull ServerConfig config,
-	                    @NonNull CodeGenerator codes, @NonNull Clock clock) {
+	public MatchService(
+		@NonNull Database database, @NonNull MatchRepository matches, @NonNull MatchRegistry registry, @NonNull PuzzleQueue puzzles, @NonNull CurrencyService currency,
+		@NonNull ServerConfig config, @NonNull CodeGenerator codes, @NonNull Clock clock
+	) {
 		this.database = database;
 		this.matches = matches;
 		this.registry = registry;
@@ -63,9 +64,7 @@ public final class MatchService {
 	 *
 	 * @throws ApiException {@code LISA_NOT_ALLOWED} if Lisa is requested (spec 10.1)
 	 */
-	public @NonNull Created create(@NonNull Principal actor, @NonNull MatchMode mode, @NonNull GridSize size,
-	                               @NonNull Variant variant, @NonNull Difficulty difficulty, boolean livesEnabled,
-	                               int stake) {
+	public @NonNull Created create(@NonNull Principal actor, @NonNull MatchMode mode, @NonNull GridSize size, @NonNull Variant variant, @NonNull Difficulty difficulty, boolean livesEnabled, int stake) {
 		actor.require(Permission.CAN_PLAY);
 		// Lisa carries single-player gameplay modifiers, so it is refused for every mode (spec 10.1).
 		PuzzleFactory.requireMultiplayerSafe(difficulty);
@@ -83,8 +82,7 @@ public final class MatchService {
 		Instant now = this.clock.instant();
 		
 		Match match = this.database.transaction(connection -> {
-			Match created = this.matches.create(connection, mode, actor.userId(), size, variant, difficulty,
-				puzzle.key().seed(), livesEnabled, stake, inviteToken, now);
+			Match created = this.matches.create(connection, mode, actor.userId(), size, variant, difficulty, puzzle.key().seed(), livesEnabled, stake, inviteToken, now);
 			this.matches.addParticipant(connection, created.id(), actor.userId(), now);
 			return created;
 		});
@@ -130,8 +128,7 @@ public final class MatchService {
 				if (match.stake() > 0) {
 					long balance = this.currency.balance(actor.userId());
 					if (balance < match.stake()) {
-						throw new ApiException(ErrorCode.INSUFFICIENT_BALANCE,
-							"You need " + match.stake() + " Rhubarb to join this match");
+						throw new ApiException(ErrorCode.INSUFFICIENT_BALANCE, "You need " + match.stake() + " Rhubarb to join this match");
 					}
 				}
 				this.matches.addParticipant(connection, matchId, actor.userId(), now);
@@ -196,8 +193,7 @@ public final class MatchService {
 		return this.database.transaction(connection -> {
 			List<Match> unfinished = this.matches.findUnfinished(connection);
 			for (Match match : unfinished) {
-				this.matches.markEnded(connection, match.id(), MatchState.ABANDONED, null, EndReason.SERVER_RESTART,
-					this.clock.instant());
+				this.matches.markEnded(connection, match.id(), MatchState.ABANDONED, null, EndReason.SERVER_RESTART, this.clock.instant());
 				// Only a RUNNING match ever escrowed anything, so only those need refunding.
 				if (match.state() == MatchState.RUNNING && match.stake() > 0) {
 					for (MatchParticipant participant : this.matches.participants(connection, match.id())) {
@@ -237,18 +233,15 @@ public final class MatchService {
 		}
 		
 		@Override
-		public void onEnd(@NonNull Match match, @NonNull MatchState state, @Nullable UUID winnerId,
-		                  @NonNull EndReason reason, @NonNull List<UUID> participants) {
+		public void onEnd(@NonNull Match match, @NonNull MatchState state, @Nullable UUID winnerId, @NonNull EndReason reason, @NonNull List<UUID> participants) {
 			MatchService.this.database.execute(connection -> {
-				MatchService.this.matches.markEnded(connection, match.id(), state, winnerId, reason,
-					MatchService.this.clock.instant());
+				MatchService.this.matches.markEnded(connection, match.id(), state, winnerId, reason, MatchService.this.clock.instant());
 				
 				boolean decided = state == MatchState.ENDED && winnerId != null;
 				if (match.stake() > 0) {
 					if (decided) {
 						// A single payout row credits the winner with the whole pot (spec 9a.3).
-						MatchService.this.currency.payout(connection, winnerId, match.stake() * participants.size(),
-							match.id());
+						MatchService.this.currency.payout(connection, winnerId, match.stake() * participants.size(), match.id());
 					} else {
 						for (UUID userId : participants) {
 							MatchService.this.currency.refund(connection, userId, match.stake(), match.id());

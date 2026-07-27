@@ -14,6 +14,7 @@ import org.jspecify.annotations.NonNull;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.sql.SQLException;
 import java.util.List;
 import java.util.UUID;
 
@@ -39,8 +40,7 @@ public final class UserAdminService {
 	private final SessionRepository sessions;
 	private final SessionCloser closer;
 	
-	public UserAdminService(@NonNull Database database, @NonNull UserRepository users, @NonNull DeviceRepository devices,
-	                        @NonNull SessionRepository sessions, @NonNull SessionCloser closer) {
+	public UserAdminService(@NonNull Database database, @NonNull UserRepository users, @NonNull DeviceRepository devices, @NonNull SessionRepository sessions, @NonNull SessionCloser closer) {
 		this.database = database;
 		this.users = users;
 		this.devices = devices;
@@ -51,7 +51,7 @@ public final class UserAdminService {
 	private static void lockAdminInvariant(@NonNull SqlTransaction connection) throws SqlException {
 		try {
 			Database.advisoryTransactionLock(connection.getConnection(), AdvisoryLocks.ADMIN_INVARIANT);
-		} catch (java.sql.SQLException e) {
+		} catch (SQLException e) {
 			throw new SqlException("Failed to take admin-invariant lock", e);
 		}
 	}
@@ -164,8 +164,7 @@ public final class UserAdminService {
 			}
 			
 			User owner = this.users.findForUpdate(connection, device.userId());
-			if (owner != null && owner.isAdmin() && !owner.revoked()
-				&& this.devices.countActiveForUser(connection, owner.id()) <= 1) {
+			if (owner != null && owner.isAdmin() && !owner.revoked() && this.devices.countActiveForUser(connection, owner.id()) <= 1) {
 				// Losing the last key of the last admin locks everyone out of admin actions forever,
 				// so it is refused for the same reason a demotion would be (spec 6.5, 7.1).
 				this.requireAnotherAdminExists(connection, owner.id());
@@ -185,8 +184,7 @@ public final class UserAdminService {
 	
 	private void requireAnotherAdminExists(@NonNull SqlTransaction connection, @NonNull UUID excluding) throws SqlException {
 		if (this.users.countActiveAdmins(connection, excluding) == 0) {
-			throw new ApiException(ErrorCode.LAST_ADMIN,
-				"This would leave the server with no administrator. Promote someone else first.");
+			throw new ApiException(ErrorCode.LAST_ADMIN, "This would leave the server with no administrator. Promote someone else first.");
 		}
 	}
 }
