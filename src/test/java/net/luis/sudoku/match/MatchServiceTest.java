@@ -246,6 +246,84 @@ class MatchServiceTest extends PostgresTest {
 	}
 	
 	@Test
+	void cancel_byTheCreator_abandonsTheMatchAndDropsItFromTheRegistry() {
+		Principal owner = this.player("Owner");
+		MatchService.Created created = this.createRace(owner, 0);
+
+		this.matches.cancel(owner, created.match().id());
+
+		Match stored = this.matches.get(created.match().id());
+		assertAll(
+			() -> assertEquals(MatchState.ABANDONED, stored.state()),
+			() -> assertEquals(EndReason.CANCELLED, stored.endReason()),
+			() -> assertNull(stored.winnerId()),
+			() -> assertNull(this.registry.find(created.match().id()), "the live match is gone too")
+		);
+	}
+
+	@Test
+	void cancel_thenJoin_isRejected() {
+		// The whole point of cancelling: a token that was already shared must stop working.
+		Principal owner = this.player("Owner");
+		Principal guest = this.player("Guest");
+		MatchService.Created created = this.createRace(owner, 0);
+		this.matches.cancel(owner, created.match().id());
+
+		ApiException e = assertThrows(ApiException.class,
+			() -> this.matches.join(guest, created.match().id(), created.inviteToken()));
+		assertEquals(ErrorCode.CONFLICT, e.code());
+	}
+
+	@Test
+	void cancel_bySomebodyElse_isForbidden() {
+		Principal owner = this.player("Owner");
+		Principal guest = this.player("Guest");
+		MatchService.Created created = this.createRace(owner, 0);
+		this.matches.join(guest, created.match().id(), created.inviteToken());
+
+		ApiException e = assertThrows(ApiException.class, () -> this.matches.cancel(guest, created.match().id()));
+
+		assertAll(
+			() -> assertEquals(ErrorCode.FORBIDDEN, e.code(), "a participant is not the creator"),
+			() -> assertEquals(MatchState.WAITING, this.matches.get(created.match().id()).state())
+		);
+	}
+
+	@Test
+	void cancel_aRunningMatch_isRejectedWithConflict() {
+		// Leaving a running match is resigning, which the socket handles and which produces a result.
+		Principal owner = this.player("Owner");
+		MatchService.Created created = this.createRace(owner, 0);
+		database.execute(connection -> this.matchRepository.markRunning(connection, created.match().id(), NOW));
+
+		ApiException e = assertThrows(ApiException.class, () -> this.matches.cancel(owner, created.match().id()));
+
+		assertAll(
+			() -> assertEquals(ErrorCode.CONFLICT, e.code()),
+			() -> assertEquals(409, e.status()),
+			() -> assertEquals(MatchState.RUNNING, this.matches.get(created.match().id()).state())
+		);
+	}
+
+	@Test
+	void cancel_twice_isIdempotent() {
+		// A client that is unsure its cancel landed must not be handed a failure for having succeeded.
+		Principal owner = this.player("Owner");
+		MatchService.Created created = this.createRace(owner, 0);
+		this.matches.cancel(owner, created.match().id());
+
+		assertDoesNotThrow(() -> this.matches.cancel(owner, created.match().id()));
+		assertEquals(EndReason.CANCELLED, this.matches.get(created.match().id()).endReason());
+	}
+
+	@Test
+	void cancel_anUnknownMatch_isNotFound() {
+		Principal owner = this.player("Owner");
+		ApiException e = assertThrows(ApiException.class, () -> this.matches.cancel(owner, UUID.randomUUID()));
+		assertEquals(ErrorCode.NOT_FOUND, e.code());
+	}
+
+	@Test
 	void isParticipant_reflectsMembership() {
 		Principal owner = this.player("Owner");
 		Principal stranger = this.player("Stranger");

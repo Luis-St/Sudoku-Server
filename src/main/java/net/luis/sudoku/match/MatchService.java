@@ -140,6 +140,55 @@ public final class MatchService {
 		return joined;
 	}
 	
+	/**
+	 * Calls off a match nobody has joined yet, at its creator's request.
+	 * <p>
+	 * Only reachable before the match starts, which is what makes it simple: no stake has been escrowed
+	 * (that happens on the {@code RUNNING} transition), and no participant but the creator exists, so
+	 * cancelling is a state change and nothing else. A {@code RUNNING} match is refused - leaving one is
+	 * resigning, which the socket already handles, and answers with a result rather than erasing it.
+	 * <p>
+	 * Pending requests for this match are deliberately <em>not</em> deleted: a request is only ever served
+	 * while its match is joinable ({@code MatchRequestRepository.findPending}), so an {@code ABANDONED}
+	 * match's invitations stop being delivered the moment this commits, and the rows expire on their own.
+	 * <p>
+	 * Idempotent for a match that is already over, so a client retrying a cancel it is unsure landed is not
+	 * handed a failure for having succeeded.
+	 *
+	 * @throws ApiException {@code FORBIDDEN} if the caller did not create it, {@code CONFLICT} if it is
+	 *   already running
+	 */
+	public void cancel(@NonNull Principal actor, @NonNull UUID matchId) {
+		Instant now = this.clock.instant();
+
+		boolean cancelled = this.database.transaction(connection -> {
+			Match match = this.matches.findForUpdate(connection, matchId);
+			if (match == null) {
+				throw ApiException.notFound("No such match: " + matchId);
+			}
+			if (!match.creatorId().equals(actor.userId())) {
+				throw ApiException.forbidden("Only the match's creator may cancel it");
+			}
+			if (match.state().isTerminal()) {
+				return false;
+			}
+			if (match.state() == MatchState.RUNNING) {
+				throw new ApiException(ErrorCode.CONFLICT, "That match has already started");
+			}
+
+			this.matches.markEnded(connection, matchId, MatchState.ABANDONED, null, EndReason.CANCELLED, now);
+			return true;
+		});
+
+		if (cancelled) {
+			// Outside the transaction: shutting the live object down is not something a rollback could undo,
+			// and a match whose row is still WAITING but whose executor is gone would accept a join it could
+			// never run.
+			this.registry.remove(matchId);
+			log.info("Match {} cancelled by its creator {}", matchId, actor.userId());
+		}
+	}
+
 	public @NonNull Match get(@NonNull UUID matchId) {
 		Match match = this.database.read(connection -> this.matches.find(connection, matchId));
 		if (match == null) {

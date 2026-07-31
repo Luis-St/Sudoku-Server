@@ -6,6 +6,7 @@ import net.luis.sudoku.ApiVersion;
 import net.luis.sudoku.auth.Authentication;
 import net.luis.sudoku.domain.Principal;
 import net.luis.sudoku.dto.request.ChangeRoleRequest;
+import net.luis.sudoku.dto.response.AccountResponse;
 import net.luis.sudoku.dto.response.ErrorResponse;
 import net.luis.sudoku.dto.response.UserResponse;
 import net.luis.sudoku.permission.UserAdminService;
@@ -41,6 +42,23 @@ public class UserHandler {
 		ctx.json(users);
 	}
 	
+	@OpenApi(
+		summary = "The caller's own account",
+		description = "Role and email-verification state as they are right now. A client learns its role at sign-in and "
+			+ "has no other way to notice a promotion, and nothing else reports whether the recovery address was ever "
+			+ "verified - both would otherwise stay whatever they were when the session was created.",
+		operationId = "currentAccount",
+		path = ApiVersion.PATH_PREFIX + "/users/me",
+		methods = HttpMethod.GET,
+		tags = "Users",
+		responses = @OpenApiResponse(status = "200", content = @OpenApiContent(from = AccountResponse.class))
+	)
+	public void me(@NonNull Context ctx) {
+		// The principal is re-read from the database on every request, so this is current by construction.
+		Principal actor = this.authentication.require(ctx);
+		ctx.json(AccountResponse.of(actor.user()));
+	}
+
 	@OpenApi(
 		summary = "Change a user's role",
 		description = "Requires CAN_CHANGE_ROLE. Rejected with LAST_ADMIN if it would leave zero administrators.",

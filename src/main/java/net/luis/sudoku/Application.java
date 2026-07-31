@@ -102,6 +102,7 @@ public class Application {
 		
 		// Users and roles
 		javalin.routes.get(ApiVersion.PATH_PREFIX + "/users", userHandler::list);
+		javalin.routes.get(ApiVersion.PATH_PREFIX + "/users/me", userHandler::me);
 		javalin.routes.patch(ApiVersion.PATH_PREFIX + "/users/{id}/role", userHandler::changeRole);
 		javalin.routes.delete(ApiVersion.PATH_PREFIX + "/users/{id}", userHandler::kick);
 		
@@ -143,6 +144,7 @@ public class Application {
 		// Matches
 		javalin.routes.post(ApiVersion.PATH_PREFIX + "/matches", matchHandler::create);
 		javalin.routes.get(ApiVersion.PATH_PREFIX + "/matches/{id}", matchHandler::get);
+		javalin.routes.delete(ApiVersion.PATH_PREFIX + "/matches/{id}", matchHandler::cancel);
 		javalin.routes.post(ApiVersion.PATH_PREFIX + "/matches/{id}/join", matchHandler::join);
 		javalin.routes.post(ApiVersion.PATH_PREFIX + "/matches/{id}/invite", matchHandler::invite);
 		javalin.routes.post(ApiVersion.PATH_PREFIX + "/matches/{id}/request", matchHandler::request);

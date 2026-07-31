@@ -105,6 +105,28 @@ public class MatchHandler {
 	}
 	
 	@OpenApi(
+		summary = "Cancel a match",
+		description = "The creator calls off a match nobody joined - the lobby's cancel button. Refused with CONFLICT "
+			+ "once the match is running, where leaving is resigning rather than cancelling. Idempotent: a match that "
+			+ "has already ended still answers 204.",
+		operationId = "cancelMatch",
+		path = ApiVersion.PATH_PREFIX + "/matches/{id}",
+		methods = HttpMethod.DELETE,
+		tags = "Matches",
+		pathParams = @OpenApiParam(name = "id", description = "Match id"),
+		responses = {
+			@OpenApiResponse(status = "204"),
+			@OpenApiResponse(status = "403", description = "FORBIDDEN", content = @OpenApiContent(from = ErrorResponse.class)),
+			@OpenApiResponse(status = "409", description = "CONFLICT", content = @OpenApiContent(from = ErrorResponse.class))
+		}
+	)
+	public void cancel(@NonNull Context ctx) {
+		Principal actor = this.authentication.require(ctx);
+		this.matches.cancel(actor, Handlers.pathUuid(ctx, "id"));
+		ctx.status(204);
+	}
+
+	@OpenApi(
 		summary = "Invite a player to a match",
 		description = "Returns the invite token to pass on. Only a participant may invite.",
 		operationId = "inviteToMatch",

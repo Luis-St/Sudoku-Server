@@ -665,6 +665,46 @@
             }
           }
         }
+      },
+      "delete" : {
+        "tags" : [ "Matches" ],
+        "summary" : "Cancel a match",
+        "description" : "The creator calls off a match nobody joined - the lobby's cancel button. Refused with CONFLICT once the match is running, where leaving is resigning rather than cancelling. Idempotent: a match that has already ended still answers 204.",
+        "operationId" : "cancelMatch",
+        "parameters" : [ {
+          "name" : "id",
+          "in" : "path",
+          "description" : "Match id",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        } ],
+        "responses" : {
+          "204" : {
+            "description" : "No Content"
+          },
+          "403" : {
+            "description" : "FORBIDDEN",
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409" : {
+            "description" : "CONFLICT",
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
       }
     },
     "/api/v1/matches/{id}/invite" : {
@@ -1030,6 +1070,26 @@
                   "items" : {
                     "$ref" : "#/components/schemas/UserResponse"
                   }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/users/me" : {
+      "get" : {
+        "tags" : [ "Users" ],
+        "summary" : "The caller's own account",
+        "description" : "Role and email-verification state as they are right now. A client learns its role at sign-in and has no other way to notice a promotion, and nothing else reports whether the recovery address was ever verified - both would otherwise stay whatever they were when the session was created.",
+        "operationId" : "currentAccount",
+        "responses" : {
+          "200" : {
+            "description" : "OK",
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/AccountResponse"
                 }
               }
             }
@@ -1680,6 +1740,27 @@
             "type" : "string"
           }
         }
+      },
+      "AccountResponse" : {
+        "type" : "object",
+        "properties" : {
+          "id" : {
+            "type" : "string"
+          },
+          "displayName" : {
+            "type" : "string"
+          },
+          "role" : {
+            "type" : "string"
+          },
+          "email" : {
+            "type" : "string"
+          },
+          "emailVerified" : {
+            "type" : "boolean"
+          }
+        },
+        "required" : [ "emailVerified" ]
       },
       "ChallengeResponse" : {
         "type" : "object",

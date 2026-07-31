@@ -20,5 +20,7 @@ public enum EndReason {
 	/** The duel handover cap was reached; decided on correct cells (spec 11.2). */
 	STALEMATE,
 	/** The server restarted mid-match; stakes are refunded (spec 9a.3). */
-	SERVER_RESTART
+	SERVER_RESTART,
+	/** The creator called the match off before anybody joined it; nothing was ever escrowed. */
+	CANCELLED
 }
