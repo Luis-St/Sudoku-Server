@@ -12,8 +12,8 @@ import org.jspecify.annotations.Nullable;
  * @param role their role
  * @param streak current daily streak
  * @param lastSeenAt ISO-8601 last authentication, or null if never
- * @param online whether they hold a presence socket open right now - "reachable for a match request",
- *   not "authenticated recently", which is what {@code lastSeenAt} already says
+ * @param online whether their presence heartbeat is still fresh - "reachable for a match request right
+ *   now", not "authenticated recently", which is what {@code lastSeenAt} already says
  */
 public record PlayerResponse(@NonNull String id, @NonNull String displayName, @NonNull String role, int streak,
                              @Nullable String lastSeenAt, boolean online) {

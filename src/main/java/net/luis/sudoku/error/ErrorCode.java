@@ -63,7 +63,7 @@ public enum ErrorCode {
 	LISA_NOT_ALLOWED(400),
 	/** Balance is below the match stake. */
 	INSUFFICIENT_BALANCE(409),
-	/** A match request was addressed to a player with no presence socket open. */
+	/** A match request was addressed to a player whose last presence heartbeat has gone stale. */
 	PLAYER_OFFLINE(409),
 	
 	// Daily

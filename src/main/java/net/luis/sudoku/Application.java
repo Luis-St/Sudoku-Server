@@ -86,7 +86,7 @@ public class Application {
 		var statsHandler = new StatsHandler(services.authentication(), services.statsService(), services.presenceService());
 		var currencyHandler = new CurrencyHandler(services.authentication(), services.currencyService());
 		var matchHandler = new MatchHandler(services.authentication(), services.matchService(), services.presenceService());
-		var presenceSocketHandler = new PresenceSocketHandler(services.sessionService(), services.presenceService(), services.clock());
+		var presenceHandler = new PresenceHandler(services.authentication(), services.presenceService(), services.config().presence());
 		var matchSocketHandler = new MatchSocketHandler(services.authentication(), services.sessionService(), services.matchService(), services.rateLimiter(), services.clock());
 		
 		// Health
@@ -147,8 +147,12 @@ public class Application {
 		javalin.routes.post(ApiVersion.PATH_PREFIX + "/matches/{id}/invite", matchHandler::invite);
 		javalin.routes.post(ApiVersion.PATH_PREFIX + "/matches/{id}/request", matchHandler::request);
 		javalin.routes.ws(ApiVersion.WS_PATH_PREFIX + "/matches/{id}", matchSocketHandler);
-		
-		// Presence: who is online, and the channel player-to-player match requests arrive on
-		javalin.routes.ws(ApiVersion.WS_PATH_PREFIX + "/presence", presenceSocketHandler);
+
+		// Presence: the heartbeat every signed-in client sends, and the match requests it collects. There is no
+		// presence WebSocket - an open socket is a worse answer to "is this player there" than a recent
+		// timestamp; see PresenceService.
+		javalin.routes.post(ApiVersion.PATH_PREFIX + "/presence/heartbeat", presenceHandler::heartbeat);
+		javalin.routes.post(ApiVersion.PATH_PREFIX + "/presence/offline", presenceHandler::offline);
+		javalin.routes.delete(ApiVersion.PATH_PREFIX + "/match-requests/{id}", presenceHandler::dismissRequest);
 	}
 }

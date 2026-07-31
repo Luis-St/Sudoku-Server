@@ -44,10 +44,10 @@ import static net.luis.sudoku.db.schema.Schema.*;
 public final class SchemaMigration {
 	
 	/** Every migration, in version order. */
-	public static final List<SqlMigration> ALL = List.of(new InitialSchema());
-	
+	public static final List<SqlMigration> ALL = List.of(new InitialSchema(), new PresencePolling());
+
 	/** The version the schema is at once {@link #ALL} has been applied, reported by {@code /health}. */
-	public static final int CURRENT_VERSION = 1;
+	public static final int CURRENT_VERSION = 2;
 	
 	private SchemaMigration() {}
 	
@@ -109,9 +109,11 @@ public final class SchemaMigration {
 		
 		@Override
 		public @NonNull Version version() {
-			return Version.of(CURRENT_VERSION, 0);
+			// A literal, not CURRENT_VERSION: this migration's identity is fixed forever, while
+			// CURRENT_VERSION moves with every one appended after it.
+			return Version.of(1, 0);
 		}
-		
+
 		@Override
 		public @NonNull String description() {
 			return "initial schema";
@@ -183,6 +185,45 @@ public final class SchemaMigration {
 			for (SqlTable<?> table : tables) {
 				builder.dropTable(table);
 			}
+		}
+	}
+
+	/**
+	 * Presence as a heartbeat table plus stored match requests, replacing the presence WebSocket.
+	 * <p>
+	 * Both tables exist because presence stopped being connection state. {@code presence} holds the last
+	 * heartbeat per user and "online" is derived from its age, so a client that vanished without closing
+	 * anything goes offline on its own; {@code match_requests} holds what the socket used to push, because
+	 * there is no longer a connection to push it down.
+	 */
+	private static final class PresencePolling implements SqlMigration {
+
+		@Override
+		public @NonNull Version version() {
+			return Version.of(2, 0);
+		}
+
+		@Override
+		public @NonNull String description() {
+			return "presence heartbeats and stored match requests";
+		}
+
+		@Override
+		public void up(@NonNull SqlMigrationBuilder builder, @NonNull SqlMigrationSchema schema) throws SqlException {
+			table(builder, PRESENCE, PRESENCE_USER_ID);
+			table(builder, MATCH_REQUESTS, REQUEST_ID);
+
+			// Read on every heartbeat - the one query on this table that is not by primary key.
+			builder.createIndex(MATCH_REQUESTS, "match_requests_target_idx", index -> index.columns(REQUEST_TARGET_USER_ID));
+			// Deliberately no index on presence.last_seen_at, the column every heartbeat rewrites: indexing it
+			// would rule out Postgres' heap-only tuple updates on the server's most frequently written row, to
+			// speed up a scan of at most one row per registered player. The primary key is the only index here.
+		}
+
+		@Override
+		public void down(@NonNull SqlMigrationBuilder builder, @NonNull SqlMigrationSchema schema) throws SqlException {
+			builder.dropTable(MATCH_REQUESTS);
+			builder.dropTable(PRESENCE);
 		}
 	}
 }

@@ -28,6 +28,7 @@ import java.time.ZoneId;
  * @param trustProxy whether proxy-supplied client-address headers may be believed
  * @param duel duel-mode time-bank tuning
  * @param match match reconnect tuning
+ * @param presence online-status and match-request tuning
  * @param currencyDailyGameCap currency-earning normal games per day
  * @param mail SMTP settings for account recovery email, or null if mail is not configured
  */
@@ -41,6 +42,7 @@ public record ServerConfig(
 	boolean trustProxy,
 	@NonNull DuelConfig duel,
 	@NonNull MatchConfig match,
+	@NonNull PresenceConfig presence,
 	int currencyDailyGameCap,
 	@Nullable MailConfig mail
 ) {
@@ -74,6 +76,7 @@ public record ServerConfig(
 			env.bool(EnvKeys.TRUST_PROXY, true),
 			DuelConfig.from(env),
 			MatchConfig.from(env),
+			PresenceConfig.from(env),
 			env.integer(EnvKeys.CURRENCY_DAILY_GAME_CAP, 10),
 			MailConfig.from(env)
 		);

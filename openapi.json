@@ -568,6 +568,38 @@
         }
       }
     },
+    "/api/v1/match-requests/{id}" : {
+      "delete" : {
+        "tags" : [ "Presence" ],
+        "summary" : "Dismiss a match request",
+        "description" : "Called by the invited player once they have accepted or declined. Idempotent: an id that is already gone still answers 204, so a client retrying a dismissal it is unsure landed is not handed a failure for having succeeded.",
+        "operationId" : "dismissMatchRequest",
+        "parameters" : [ {
+          "name" : "id",
+          "in" : "path",
+          "description" : "Match request id",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        } ],
+        "responses" : {
+          "204" : {
+            "description" : "No Content"
+          },
+          "403" : {
+            "description" : "FORBIDDEN",
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/matches" : {
       "post" : {
         "tags" : [ "Matches" ],
@@ -715,7 +747,7 @@
       "post" : {
         "tags" : [ "Matches" ],
         "summary" : "Ask a specific player to join a match",
-        "description" : "Pushes the invite over the target's presence socket, so it surfaces in their app immediately. The request is not stored: a player who is offline gets PLAYER_OFFLINE rather than a message they would receive hours later for a match that no longer exists.",
+        "description" : "Stored for the target to pick up on their next presence heartbeat, so it reaches them within a heartbeat interval. Only a player with a fresh heartbeat may be asked - an offline one gets PLAYER_OFFLINE rather than an invitation they would find hours later for a match that no longer exists, which is also why the stored request expires within the minute.",
         "operationId" : "requestMatch",
         "parameters" : [ {
           "name" : "id",
@@ -848,6 +880,39 @@
                 }
               }
             }
+          }
+        }
+      }
+    },
+    "/api/v1/presence/heartbeat" : {
+      "post" : {
+        "tags" : [ "Presence" ],
+        "summary" : "Report this client as running",
+        "description" : "Called on a timer for as long as the app is in the foreground and signed in; that repetition is what makes the caller show as online to everyone else. The response carries any match requests waiting for them, because this is the one call a client already makes on a timer. A request is not consumed by being read - dismiss it explicitly once it has been answered.",
+        "operationId" : "presenceHeartbeat",
+        "responses" : {
+          "200" : {
+            "description" : "OK",
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/HeartbeatResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/presence/offline" : {
+      "post" : {
+        "tags" : [ "Presence" ],
+        "summary" : "Go offline now",
+        "description" : "Sign-out and backgrounding call this so the caller stops showing as online immediately rather than when their last heartbeat goes stale. Purely an optimisation of the same outcome: a client that is killed outright never gets here, and lapses on the TTL instead.",
+        "operationId" : "presenceOffline",
+        "responses" : {
+          "204" : {
+            "description" : "No Content"
           }
         }
       }
@@ -1760,6 +1825,22 @@
         },
         "required" : [ "schemaVersion", "activeMatches" ]
       },
+      "HeartbeatResponse" : {
+        "type" : "object",
+        "properties" : {
+          "onlineTtlSeconds" : {
+            "type" : "integer",
+            "format" : "int32"
+          },
+          "requests" : {
+            "type" : "array",
+            "items" : {
+              "$ref" : "#/components/schemas/MatchRequestResponse"
+            }
+          }
+        },
+        "required" : [ "onlineTtlSeconds" ]
+      },
       "InviteResponse" : {
         "type" : "object",
         "properties" : {
@@ -1811,6 +1892,34 @@
             "type" : "string"
           }
         }
+      },
+      "MatchRequestResponse" : {
+        "type" : "object",
+        "properties" : {
+          "id" : {
+            "type" : "string"
+          },
+          "matchId" : {
+            "type" : "string"
+          },
+          "inviteToken" : {
+            "type" : "string"
+          },
+          "mode" : {
+            "type" : "string"
+          },
+          "stake" : {
+            "type" : "integer",
+            "format" : "int32"
+          },
+          "fromUserId" : {
+            "type" : "string"
+          },
+          "fromDisplayName" : {
+            "type" : "string"
+          }
+        },
+        "required" : [ "stake" ]
       },
       "MatchResponse" : {
         "type" : "object",

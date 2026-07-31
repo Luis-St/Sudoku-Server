@@ -272,7 +272,42 @@ public final class Schema {
 	public static final SqlColumn<AssignmentRow, UUID> ASSIGNMENT_USER_ID = DAILY_ASSIGNMENTS.column("user_id", UUID_TYPE, AssignmentRow::userId, col -> col.primaryKey().notNull());
 	public static final SqlColumn<AssignmentRow, LocalDate> ASSIGNMENT_DATE = DAILY_ASSIGNMENTS.column("date", SqlTypes.LOCAL_DATE, AssignmentRow::date, col -> col.primaryKey().notNull());
 	public static final SqlColumn<AssignmentRow, Integer> ASSIGNMENT_DIFFICULTY = DAILY_ASSIGNMENTS.column("difficulty", SqlTypes.INTEGER, AssignmentRow::difficulty, SqlColumnBuilder::notNull);
-	
+
+	/**
+	 * The last heartbeat each signed-in client sent (feature-spec 9.7's online status).
+	 * <p>
+	 * One row per user, rewritten every heartbeat, and "online" is derived from it rather than stored: a
+	 * player counts as online while {@code last_seen_at} is younger than
+	 * {@link net.luis.sudoku.config.PresenceConfig#onlineTtlSeconds}. That derivation is the whole reason
+	 * presence lives in a table at all - a boolean would have to be un-set by whoever noticed the client
+	 * vanished, and nobody reliably notices; a timestamp goes stale on its own, with no cooperation from a
+	 * client that has been killed, backgrounded or moved out of coverage.
+	 */
+	public static final SqlTable<PresenceRow> PRESENCE = SqlTable.create(PresenceRow.class, "presence");
+
+	// --- presence ------------------------------------------------------------------------------
+	public static final SqlColumn<PresenceRow, UUID> PRESENCE_USER_ID = PRESENCE.column("user_id", UUID_TYPE, PresenceRow::userId, col -> col.primaryKey().notNull());
+	public static final SqlColumn<PresenceRow, Instant> PRESENCE_LAST_SEEN_AT = PRESENCE.column("last_seen_at", TIMESTAMP, PresenceRow::lastSeenAt, SqlColumnBuilder::notNull);
+
+	/**
+	 * A pending "come play with me" addressed at one player (feature-spec 9.7).
+	 * <p>
+	 * Stored, unlike the push this replaced, because there is no longer a socket to push down - and short-lived
+	 * ({@link net.luis.sudoku.config.PresenceConfig#matchRequestTtlSeconds}), because a request that arrives
+	 * after the match it names has been abandoned is worse than one that never arrives. The mode, stake and
+	 * invite token are deliberately <em>not</em> copied here: they belong to {@code matches}, and the row is
+	 * joined against it when the request is served, so a request can never carry a stale token.
+	 */
+	public static final SqlTable<MatchRequestRow> MATCH_REQUESTS = SqlTable.create(MatchRequestRow.class, "match_requests");
+
+	// --- match_requests ------------------------------------------------------------------------
+	public static final SqlColumn<MatchRequestRow, UUID> REQUEST_ID = MATCH_REQUESTS.column("id", UUID_TYPE, MatchRequestRow::id, col -> col.primaryKey().notNull());
+	public static final SqlColumn<MatchRequestRow, UUID> REQUEST_TARGET_USER_ID = MATCH_REQUESTS.column("target_user_id", UUID_TYPE, MatchRequestRow::targetUserId, SqlColumnBuilder::notNull);
+	public static final SqlColumn<MatchRequestRow, UUID> REQUEST_MATCH_ID = MATCH_REQUESTS.column("match_id", UUID_TYPE, MatchRequestRow::matchId, SqlColumnBuilder::notNull);
+	public static final SqlColumn<MatchRequestRow, UUID> REQUEST_FROM_USER_ID = MATCH_REQUESTS.column("from_user_id", UUID_TYPE, MatchRequestRow::fromUserId, SqlColumnBuilder::notNull);
+	public static final SqlColumn<MatchRequestRow, Instant> REQUEST_EXPIRES_AT = MATCH_REQUESTS.column("expires_at", TIMESTAMP, MatchRequestRow::expiresAt, SqlColumnBuilder::notNull);
+	public static final SqlColumn<MatchRequestRow, Instant> REQUEST_CREATED_AT = MATCH_REQUESTS.column("created_at", TIMESTAMP, MatchRequestRow::createdAt, SqlColumnBuilder::notNull);
+
 	private Schema() {}
 	
 	/** A reference whose rows are deleted with the row they belong to. */
@@ -332,6 +367,12 @@ public final class Schema {
 		setNull(CURRENCY_LEDGER, LEDGER_MATCH_ID, MATCHES, MATCH_ID);
 		cascade(DAILY_PREFERENCES, PREFERENCE_USER_ID, USERS, USER_ID);
 		cascade(DAILY_ASSIGNMENTS, ASSIGNMENT_USER_ID, USERS, USER_ID);
+		cascade(PRESENCE, PRESENCE_USER_ID, USERS, USER_ID);
+		// Every reference cascades, including the match: a request whose match is gone is not a request
+		// that should be delivered, so the row going with it is the behaviour, not a side effect.
+		cascade(MATCH_REQUESTS, REQUEST_TARGET_USER_ID, USERS, USER_ID);
+		cascade(MATCH_REQUESTS, REQUEST_FROM_USER_ID, USERS, USER_ID);
+		cascade(MATCH_REQUESTS, REQUEST_MATCH_ID, MATCHES, MATCH_ID);
 	}
 	
 	/** A row of {@code server_meta}: an arbitrary key/value pair, including the schema version. */
@@ -401,4 +442,18 @@ public final class Schema {
 	
 	/** A row of {@code daily_assignments}. */
 	public record AssignmentRow(@NonNull UUID userId, @NonNull LocalDate date, int difficulty) {}
+
+	/**
+	 * A row of {@code presence}: when this user's client last said it was running.
+	 * <p>
+	 * {@code lastSeenAt} always comes from the application {@link java.time.Clock} on the request path,
+	 * never from a value the client sent - a client-supplied timestamp would make presence forgeable, and
+	 * wrong by however far the two clocks disagree.
+	 */
+	public record PresenceRow(@NonNull UUID userId, @NonNull Instant lastSeenAt) {}
+
+	/** A row of {@code match_requests}: one player has asked {@code targetUserId} to join {@code matchId}. */
+	public record MatchRequestRow(
+		@NonNull UUID id, @NonNull UUID targetUserId, @NonNull UUID matchId, @NonNull UUID fromUserId, @NonNull Instant expiresAt, @NonNull Instant createdAt
+	) {}
 }

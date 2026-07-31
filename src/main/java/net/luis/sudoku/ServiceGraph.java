@@ -60,6 +60,8 @@ public final class ServiceGraph implements AutoCloseable {
 	private final StatsRepository stats = new StatsRepository();
 	private final CurrencyLedgerRepository ledger = new CurrencyLedgerRepository();
 	private final MatchRepository matchRepository = new MatchRepository();
+	private final PresenceRepository presenceRepository = new PresenceRepository();
+	private final MatchRequestRepository matchRequests = new MatchRequestRepository();
 	
 	private final Clock clock;
 	private final CodeGenerator codes = new CodeGenerator();
@@ -78,7 +80,7 @@ public final class ServiceGraph implements AutoCloseable {
 	private final StatsService statsService;
 	private final CurrencyService currencyService;
 	private final MatchRegistry matchRegistry = new MatchRegistry();
-	private final PresenceService presenceService = new PresenceService();
+	private final PresenceService presenceService;
 	private final MatchService matchService;
 	private final PuzzleQueue puzzleQueue;
 	
@@ -119,6 +121,7 @@ public final class ServiceGraph implements AutoCloseable {
 		this.puzzleQueue = new PuzzleQueue(this::activePlayerCount);
 		
 		this.matchService = new MatchService(this.database, this.matchRepository, this.matchRegistry, this.puzzleQueue, this.currencyService, config, this.codes, clock);
+		this.presenceService = new PresenceService(this.database, this.presenceRepository, this.matchRequests, config.presence(), clock);
 		
 		this.registrationService.ensureBootstrapInvite(config.bootstrapInvite());
 		// Live board state is memory-resident, so anything left running is wreckage: abandon and refund
@@ -137,6 +140,9 @@ public final class ServiceGraph implements AutoCloseable {
 					this.emailVerifications.deleteExpired(connection, this.clock.instant());
 					this.recoveryCodes.deleteExpired(connection, this.clock.instant());
 				});
+				// Expired match requests and heartbeats too old to ever be online again. Neither is visible to a
+				// client before this runs - both are filtered by age on read - so this is only about table size.
+				this.presenceService.sweep();
 			} catch (RuntimeException e) {
 				// A failed sweep must never kill the scheduled task, or the leak it prevents comes back.
 				log.warn("Housekeeping pass failed", e);
@@ -270,6 +276,14 @@ public final class ServiceGraph implements AutoCloseable {
 	
 	public @NonNull MatchRepository matchRepository() {
 		return this.matchRepository;
+	}
+
+	public @NonNull PresenceRepository presenceRepository() {
+		return this.presenceRepository;
+	}
+
+	public @NonNull MatchRequestRepository matchRequests() {
+		return this.matchRequests;
 	}
 	
 	public @NonNull StatsRepository stats() {

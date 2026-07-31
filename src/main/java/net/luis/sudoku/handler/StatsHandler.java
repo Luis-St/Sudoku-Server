@@ -12,6 +12,8 @@ import net.luis.sudoku.stats.StatsService;
 import org.jspecify.annotations.NonNull;
 
 import java.util.List;
+import java.util.Set;
+import java.util.UUID;
 
 /**
  * Player browsing and statistics (server-spec 9).
@@ -38,8 +40,11 @@ public class StatsHandler {
 	)
 	public void players(@NonNull Context ctx) {
 		this.authentication.require(ctx);
+		// One read of the whole online set, not one per player: this list is polled while the friends screen is
+		// open, and asking per row would turn a fixed two queries into one per registered player every time.
+		Set<UUID> online = this.presence.onlineUsers();
 		List<PlayerResponse> players = this.stats.players().stream()
-			.map(summary -> PlayerResponse.of(summary, this.presence.isOnline(summary.id())))
+			.map(summary -> PlayerResponse.of(summary, online.contains(summary.id())))
 			.toList();
 		ctx.json(players);
 	}

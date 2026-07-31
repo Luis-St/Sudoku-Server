@@ -9,13 +9,10 @@ import net.luis.sudoku.domain.Principal;
 import net.luis.sudoku.dto.request.*;
 import net.luis.sudoku.dto.response.*;
 import net.luis.sudoku.error.ApiException;
-import net.luis.sudoku.error.ErrorCode;
 import net.luis.sudoku.match.MatchService;
-import net.luis.sudoku.presence.PresenceMessage;
 import net.luis.sudoku.presence.PresenceService;
 import org.jspecify.annotations.NonNull;
 
-import java.util.Map;
 import java.util.UUID;
 
 /**
@@ -130,9 +127,10 @@ public class MatchHandler {
 	
 	@OpenApi(
 		summary = "Ask a specific player to join a match",
-		description = "Pushes the invite over the target's presence socket, so it surfaces in their app immediately. "
-			+ "The request is not stored: a player who is offline gets PLAYER_OFFLINE rather than a message they "
-			+ "would receive hours later for a match that no longer exists.",
+		description = "Stored for the target to pick up on their next presence heartbeat, so it reaches them within a "
+			+ "heartbeat interval. Only a player with a fresh heartbeat may be asked - an offline one gets "
+			+ "PLAYER_OFFLINE rather than an invitation they would find hours later for a match that no longer exists, "
+			+ "which is also why the stored request expires within the minute.",
 		operationId = "requestMatch",
 		path = ApiVersion.PATH_PREFIX + "/matches/{id}/request",
 		methods = HttpMethod.POST,
@@ -158,17 +156,9 @@ public class MatchHandler {
 			throw ApiException.badRequest("Cannot request a match against yourself");
 		}
 		
-		boolean delivered = this.presence.send(targetId, PresenceMessage.of(PresenceMessage.Type.MATCH_REQUEST, Map.of(
-			"matchId", match.id().toString(),
-			"inviteToken", match.inviteToken(),
-			"mode", match.mode().name(),
-			"stake", match.stake(),
-			"fromUserId", actor.userId().toString(),
-			"fromDisplayName", actor.user().displayName()
-		)));
-		if (!delivered) {
-			throw new ApiException(ErrorCode.PLAYER_OFFLINE, "That player is not online");
-		}
+		// Everything the invitation shows - mode, stake, token, who asked - is read back off the match and the
+		// requester when it is served, so nothing about it is copied here.
+		this.presence.requestMatch(targetId, match, actor.userId());
 		ctx.status(204);
 	}
 }

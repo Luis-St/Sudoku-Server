@@ -43,6 +43,10 @@ public final class EnvKeys {
 	public static final String MATCH_RECONNECT_GRACE = "SUDOKU_MATCH_RECONNECT_GRACE";
 	public static final String MATCH_RECONNECT_LIMIT = "SUDOKU_MATCH_RECONNECT_LIMIT";
 	
+	// Presence (online status and match requests)
+	public static final String PRESENCE_ONLINE_TTL = "SUDOKU_PRESENCE_ONLINE_TTL";
+	public static final String PRESENCE_REQUEST_TTL = "SUDOKU_PRESENCE_REQUEST_TTL";
+
 	// Currency
 	public static final String CURRENCY_DAILY_GAME_CAP = "SUDOKU_CURRENCY_DAILY_GAME_CAP";
 	
