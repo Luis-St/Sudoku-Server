@@ -7,8 +7,9 @@ import net.luis.utils.io.database.exception.SqlException;
 import net.luis.utils.io.database.transaction.SqlTransaction;
 import org.jspecify.annotations.NonNull;
 
-import java.sql.*;
+import java.time.Instant;
 import java.time.LocalDate;
+import java.util.List;
 import java.util.UUID;
 
 import static net.luis.sudoku.db.schema.Schema.*;
@@ -17,24 +18,6 @@ import static net.luis.sudoku.db.schema.Schema.*;
  * Reads and writes {@code daily_results} (server-spec 8.2).
  */
 public final class DailyResultRepository {
-	
-	private static final String COLUMNS = "id, user_id, date, difficulty, attempt_no, outcome, elapsed_ms, mistakes, hints_used, verified, created_at";
-	
-	static @NonNull DailyResult map(@NonNull ResultSet result) throws SQLException {
-		return new DailyResult(
-			result.getLong("id"),
-			result.getObject("user_id", UUID.class),
-			result.getObject("date", LocalDate.class),
-			result.getInt("difficulty"),
-			result.getInt("attempt_no"),
-			DailyOutcome.valueOf(result.getString("outcome")),
-			result.getLong("elapsed_ms"),
-			result.getInt("mistakes"),
-			result.getInt("hints_used"),
-			result.getBoolean("verified"),
-			result.getTimestamp("created_at").toInstant()
-		);
-	}
 	
 	/**
 	 * @return true if a {@code SOLVED} result already exists, which locks the date (spec 8.3)
@@ -61,34 +44,24 @@ public final class DailyResultRepository {
 	}
 	
 	/**
-	 * {@code id} is a DB-generated identity column the query builder's entity insert has no way to omit,
-	 * so this stays raw SQL and relies on {@code RETURNING} to read the generated id (and DB-defaulted
-	 * {@code created_at}) back, same carve-out as {@code currency_ledger}.
+	 * Inserts one attempt and reads the stored row back.
+	 * <p>
+	 * {@code id} is a DB-generated identity column, omitted from the value tuple by the query builder
+	 * itself because the column is declared {@code autoIncrement()} - which is why the insert reads the
+	 * row back rather than returning what it was handed. {@code createdAt} comes from the caller's clock,
+	 * like every other timestamp the server writes, so a test clock and a fold-and-prune run agree on
+	 * what day a row belongs to.
 	 */
 	public @NonNull DailyResult insert(
-		@NonNull SqlTransaction transaction, @NonNull UUID userId, @NonNull LocalDate date, int difficulty, int attemptNo, @NonNull DailyOutcome outcome, long elapsedMs, int mistakes, int hintsUsed, boolean verified
+		@NonNull SqlTransaction transaction, @NonNull UUID userId, @NonNull LocalDate date, int difficulty, int attemptNo, @NonNull DailyOutcome outcome, long elapsedMs, int mistakes, int hintsUsed, boolean verified, @NonNull Instant createdAt
 	) throws SqlException {
-		String sql = """
-			INSERT INTO daily_results (user_id, date, difficulty, attempt_no, outcome, elapsed_ms, mistakes, hints_used, verified)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-			RETURNING """ + " " + COLUMNS;
-		try (PreparedStatement statement = transaction.getConnection().prepareStatement(sql)) {
-			statement.setObject(1, userId);
-			statement.setObject(2, date);
-			statement.setInt(3, difficulty);
-			statement.setInt(4, attemptNo);
-			statement.setString(5, outcome.name());
-			statement.setLong(6, elapsedMs);
-			statement.setInt(7, mistakes);
-			statement.setInt(8, hintsUsed);
-			statement.setBoolean(9, verified);
-			try (ResultSet result = statement.executeQuery()) {
-				result.next();
-				return map(result);
-			}
-		} catch (SQLException e) {
-			throw new SqlException("Failed to insert daily result", e);
+		// The id passed here is never rendered - see above - so any value does.
+		DailyResult row = new DailyResult(0L, userId, date, difficulty, attemptNo, outcome, elapsedMs, mistakes, hintsUsed, verified, createdAt);
+		List<DailyResult> inserted = transaction.from(DAILY_RESULTS).insert(row).returning();
+		if (inserted.isEmpty()) {
+			throw new SqlException("Failed to insert daily result: no row returned");
 		}
+		return inserted.getFirst();
 	}
 	
 	/**

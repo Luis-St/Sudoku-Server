@@ -2,6 +2,7 @@ package net.luis.sudoku.stats;
 
 import net.luis.sudoku.auth.*;
 import net.luis.sudoku.config.*;
+import net.luis.sudoku.db.schema.Schema;
 import net.luis.sudoku.domain.*;
 import net.luis.sudoku.error.ApiException;
 import net.luis.sudoku.invite.RegistrationService;
@@ -10,6 +11,7 @@ import net.luis.sudoku.repository.*;
 import net.luis.sudoku.security.CodeGenerator;
 import net.luis.sudoku.support.PostgresTest;
 import net.luis.sudoku.support.TestKeys;
+import net.luis.utils.io.database.Sql;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -90,7 +92,7 @@ class StatsServiceTest extends PostgresTest {
 	
 	private Principal player(String name) {
 		String code = BOOTSTRAP;
-		if (!name.equals("Owner")) {
+		if (!"Owner".equals(name)) {
 			code = "INV" + UUID.randomUUID().toString().replace("-", "").substring(0, 8).toUpperCase();
 			String finalCode = code;
 			database.execute(connection -> this.invites.create(connection, finalCode, null, Role.NEW, null, this.now.get()));
@@ -112,8 +114,8 @@ class StatsServiceTest extends PostgresTest {
 		
 		assertAll(
 			() -> assertEquals(2, players.size()),
-			() -> assertTrue(players.stream().anyMatch(p -> p.displayName().equals("Owner"))),
-			() -> assertTrue(players.stream().anyMatch(p -> p.displayName().equals("Second")))
+			() -> assertTrue(players.stream().anyMatch(p -> "Owner".equals(p.displayName()))),
+			() -> assertTrue(players.stream().anyMatch(p -> "Second".equals(p.displayName())))
 		);
 	}
 	
@@ -239,7 +241,7 @@ class StatsServiceTest extends PostgresTest {
 		LocalDate yesterday = LocalDate.ofInstant(NOW, ZONE).minusDays(1);
 		
 		database.execute(connection -> {
-			this.dailyResults.insert(connection, player.userId(), yesterday, 3, 1, DailyOutcome.SOLVED, 60_000, 0, 1, true);
+			this.dailyResults.insert(connection, player.userId(), yesterday, 3, 1, DailyOutcome.SOLVED, 60_000, 0, 1, true, NOW);
 			this.leaderboard.record(connection, player.userId(), yesterday, 3, 60_000, 1, 1);
 		});
 		
@@ -249,17 +251,10 @@ class StatsServiceTest extends PostgresTest {
 		// Both source tables must be empty afterwards: they are not retained historically (spec 8.2).
 		List<DailyLeaderboardRepository.Entry> remaining =
 			database.read(connection -> this.leaderboard.ranking(connection, yesterday, 3));
-		int remainingResults = database.read(connection -> {
-			try (var statement = connection.getConnection().prepareStatement("SELECT count(*) FROM daily_results WHERE date = ?")) {
-				statement.setObject(1, yesterday);
-				try (var result = statement.executeQuery()) {
-					result.next();
-					return result.getInt(1);
-				}
-			} catch (java.sql.SQLException e) {
-				throw new net.luis.utils.io.database.exception.SqlException("Failed to count remaining daily results", e);
-			}
-		});
+		Long remainingResults = database.read(connection -> connection.from(Schema.DAILY_RESULTS)
+			.select(Sql.count(Schema.RESULT_ID, false))
+			.where(Sql.equalTo(Schema.RESULT_DATE, yesterday))
+			.fetchOneOrNull());
 		
 		assertAll(
 			() -> assertEquals(1, folded),
@@ -268,7 +263,7 @@ class StatsServiceTest extends PostgresTest {
 			() -> assertEquals(60_000L, aggregates.getFirst().bestTimeMs()),
 			() -> assertEquals(1, aggregates.getFirst().hintsUsed()),
 			() -> assertTrue(remaining.isEmpty(), "the leaderboard row should have been pruned"),
-			() -> assertEquals(0, remainingResults, "the daily result should have been pruned")
+			() -> assertEquals(0L, remainingResults, "the daily result should have been pruned")
 		);
 	}
 	
@@ -277,7 +272,7 @@ class StatsServiceTest extends PostgresTest {
 		Principal player = this.player("Owner");
 		LocalDate today = LocalDate.ofInstant(NOW, ZONE);
 		database.execute(connection ->
-			this.dailyResults.insert(connection, player.userId(), today, 3, 1, DailyOutcome.SOLVED, 60_000, 0, 0, true));
+			this.dailyResults.insert(connection, player.userId(), today, 3, 1, DailyOutcome.SOLVED, 60_000, 0, 0, true, NOW));
 		
 		int folded = this.stats.runRollover();
 		
@@ -292,7 +287,7 @@ class StatsServiceTest extends PostgresTest {
 		Principal player = this.player("Owner");
 		LocalDate yesterday = LocalDate.ofInstant(NOW, ZONE).minusDays(1);
 		database.execute(connection ->
-			this.dailyResults.insert(connection, player.userId(), yesterday, 3, 1, DailyOutcome.SOLVED, 1, 0, 0, false));
+			this.dailyResults.insert(connection, player.userId(), yesterday, 3, 1, DailyOutcome.SOLVED, 1, 0, 0, false, NOW));
 		
 		int folded = this.stats.runRollover();
 		
@@ -307,7 +302,7 @@ class StatsServiceTest extends PostgresTest {
 		Principal player = this.player("Owner");
 		LocalDate yesterday = LocalDate.ofInstant(NOW, ZONE).minusDays(1);
 		database.execute(connection ->
-			this.dailyResults.insert(connection, player.userId(), yesterday, 3, 1, DailyOutcome.SOLVED, 60_000, 0, 0, true));
+			this.dailyResults.insert(connection, player.userId(), yesterday, 3, 1, DailyOutcome.SOLVED, 60_000, 0, 0, true, NOW));
 		
 		this.stats.runRollover();
 		int second = this.stats.runRollover();
@@ -323,7 +318,7 @@ class StatsServiceTest extends PostgresTest {
 		Principal player = this.player("Owner");
 		LocalDate yesterday = LocalDate.ofInstant(NOW, ZONE).minusDays(1);
 		database.execute(connection ->
-			this.dailyResults.insert(connection, player.userId(), yesterday, 3, 1, DailyOutcome.FAILED, 30_000, 5, 0, true));
+			this.dailyResults.insert(connection, player.userId(), yesterday, 3, 1, DailyOutcome.FAILED, 30_000, 5, 0, true, NOW));
 		
 		this.stats.runRollover();
 		

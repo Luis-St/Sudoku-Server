@@ -2,18 +2,23 @@ package net.luis.sudoku.currency;
 
 import net.luis.sudoku.auth.*;
 import net.luis.sudoku.config.*;
+import net.luis.sudoku.db.schema.Schema;
 import net.luis.sudoku.difficulty.Difficulty;
+import net.luis.sudoku.domain.Match;
 import net.luis.sudoku.domain.Principal;
 import net.luis.sudoku.error.ApiException;
 import net.luis.sudoku.error.ErrorCode;
 import net.luis.sudoku.grid.GridSize;
 import net.luis.sudoku.grid.Variant;
 import net.luis.sudoku.invite.RegistrationService;
+import net.luis.sudoku.match.MatchMode;
+import net.luis.sudoku.match.MatchState;
 import net.luis.sudoku.permission.Role;
 import net.luis.sudoku.repository.*;
 import net.luis.sudoku.security.CodeGenerator;
 import net.luis.sudoku.support.PostgresTest;
 import net.luis.sudoku.support.TestKeys;
+import net.luis.utils.io.database.Sql;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -86,7 +91,7 @@ class CurrencyServiceTest extends PostgresTest {
 	
 	private Principal player(String name) {
 		String code = BOOTSTRAP;
-		if (!name.equals("Owner")) {
+		if (!"Owner".equals(name)) {
 			code = "INV" + UUID.randomUUID().toString().replace("-", "").substring(0, 8).toUpperCase();
 			String finalCode = code;
 			database.execute(connection -> this.invites.create(connection, finalCode, null, Role.NEW, null, this.now.get()));
@@ -98,7 +103,11 @@ class CurrencyServiceTest extends PostgresTest {
 	}
 	
 	private int awardGame(UUID userId, Difficulty difficulty) {
-		return database.transaction(connection -> this.currency.awardForGame(connection, userId, difficulty));
+		return this.awardGame(userId, difficulty, GridSize.NINE);
+	}
+	
+	private int awardGame(UUID userId, Difficulty difficulty, GridSize size) {
+		return database.transaction(connection -> this.currency.awardForGame(connection, userId, difficulty, size));
 	}
 	
 	/**
@@ -106,27 +115,19 @@ class CurrencyServiceTest extends PostgresTest {
 	 * than a fabricated id.
 	 */
 	private UUID match(UUID creatorId, int stake) {
-		return database.transaction(connection -> {
-			String sql = """
-				INSERT INTO matches (mode, state, creator_id, size, variant, difficulty, seed, stake, invite_token)
-				VALUES ('DUEL', 'WAITING', ?, 9, 'CLASSIC', 3, 42, ?, 'token')
-				RETURNING id
-				""";
-			try (var statement = connection.getConnection().prepareStatement(sql)) {
-				statement.setObject(1, creatorId);
-				statement.setInt(2, stake);
-				try (var result = statement.executeQuery()) {
-					result.next();
-					return result.getObject(1, UUID.class);
-				}
-			} catch (java.sql.SQLException e) {
-				throw new net.luis.utils.io.database.exception.SqlException("Failed to insert test match", e);
-			}
-		});
+		Match draft = new Match(
+			UUID.randomUUID(), MatchMode.DUEL, MatchState.WAITING, creatorId, GridSize.NINE, Variant.CLASSIC, Difficulty.THREE,
+			42L, true, stake, "token", null, null, NOW, null, null
+		);
+		return database.transaction(connection -> connection.from(Schema.MATCHES).insert(draft).returning().getFirst()).id();
 	}
 	
 	private int awardDaily(UUID userId, Difficulty difficulty, LocalDate date) {
-		return database.transaction(connection -> this.currency.awardForDaily(connection, userId, difficulty, date));
+		return this.awardDaily(userId, difficulty, GridSize.NINE, date);
+	}
+	
+	private int awardDaily(UUID userId, Difficulty difficulty, GridSize size, LocalDate date) {
+		return database.transaction(connection -> this.currency.awardForDaily(connection, userId, difficulty, size, date));
 	}
 	
 	// --- earning (spec 9a.1) ---
@@ -138,7 +139,7 @@ class CurrencyServiceTest extends PostgresTest {
 	}
 	
 	@Test
-	void awardForGame_paysFiveTimesTheDifficultyIndex() {
+	void awardForGame_onANineByNine_paysFiveTimesTheDifficultyIndex() {
 		Principal player = this.player("Owner");
 		
 		int awarded = this.awardGame(player.userId(), Difficulty.THREE);
@@ -162,6 +163,30 @@ class CurrencyServiceTest extends PostgresTest {
 	}
 	
 	@Test
+	void awardForGame_scalesWithTheGrid() {
+		// Spec 9a.1: 5 * 3 = 15 on a 9x9, times the size factor, rounded half up.
+		Principal player = this.player("Owner");
+		
+		assertAll(
+			() -> assertEquals(6, this.awardGame(player.userId(), Difficulty.THREE, GridSize.FOUR)),
+			() -> assertEquals(9, this.awardGame(player.userId(), Difficulty.THREE, GridSize.SIX)),
+			() -> assertEquals(15, this.awardGame(player.userId(), Difficulty.THREE, GridSize.NINE)),
+			() -> assertEquals(23, this.awardGame(player.userId(), Difficulty.THREE, GridSize.TWELVE)),
+			() -> assertEquals(33, this.awardGame(player.userId(), Difficulty.THREE, GridSize.SIXTEEN))
+		);
+	}
+	
+	@Test
+	void baseAward_atEveryTier_paysStrictlyMoreOnALargerGrid() {
+		for (Difficulty difficulty : Difficulty.values()) {
+			assertTrue(
+				CurrencyService.baseAward(difficulty, GridSize.FOUR) < CurrencyService.baseAward(difficulty, GridSize.SIXTEEN),
+				"tier " + difficulty.index()
+			);
+		}
+	}
+	
+	@Test
 	void awardForGame_beyondTheDailyCap_paysNothing() {
 		Principal player = this.player("Owner");
 		for (int i = 0; i < this.config.currencyDailyGameCap(); i++) {
@@ -172,7 +197,7 @@ class CurrencyServiceTest extends PostgresTest {
 		
 		assertAll(
 			() -> assertEquals(0, overCap),
-			() -> assertEquals(5 * this.config.currencyDailyGameCap(), this.currency.balance(player.userId()))
+			() -> assertEquals(5L * this.config.currencyDailyGameCap(), this.currency.balance(player.userId()))
 		);
 	}
 	
@@ -196,6 +221,16 @@ class CurrencyServiceTest extends PostgresTest {
 		int awarded = this.awardDaily(player.userId(), Difficulty.THREE, date);
 		
 		assertEquals(5 * 3 + CurrencyService.DAILY_BONUS, awarded);
+	}
+	
+	@Test
+	void awardForDaily_scalesTheBaseButNotTheBonus() {
+		// 23 for the grid (5 * 3 * 1.5, rounded half up) plus the flat 20.
+		Principal player = this.player("Owner");
+		
+		int awarded = this.awardDaily(player.userId(), Difficulty.THREE, GridSize.TWELVE, LocalDate.ofInstant(NOW, ZONE));
+		
+		assertEquals(23 + CurrencyService.DAILY_BONUS, awarded);
 	}
 	
 	@Test
@@ -243,7 +278,7 @@ class CurrencyServiceTest extends PostgresTest {
 		Principal player = this.player("Owner");
 		// One recorded game: the ceiling is one game at the richest possible rate.
 		database.execute(connection -> this.stats.record(connection, player.userId(), 9, "CLASSIC", 3, true, 60_000, 0));
-		int ceiling = CurrencyService.PER_DIFFICULTY_INDEX * Difficulty.LISA.index() + CurrencyService.DAILY_BONUS;
+		int ceiling = CurrencyService.baseAward(Difficulty.LISA, GridSize.SIXTEEN) + CurrencyService.DAILY_BONUS;
 		
 		long reconciled = this.currency.sync(player.userId(), 1_000_000, 1);
 		
@@ -260,19 +295,12 @@ class CurrencyServiceTest extends PostgresTest {
 		
 		this.currency.sync(player.userId(), 30, 1);
 		
-		int adjustments = database.read(connection -> {
-			try (var statement = connection.getConnection().prepareStatement(
-				"SELECT count(*) FROM currency_ledger WHERE user_id = ? AND reason = 'SYNC_ADJUST'")) {
-				statement.setObject(1, player.userId());
-				try (var result = statement.executeQuery()) {
-					result.next();
-					return result.getInt(1);
-				}
-			} catch (java.sql.SQLException e) {
-				throw new net.luis.utils.io.database.exception.SqlException("Failed to count sync-adjust rows", e);
-			}
-		});
-		assertEquals(1, adjustments);
+		Long adjustments = database.read(connection -> connection.from(Schema.CURRENCY_LEDGER)
+			.select(Sql.count(Schema.LEDGER_ID, false))
+			.where(Sql.equalTo(Schema.LEDGER_USER_ID, player.userId()))
+			.where(Sql.equalTo(Schema.LEDGER_REASON, LedgerReason.SYNC_ADJUST))
+			.fetchOneOrNull());
+		assertEquals(1L, adjustments);
 	}
 	
 	@Test

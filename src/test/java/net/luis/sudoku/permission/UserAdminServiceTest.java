@@ -72,7 +72,7 @@ class UserAdminServiceTest extends PostgresTest {
 			database.execute(connection -> this.users.updateRole(connection, registered.user().id(), role));
 		}
 		User user = new User(registered.user().id(), registered.user().displayName(), role,
-			registered.user().createdAt(), false);
+			registered.user().createdAt(), false, null, false);
 		return new Principal(user, registered.device(), registered.session());
 	}
 	
@@ -91,7 +91,7 @@ class UserAdminServiceTest extends PostgresTest {
 	@Test
 	void has_aRevokedUser_keepsNoPermissions() {
 		// A kicked user keeps their role on paper, but must not be able to act on it.
-		User revoked = new User(UUID.randomUUID(), "Gone", Role.ADMIN, NOW, true);
+		User revoked = new User(UUID.randomUUID(), "Gone", Role.ADMIN, NOW, true, null, false);
 		assertAll(
 			() -> assertFalse(revoked.has(Permission.CAN_PLAY)),
 			() -> assertFalse(revoked.has(Permission.CAN_KICK))

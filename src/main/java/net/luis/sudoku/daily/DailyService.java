@@ -2,6 +2,7 @@ package net.luis.sudoku.daily;
 
 import net.luis.sudoku.config.ServerConfig;
 import net.luis.sudoku.currency.CurrencyService;
+import net.luis.sudoku.currency.LedgerReason;
 import net.luis.sudoku.db.Database;
 import net.luis.sudoku.difficulty.Difficulty;
 import net.luis.sudoku.domain.*;
@@ -17,6 +18,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.time.*;
+import java.time.temporal.ChronoUnit;
 import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicReference;
@@ -31,6 +33,9 @@ import java.util.concurrent.atomic.AtomicReference;
 public final class DailyService {
 	
 	private static final Logger log = LoggerFactory.getLogger(DailyService.class);
+	
+	/** Rhubarb per missed day repaired by spending a restore point. */
+	public static final int RESTORE_COST_PER_DAY = 10;
 	
 	private final Database database;
 	private final ServerConfig config;
@@ -137,7 +142,7 @@ public final class DailyService {
 			}
 			
 			int attemptNo = this.results.nextAttemptNo(connection, actor.userId(), submit.date(), submit.difficulty());
-			DailyResult stored = this.results.insert(connection, actor.userId(), submit.date(), submit.difficulty(), attemptNo, submit.outcome(), submit.elapsedMs(), submit.mistakes(), submit.hintsUsed(), verification.verified());
+			DailyResult stored = this.results.insert(connection, actor.userId(), submit.date(), submit.difficulty(), attemptNo, submit.outcome(), submit.elapsedMs(), submit.mistakes(), submit.hintsUsed(), verification.verified(), this.clock.instant());
 			
 			Streak streak = this.streaks.findForUpdate(connection, actor.userId());
 			int awarded = 0;
@@ -149,7 +154,7 @@ public final class DailyService {
 				this.leaderboard.record(connection, actor.userId(), submit.date(), submit.difficulty(), submit.elapsedMs(), attemptNo, submit.hintsUsed());
 				// Currency is minted only on a verified success, in the same transaction as the result
 				// (spec 9a.1). The daily bonus sits outside the normal-game cap.
-				awarded = this.currency.awardForDaily(connection, actor.userId(), difficulty, submit.date());
+				awarded = this.currency.awardForDaily(connection, actor.userId(), difficulty, puzzle.key().size(), submit.date());
 			}
 			
 			return new Submission(true, verification.verified(), stored, streak, awarded);
@@ -183,6 +188,40 @@ public final class DailyService {
 	
 	public @NonNull Streak streak(@NonNull UUID userId) {
 		return this.database.read(connection -> this.streaks.find(connection, userId));
+	}
+	
+	/**
+	 * Spends banked restore points to repair a broken streak, patching it up to yesterday so today's
+	 * ordinary {@link #submit} sees a consecutive continuation.
+	 *
+	 * @throws ApiException {@code STREAK_RESTORE_NOT_NEEDED} if the streak has never started, or there is
+	 *   no gap to repair; {@code INSUFFICIENT_RESTORE_POINTS} if there are fewer banked points than missed
+	 *   days; {@code INSUFFICIENT_BALANCE} if the player cannot afford the Rhubarb cost
+	 */
+	public @NonNull Streak restoreStreak(@NonNull Principal actor) {
+		LocalDate today = this.today();
+		
+		return this.database.transaction(connection -> {
+			Streak streak = this.streaks.findForUpdate(connection, actor.userId());
+			LocalDate lastCompleted = streak.lastCompletedDate();
+			if (lastCompleted == null) {
+				throw new ApiException(ErrorCode.STREAK_RESTORE_NOT_NEEDED, "There is no streak to restore");
+			}
+			
+			long gap = ChronoUnit.DAYS.between(lastCompleted, today);
+			int missedDays = (int) (gap - 1);
+			if (missedDays <= 0) {
+				throw new ApiException(ErrorCode.STREAK_RESTORE_NOT_NEEDED, "There is no gap to restore");
+			}
+			if (missedDays > streak.restorePoints()) {
+				throw new ApiException(ErrorCode.INSUFFICIENT_RESTORE_POINTS, "You need " + missedDays + " restore points, but only have " + streak.restorePoints());
+			}
+			
+			this.currency.spend(connection, actor.userId(), missedDays * RESTORE_COST_PER_DAY, LedgerReason.SPEND_STREAK_RESTORE);
+			Streak restored = streak.restoredBy(missedDays, today.minusDays(1));
+			this.streaks.save(connection, restored);
+			return restored;
+		});
 	}
 	
 	public @NonNull List<DailyLeaderboardRepository.Entry> leaderboard(int difficultyIndex) {

@@ -22,6 +22,8 @@ public final class CodeGenerator {
 	
 	private static final int INVITE_CODE_LENGTH = 12;
 	private static final int LINK_CODE_LENGTH = 8;
+	private static final int RECOVERY_CODE_LENGTH = 8;
+	private static final int EMAIL_VERIFICATION_CODE_DIGITS = 6;
 	private static final int SESSION_TOKEN_BYTES = 32;
 	
 	/** 32 random bytes, per server-spec 6.1. */
@@ -65,6 +67,26 @@ public final class CodeGenerator {
 	public @NonNull String linkCode() {
 		String raw = this.symbols(LINK_CODE_LENGTH);
 		return raw.substring(0, 4) + "-" + raw.substring(4, 8);
+	}
+	
+	/**
+	 * @return an 8-symbol account-recovery code, the same shape as a link code since it is redeemed the
+	 *   same way - by hand, on a fresh device with no session
+	 */
+	public @NonNull String recoveryCode() {
+		String raw = this.symbols(RECOVERY_CODE_LENGTH);
+		return raw.substring(0, 4) + "-" + raw.substring(4, 8);
+	}
+	
+	/**
+	 * @return a 6-digit numeric code, easy to type back from an email client
+	 */
+	public @NonNull String emailVerificationCode() {
+		StringBuilder builder = new StringBuilder(EMAIL_VERIFICATION_CODE_DIGITS);
+		for (int i = 0; i < EMAIL_VERIFICATION_CODE_DIGITS; i++) {
+			builder.append(this.random.nextInt(10));
+		}
+		return builder.toString();
 	}
 	
 	/**

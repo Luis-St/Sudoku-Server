@@ -19,5 +19,7 @@ public enum LedgerReason {
 	/** Returned on abandonment, disconnect beyond the grace window, or crash recovery. */
 	REFUND,
 	/** A silent correction applied when a client's reported balance fails the plausibility check. */
-	SYNC_ADJUST
+	SYNC_ADJUST,
+	/** Spent to repair a broken daily streak, {@code RESTORE_COST_PER_DAY} per missed day. */
+	SPEND_STREAK_RESTORE
 }

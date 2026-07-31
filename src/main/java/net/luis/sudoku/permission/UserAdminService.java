@@ -92,7 +92,7 @@ public final class UserAdminService {
 			}
 			
 			this.users.updateRole(connection, targetId, role);
-			return new User(target.id(), target.displayName(), role, target.createdAt(), target.revoked());
+			return new User(target.id(), target.displayName(), role, target.createdAt(), target.revoked(), target.email(), target.emailVerified());
 		});
 		
 		log.info("Admin action: {} ({}) changed role of {} ({}) to {}", actor.user().displayName(), actor.userId(),

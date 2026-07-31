@@ -2,12 +2,13 @@ package net.luis.sudoku.repository;
 
 import net.luis.sudoku.currency.LedgerReason;
 import net.luis.utils.io.database.Sql;
+import net.luis.utils.io.database.condition.SqlCondition;
 import net.luis.utils.io.database.exception.SqlException;
 import net.luis.utils.io.database.transaction.SqlTransaction;
+import net.luis.utils.io.database.type.SqlTypes;
 import org.jspecify.annotations.NonNull;
 import org.jspecify.annotations.Nullable;
 
-import java.sql.*;
 import java.time.*;
 import java.util.UUID;
 
@@ -22,10 +23,21 @@ import static net.luis.sudoku.db.schema.Schema.*;
 public final class CurrencyLedgerRepository {
 	
 	/**
+	 * The "this row was written on that date" predicate both date-bucketed queries share.
+	 * <p>
+	 * The date is evaluated in the server zone, matching how every other date in the schema is computed
+	 * (spec 5): {@code created_at} is a {@code TIMESTAMPTZ}, so the calendar day it belongs to is only
+	 * defined once a zone is named. Renders as {@code CAST((created_at AT TIME ZONE ?) AS DATE) = ?}.
+	 */
+	private static @NonNull SqlCondition dateIn(@NonNull ZoneId zone, @NonNull LocalDate date) {
+		return Sql.equalTo(Sql.dateInZone(LEDGER_CREATED_AT, Sql.of(zone.getId(), SqlTypes.TEXT)), date);
+	}
+	
+	/**
 	 * Appends a ledger row.
 	 * <p>
-	 * {@code id} is a DB-generated identity column the query builder's entity insert has no way to omit,
-	 * so this stays raw SQL, same carve-out as {@code daily_results}.
+	 * {@code id} is a DB-generated identity column, which the query builder omits from the value tuple on
+	 * its own because the column is declared {@code autoIncrement()}.
 	 * <p>
 	 * {@code createdAt} comes from the application clock rather than the database's {@code now()}. The
 	 * daily earning cap and the once-per-date daily bonus both bucket rows by date in
@@ -34,17 +46,9 @@ public final class CurrencyLedgerRepository {
 	 * database stamp it makes the cap silently wrong whenever the two disagree.
 	 */
 	public void append(@NonNull SqlTransaction transaction, @NonNull UUID userId, int delta, @NonNull LedgerReason reason, @Nullable UUID matchId, @NonNull Instant createdAt) throws SqlException {
-		String sql = "INSERT INTO currency_ledger (user_id, delta, reason, match_id, created_at) VALUES (?, ?, ?, ?, ?)";
-		try (PreparedStatement statement = transaction.getConnection().prepareStatement(sql)) {
-			statement.setObject(1, userId);
-			statement.setInt(2, delta);
-			statement.setString(3, reason.name());
-			statement.setObject(4, matchId);
-			statement.setTimestamp(5, java.sql.Timestamp.from(createdAt));
-			statement.executeUpdate();
-		} catch (SQLException e) {
-			throw new SqlException("Failed to append ledger entry", e);
-		}
+		// The id passed here is never rendered - see above - so any value does.
+		LedgerRow row = new LedgerRow(0L, userId, delta, reason, matchId, createdAt);
+		transaction.from(CURRENCY_LEDGER).insert(row).execute();
 	}
 	
 	/**
@@ -71,44 +75,22 @@ public final class CurrencyLedgerRepository {
 	 *   the daily earning cap counts
 	 */
 	public int countEarnGamesOn(@NonNull SqlTransaction transaction, @NonNull UUID userId, @NonNull LocalDate date, @NonNull ZoneId zone) throws SqlException {
-		// The date is evaluated in the server zone, matching how every other date in the schema is
-		// computed (spec 5). No portable expression for "timestamptz AT TIME ZONE ... ::date" exists in
-		// the query builder, so the predicate stays raw SQL while the rest of the query goes through it.
-		String sql = """
-			SELECT count(*) FROM currency_ledger
-			 WHERE user_id = ? AND reason = 'EARN_GAME' AND (created_at AT TIME ZONE ?)::date = ?
-			""";
-		try (PreparedStatement statement = transaction.getConnection().prepareStatement(sql)) {
-			statement.setObject(1, userId);
-			statement.setString(2, zone.getId());
-			statement.setObject(3, date);
-			try (ResultSet result = statement.executeQuery()) {
-				result.next();
-				return result.getInt(1);
-			}
-		} catch (SQLException e) {
-			throw new SqlException("Failed to count earn-game entries", e);
-		}
+		Long count = transaction.from(CURRENCY_LEDGER).select(Sql.count(LEDGER_ID, false))
+			.where(Sql.equalTo(LEDGER_USER_ID, userId))
+			.where(Sql.equalTo(LEDGER_REASON, LedgerReason.EARN_GAME))
+			.where(dateIn(zone, date))
+			.fetchOneOrNull();
+		return count == null ? 0 : Math.toIntExact(count);
 	}
 	
 	/**
 	 * @return whether the daily bonus has already been paid for a date, which must happen at most once
 	 */
 	public boolean hasEarnedDailyOn(@NonNull SqlTransaction transaction, @NonNull UUID userId, @NonNull LocalDate date, @NonNull ZoneId zone) throws SqlException {
-		String sql = """
-			SELECT 1 FROM currency_ledger
-			 WHERE user_id = ? AND reason = 'EARN_DAILY' AND (created_at AT TIME ZONE ?)::date = ?
-			 LIMIT 1
-			""";
-		try (PreparedStatement statement = transaction.getConnection().prepareStatement(sql)) {
-			statement.setObject(1, userId);
-			statement.setString(2, zone.getId());
-			statement.setObject(3, date);
-			try (ResultSet result = statement.executeQuery()) {
-				return result.next();
-			}
-		} catch (SQLException e) {
-			throw new SqlException("Failed to check daily-earn entry", e);
-		}
+		return transaction.from(CURRENCY_LEDGER).select()
+			.where(Sql.equalTo(LEDGER_USER_ID, userId))
+			.where(Sql.equalTo(LEDGER_REASON, LedgerReason.EARN_DAILY))
+			.where(dateIn(zone, date))
+			.exists();
 	}
 }

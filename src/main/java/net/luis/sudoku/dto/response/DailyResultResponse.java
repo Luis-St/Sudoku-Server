@@ -3,6 +3,7 @@ package net.luis.sudoku.dto.response;
 import net.luis.sudoku.daily.DailyService.Submission;
 import net.luis.sudoku.domain.Streak;
 import org.jspecify.annotations.NonNull;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Response to {@code POST /api/v1/daily/result}.
@@ -25,13 +26,16 @@ public record DailyResultResponse(boolean accepted, boolean verified, int attemp
 	}
 	
 	/**
-	 * @param current consecutive days ending at the last solve
+	 * @param current consecutive days ending at {@code lastCompletedDate}
 	 * @param longest best run ever achieved
+	 * @param lastCompletedDate ISO-8601 date of the most recent day solved, or null if never
+	 * @param restorePoints banked streak-restore points, each worth one repaired missed day
 	 */
-	public record StreakResponse(int current, int longest) {
+	public record StreakResponse(int current, int longest, @Nullable String lastCompletedDate, int restorePoints) {
 		
 		public static @NonNull StreakResponse of(@NonNull Streak streak) {
-			return new StreakResponse(streak.current(), streak.longest());
+			return new StreakResponse(streak.current(), streak.longest(),
+				streak.lastCompletedDate() == null ? null : streak.lastCompletedDate().toString(), streak.restorePoints());
 		}
 	}
 }

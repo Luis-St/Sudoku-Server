@@ -54,6 +54,77 @@
         }
       }
     },
+    "/api/v1/auth/recovery/redeem" : {
+      "post" : {
+        "tags" : [ "Recovery" ],
+        "summary" : "Redeem an account recovery code",
+        "description" : "Unauthenticated - the new device has no session yet. Hands the whole account over to this device.",
+        "operationId" : "redeemRecovery",
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/RecoveryRedeemRequest"
+              }
+            }
+          }
+        },
+        "responses" : {
+          "201" : {
+            "description" : "Created",
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/SessionResponse"
+                }
+              }
+            }
+          },
+          "403" : {
+            "description" : "RECOVERY_CODE_INVALID",
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429" : {
+            "description" : "RATE_LIMITED",
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/auth/recovery/request" : {
+      "post" : {
+        "tags" : [ "Recovery" ],
+        "summary" : "Request account recovery",
+        "description" : "Unauthenticated. Always returns 204, whether or not the address matched a verified account, so the endpoint cannot be used to enumerate accounts.",
+        "operationId" : "requestRecovery",
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/RecoveryRequestRequest"
+              }
+            }
+          }
+        },
+        "responses" : {
+          "204" : {
+            "description" : "No Content"
+          }
+        }
+      }
+    },
     "/api/v1/auth/verify" : {
       "post" : {
         "tags" : [ "Auth" ],
@@ -221,6 +292,56 @@
           },
           "409" : {
             "description" : "DAILY_ALREADY_SOLVED or DAILY_DATE_INVALID",
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/daily/streak" : {
+      "get" : {
+        "tags" : [ "Daily" ],
+        "summary" : "Get your daily streak",
+        "description" : "Current and longest run, and banked restore points.",
+        "operationId" : "getStreak",
+        "responses" : {
+          "200" : {
+            "description" : "OK",
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/StreakResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/daily/streak/restore" : {
+      "post" : {
+        "tags" : [ "Daily" ],
+        "summary" : "Restore a broken streak",
+        "description" : "Spends banked restore points (1 per missed day, 10 Rhubarb per point) to repair a gap, so today's submission extends the streak instead of restarting it.",
+        "operationId" : "restoreStreak",
+        "responses" : {
+          "200" : {
+            "description" : "OK",
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/StreakResponse"
+                }
+              }
+            }
+          },
+          "409" : {
+            "description" : "STREAK_RESTORE_NOT_NEEDED, INSUFFICIENT_RESTORE_POINTS or INSUFFICIENT_BALANCE",
             "content" : {
               "application/json" : {
                 "schema" : {
@@ -590,6 +711,47 @@
         }
       }
     },
+    "/api/v1/matches/{id}/request" : {
+      "post" : {
+        "tags" : [ "Matches" ],
+        "summary" : "Ask a specific player to join a match",
+        "description" : "Pushes the invite over the target's presence socket, so it surfaces in their app immediately. The request is not stored: a player who is offline gets PLAYER_OFFLINE rather than a message they would receive hours later for a match that no longer exists.",
+        "operationId" : "requestMatch",
+        "parameters" : [ {
+          "name" : "id",
+          "in" : "path",
+          "description" : "Match id",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        } ],
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/MatchRequestRequest"
+              }
+            }
+          }
+        },
+        "responses" : {
+          "204" : {
+            "description" : "No Content"
+          },
+          "409" : {
+            "description" : "PLAYER_OFFLINE",
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/players" : {
       "get" : {
         "tags" : [ "Stats" ],
@@ -803,6 +965,79 @@
                   "items" : {
                     "$ref" : "#/components/schemas/UserResponse"
                   }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/users/me/email" : {
+      "post" : {
+        "tags" : [ "Recovery" ],
+        "summary" : "Request email verification",
+        "description" : "Authenticated. Emails a 6-digit code, superseding any outstanding request.",
+        "operationId" : "requestEmailVerification",
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/EmailRequest"
+              }
+            }
+          }
+        },
+        "responses" : {
+          "204" : {
+            "description" : "No Content"
+          },
+          "409" : {
+            "description" : "EMAIL_TAKEN",
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503" : {
+            "description" : "MAIL_NOT_CONFIGURED",
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/users/me/email/verify" : {
+      "post" : {
+        "tags" : [ "Recovery" ],
+        "summary" : "Confirm email verification",
+        "operationId" : "confirmEmailVerification",
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/EmailVerifyRequest"
+              }
+            }
+          }
+        },
+        "responses" : {
+          "204" : {
+            "description" : "No Content"
+          },
+          "403" : {
+            "description" : "EMAIL_VERIFICATION_INVALID",
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ErrorResponse"
                 }
               }
             }
@@ -1143,6 +1378,28 @@
         },
         "required" : [ "requireDifficulty", "requireElapsedMs", "mistakesOrZero", "hintsUsedOrZero" ]
       },
+      "EmailRequest" : {
+        "type" : "object",
+        "properties" : {
+          "requireEmail" : {
+            "type" : "string"
+          },
+          "email" : {
+            "type" : "string"
+          }
+        }
+      },
+      "EmailVerifyRequest" : {
+        "type" : "object",
+        "properties" : {
+          "requireCode" : {
+            "type" : "string"
+          },
+          "code" : {
+            "type" : "string"
+          }
+        }
+      },
       "JoinMatchRequest" : {
         "type" : "object",
         "properties" : {
@@ -1181,6 +1438,14 @@
           }
         }
       },
+      "MatchRequestRequest" : {
+        "type" : "object",
+        "properties" : {
+          "userId" : {
+            "type" : "string"
+          }
+        }
+      },
       "PreferencesRequest" : {
         "type" : "object",
         "properties" : {
@@ -1194,6 +1459,47 @@
           }
         },
         "required" : [ "requireDailyDifficulty" ]
+      },
+      "RecoveryRedeemRequest" : {
+        "type" : "object",
+        "properties" : {
+          "requireRecoveryCode" : {
+            "type" : "string"
+          },
+          "decodePublicKey" : {
+            "type" : "string",
+            "format" : "binary"
+          },
+          "requireKeyAlgorithm" : {
+            "type" : "string"
+          },
+          "deviceLabelOrDefault" : {
+            "type" : "string"
+          },
+          "recoveryCode" : {
+            "type" : "string"
+          },
+          "publicKey" : {
+            "type" : "string"
+          },
+          "keyAlgorithm" : {
+            "type" : "string"
+          },
+          "deviceLabel" : {
+            "type" : "string"
+          }
+        }
+      },
+      "RecoveryRequestRequest" : {
+        "type" : "object",
+        "properties" : {
+          "requireEmail" : {
+            "type" : "string"
+          },
+          "email" : {
+            "type" : "string"
+          }
+        }
       },
       "RegisterRequest" : {
         "type" : "object",
@@ -1382,9 +1688,16 @@
           "longest" : {
             "type" : "integer",
             "format" : "int32"
+          },
+          "lastCompletedDate" : {
+            "type" : "string"
+          },
+          "restorePoints" : {
+            "type" : "integer",
+            "format" : "int32"
           }
         },
-        "required" : [ "current", "longest" ]
+        "required" : [ "current", "longest", "restorePoints" ]
       },
       "DeviceResponse" : {
         "type" : "object",
@@ -1568,9 +1881,12 @@
           },
           "lastSeenAt" : {
             "type" : "string"
+          },
+          "online" : {
+            "type" : "boolean"
           }
         },
-        "required" : [ "streak" ]
+        "required" : [ "streak", "online" ]
       },
       "PreferencesResponse" : {
         "type" : "object",

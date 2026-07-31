@@ -106,6 +106,39 @@ public class DailyHandler {
 	}
 	
 	@OpenApi(
+		summary = "Get your daily streak",
+		description = "Current and longest run, and banked restore points.",
+		operationId = "getStreak",
+		path = ApiVersion.PATH_PREFIX + "/daily/streak",
+		methods = HttpMethod.GET,
+		tags = "Daily",
+		responses = @OpenApiResponse(status = "200", content = @OpenApiContent(from = DailyResultResponse.StreakResponse.class))
+	)
+	public void streak(@NonNull Context ctx) {
+		Principal actor = this.authentication.require(ctx);
+		ctx.json(DailyResultResponse.StreakResponse.of(this.daily.streak(actor.userId())));
+	}
+	
+	@OpenApi(
+		summary = "Restore a broken streak",
+		description = "Spends banked restore points (1 per missed day, 10 Rhubarb per point) to repair a gap, so "
+			+ "today's submission extends the streak instead of restarting it.",
+		operationId = "restoreStreak",
+		path = ApiVersion.PATH_PREFIX + "/daily/streak/restore",
+		methods = HttpMethod.POST,
+		tags = "Daily",
+		responses = {
+			@OpenApiResponse(status = "200", content = @OpenApiContent(from = DailyResultResponse.StreakResponse.class)),
+			@OpenApiResponse(status = "409", description = "STREAK_RESTORE_NOT_NEEDED, INSUFFICIENT_RESTORE_POINTS or INSUFFICIENT_BALANCE",
+				content = @OpenApiContent(from = ErrorResponse.class))
+		}
+	)
+	public void restoreStreak(@NonNull Context ctx) {
+		Principal actor = this.authentication.require(ctx);
+		ctx.json(DailyResultResponse.StreakResponse.of(this.daily.restoreStreak(actor)));
+	}
+	
+	@OpenApi(
 		summary = "Today's daily leaderboard for one tier",
 		description = "Ranked within a single difficulty tier. Hints used are not exposed.",
 		operationId = "dailyLeaderboard",

@@ -6,13 +6,16 @@ import net.luis.sudoku.ApiVersion;
 import net.luis.sudoku.auth.Authentication;
 import net.luis.sudoku.domain.Match;
 import net.luis.sudoku.domain.Principal;
-import net.luis.sudoku.dto.request.CreateMatchRequest;
-import net.luis.sudoku.dto.request.JoinMatchRequest;
+import net.luis.sudoku.dto.request.*;
 import net.luis.sudoku.dto.response.*;
 import net.luis.sudoku.error.ApiException;
+import net.luis.sudoku.error.ErrorCode;
 import net.luis.sudoku.match.MatchService;
+import net.luis.sudoku.presence.PresenceMessage;
+import net.luis.sudoku.presence.PresenceService;
 import org.jspecify.annotations.NonNull;
 
+import java.util.Map;
 import java.util.UUID;
 
 /**
@@ -22,10 +25,12 @@ public class MatchHandler {
 	
 	private final Authentication authentication;
 	private final MatchService matches;
+	private final PresenceService presence;
 	
-	public MatchHandler(@NonNull Authentication authentication, @NonNull MatchService matches) {
+	public MatchHandler(@NonNull Authentication authentication, @NonNull MatchService matches, @NonNull PresenceService presence) {
 		this.authentication = authentication;
 		this.matches = matches;
+		this.presence = presence;
 	}
 	
 	@OpenApi(
@@ -121,5 +126,49 @@ public class MatchHandler {
 			throw ApiException.forbidden("Only a participant may invite others");
 		}
 		ctx.json(new CreatedMatchResponse(match.id().toString(), match.inviteToken()));
+	}
+	
+	@OpenApi(
+		summary = "Ask a specific player to join a match",
+		description = "Pushes the invite over the target's presence socket, so it surfaces in their app immediately. "
+			+ "The request is not stored: a player who is offline gets PLAYER_OFFLINE rather than a message they "
+			+ "would receive hours later for a match that no longer exists.",
+		operationId = "requestMatch",
+		path = ApiVersion.PATH_PREFIX + "/matches/{id}/request",
+		methods = HttpMethod.POST,
+		tags = "Matches",
+		pathParams = @OpenApiParam(name = "id", description = "Match id"),
+		requestBody = @OpenApiRequestBody(content = @OpenApiContent(from = MatchRequestRequest.class)),
+		responses = {
+			@OpenApiResponse(status = "204"),
+			@OpenApiResponse(status = "409", description = "PLAYER_OFFLINE", content = @OpenApiContent(from = ErrorResponse.class))
+		}
+	)
+	public void request(@NonNull Context ctx) {
+		Principal actor = this.authentication.require(ctx);
+		UUID matchId = Handlers.pathUuid(ctx, "id");
+		MatchRequestRequest request = ctx.bodyAsClass(MatchRequestRequest.class);
+		UUID targetId = Handlers.uuid(Requests.require(request.userId(), "userId"), "userId");
+		
+		Match match = this.matches.get(matchId);
+		if (!this.matches.isParticipant(matchId, actor.userId())) {
+			throw ApiException.forbidden("Only a participant may invite others");
+		}
+		if (targetId.equals(actor.userId())) {
+			throw ApiException.badRequest("Cannot request a match against yourself");
+		}
+		
+		boolean delivered = this.presence.send(targetId, PresenceMessage.of(PresenceMessage.Type.MATCH_REQUEST, Map.of(
+			"matchId", match.id().toString(),
+			"inviteToken", match.inviteToken(),
+			"mode", match.mode().name(),
+			"stake", match.stake(),
+			"fromUserId", actor.userId().toString(),
+			"fromDisplayName", actor.user().displayName()
+		)));
+		if (!delivered) {
+			throw new ApiException(ErrorCode.PLAYER_OFFLINE, "That player is not online");
+		}
+		ctx.status(204);
 	}
 }

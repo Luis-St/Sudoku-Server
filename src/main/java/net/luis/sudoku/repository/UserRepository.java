@@ -27,6 +27,21 @@ public final class UserRepository {
 		return transaction.from(USERS).select().where(Sql.equalsIgnoreCase(USER_DISPLAY_NAME, displayName)).fetchOneOrNull();
 	}
 	
+	/**
+	 * Looks up a user by a <strong>verified</strong> email address only (server-spec recovery), so an
+	 * unverified, unconfirmed address can never be used to take over an account.
+	 */
+	public @Nullable User findByVerifiedEmail(@NonNull SqlTransaction transaction, @NonNull String email) throws SqlException {
+		return transaction.from(USERS).select()
+			.where(Sql.equalsIgnoreCase(USER_EMAIL, email))
+			.where(Sql.equalTo(USER_EMAIL_VERIFIED, true))
+			.fetchOneOrNull();
+	}
+	
+	public void setEmail(@NonNull SqlTransaction transaction, @NonNull UUID id, @NonNull String email, boolean verified) throws SqlException {
+		transaction.from(USERS).update().set(USER_EMAIL, email).set(USER_EMAIL_VERIFIED, verified).where(Sql.equalTo(USER_ID, id)).execute();
+	}
+	
 	public @NonNull List<User> findAll(@NonNull SqlTransaction transaction) throws SqlException {
 		return transaction.from(USERS).select().orderBy(USER_DISPLAY_NAME.ascending()).fetch();
 	}
@@ -40,7 +55,7 @@ public final class UserRepository {
 	}
 	
 	public @NonNull User create(@NonNull SqlTransaction transaction, @NonNull String displayName, @NonNull Role role, @NonNull Instant now) throws SqlException {
-		User draft = new User(UUID.randomUUID(), displayName, role, now, false);
+		User draft = new User(UUID.randomUUID(), displayName, role, now, false, null, false);
 		return transaction.from(USERS).insert(draft).returning().getFirst();
 	}
 	

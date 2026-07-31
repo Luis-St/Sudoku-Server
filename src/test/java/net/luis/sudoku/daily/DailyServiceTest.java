@@ -4,8 +4,7 @@ import net.luis.sudoku.auth.*;
 import net.luis.sudoku.config.*;
 import net.luis.sudoku.currency.CurrencyService;
 import net.luis.sudoku.difficulty.Difficulty;
-import net.luis.sudoku.domain.DailyOutcome;
-import net.luis.sudoku.domain.Principal;
+import net.luis.sudoku.domain.*;
 import net.luis.sudoku.error.ApiException;
 import net.luis.sudoku.error.ErrorCode;
 import net.luis.sudoku.generation.GeneratedPuzzle;
@@ -51,6 +50,7 @@ class DailyServiceTest extends PostgresTest {
 	private DailyService daily;
 	private ServerConfig config;
 	private CurrencyService currency;
+	private StreakRepository streaks;
 	
 	/**
 	 * @return the full, correct solve order for a puzzle, in cell-index order
@@ -100,7 +100,7 @@ class DailyServiceTest extends PostgresTest {
 		this.results = new DailyResultRepository();
 		this.leaderboard = new DailyLeaderboardRepository();
 		DeviceRepository devices = new DeviceRepository();
-		StreakRepository streaks = new StreakRepository();
+		this.streaks = new StreakRepository();
 		
 		SessionService sessionService = new SessionService(database, new SessionRepository(), this.users, devices,
 			new CodeGenerator(), SessionCloser.NONE);
@@ -109,16 +109,16 @@ class DailyServiceTest extends PostgresTest {
 		StatsRepository statsRepository = new StatsRepository();
 		CurrencyService currency = new CurrencyService(database, new CurrencyLedgerRepository(), statsRepository,
 			this.config, clock);
-		StatsService statsService = new StatsService(database, statsRepository, this.users, streaks, this.results,
+		StatsService statsService = new StatsService(database, statsRepository, this.users, this.streaks, this.results,
 			this.leaderboard, this.config, clock);
-		this.daily = new DailyService(database, this.config, SERVER_ID, this.preferences, this.results, streaks,
+		this.daily = new DailyService(database, this.config, SERVER_ID, this.preferences, this.results, this.streaks,
 			this.leaderboard, currency, statsService, clock);
 		this.currency = currency;
 		this.registrations.ensureBootstrapInvite(BOOTSTRAP);
 	}
 	
 	private Principal player(String name) {
-		if (name.equals("Owner")) {
+		if ("Owner".equals(name)) {
 			TestKeys keys = TestKeys.ed25519(name);
 			RegistrationService.Registered registered =
 				this.registrations.register(BOOTSTRAP, name, keys.publicKey(), keys.algorithm(), "Phone");
@@ -473,6 +473,129 @@ class DailyServiceTest extends PostgresTest {
 			() -> assertEquals(1, later.streak().current(), "a gap resets the run"),
 			() -> assertEquals(1, later.streak().longest(), "but the best ever is remembered")
 		);
+	}
+	
+	private void seedStreak(UUID userId, int current, int longest, LocalDate lastCompleted, int restorePoints) {
+		database.execute(connection -> this.streaks.save(connection, new Streak(userId, current, longest, lastCompleted, restorePoints)));
+	}
+	
+	@Test
+	void streak_banksARestorePointEverySevenConsecutiveDays_cappedAtThree() {
+		Principal player = this.player("Owner");
+		int[] pointsByDay = new int[29];
+		
+		for (int day = 1; day <= 28; day++) {
+			DailyService.Submission submission = this.daily.submit(player, this.solvedSubmission(this.daily.today(), 3));
+			pointsByDay[day] = submission.streak().restorePoints();
+			this.now.set(this.now.get().plus(Duration.ofDays(1)));
+		}
+		
+		assertAll(
+			() -> assertEquals(1, pointsByDay[7]),
+			() -> assertEquals(2, pointsByDay[14]),
+			() -> assertEquals(3, pointsByDay[21]),
+			() -> assertEquals(3, pointsByDay[28], "capped at MAX_RESTORE_POINTS")
+		);
+	}
+	
+	@Test
+	void streak_bankedPoints_surviveABrokenStreak() {
+		Principal player = this.player("Owner");
+		for (int day = 0; day < 7; day++) {
+			this.daily.submit(player, this.solvedSubmission(this.daily.today(), 3));
+			this.now.set(this.now.get().plus(Duration.ofDays(1)));
+		}
+		// Skip a day, breaking the run.
+		this.now.set(this.now.get().plus(Duration.ofDays(1)));
+		
+		DailyService.Submission afterGap = this.daily.submit(player, this.solvedSubmission(this.daily.today(), 3));
+		
+		assertAll(
+			() -> assertEquals(1, afterGap.streak().current(), "the gap restarts the run"),
+			() -> assertEquals(1, afterGap.streak().restorePoints(), "but the banked point is untouched")
+		);
+	}
+	
+	// --- streak restore ---
+	
+	@Test
+	void restoreStreak_withOneMissedDay_repairsTheGapAndSpendsTenRhubarbPerDay() {
+		Principal player = this.player("Owner");
+		this.seedStreak(player.userId(), 5, 5, this.daily.today().minusDays(2), 2);
+		this.currency.sync(player.userId(), 100, 5);
+		
+		Streak restored = this.daily.restoreStreak(player);
+		
+		assertAll(
+			() -> assertEquals(6, restored.current()),
+			() -> assertEquals(this.daily.today().minusDays(1), restored.lastCompletedDate()),
+			() -> assertEquals(1, restored.restorePoints(), "spent one of the two banked points"),
+			() -> assertEquals(90, this.currency.balance(player.userId()))
+		);
+	}
+	
+	@Test
+	void restoreStreak_withTwoMissedDays_spendsTwoPointsAndTwentyRhubarb() {
+		Principal player = this.player("Owner");
+		this.seedStreak(player.userId(), 5, 5, this.daily.today().minusDays(3), 2);
+		this.currency.sync(player.userId(), 100, 5);
+		
+		Streak restored = this.daily.restoreStreak(player);
+		
+		assertAll(
+			() -> assertEquals(7, restored.current()),
+			() -> assertEquals(this.daily.today().minusDays(1), restored.lastCompletedDate()),
+			() -> assertEquals(0, restored.restorePoints()),
+			() -> assertEquals(80, this.currency.balance(player.userId()))
+		);
+	}
+	
+	@Test
+	void restoreStreak_withFewerPointsThanMissedDays_isRejected() {
+		Principal player = this.player("Owner");
+		this.seedStreak(player.userId(), 5, 5, this.daily.today().minusDays(3), 1);
+		this.currency.sync(player.userId(), 100, 5);
+		
+		ApiException e = assertThrows(ApiException.class, () -> this.daily.restoreStreak(player));
+		assertEquals(ErrorCode.INSUFFICIENT_RESTORE_POINTS, e.code());
+	}
+	
+	@Test
+	void restoreStreak_withoutEnoughCurrency_isRejected() {
+		Principal player = this.player("Owner");
+		this.seedStreak(player.userId(), 5, 5, this.daily.today().minusDays(2), 2);
+		
+		ApiException e = assertThrows(ApiException.class, () -> this.daily.restoreStreak(player));
+		assertEquals(ErrorCode.INSUFFICIENT_BALANCE, e.code());
+	}
+	
+	@Test
+	void restoreStreak_withNoGap_isRejected() {
+		Principal player = this.player("Owner");
+		this.seedStreak(player.userId(), 3, 3, this.daily.today().minusDays(1), 1);
+		
+		ApiException e = assertThrows(ApiException.class, () -> this.daily.restoreStreak(player));
+		assertEquals(ErrorCode.STREAK_RESTORE_NOT_NEEDED, e.code());
+	}
+	
+	@Test
+	void restoreStreak_whenTheStreakHasNeverStarted_isRejected() {
+		Principal player = this.player("Owner");
+		
+		ApiException e = assertThrows(ApiException.class, () -> this.daily.restoreStreak(player));
+		assertEquals(ErrorCode.STREAK_RESTORE_NOT_NEEDED, e.code());
+	}
+	
+	@Test
+	void restoreStreak_thenANormalSubmitToday_extendsTheStreakFurther() {
+		Principal player = this.player("Owner");
+		this.seedStreak(player.userId(), 5, 5, this.daily.today().minusDays(2), 2);
+		this.currency.sync(player.userId(), 100, 5);
+		this.daily.restoreStreak(player);
+		
+		DailyService.Submission submission = this.daily.submit(player, this.solvedSubmission(this.daily.today(), 3));
+		
+		assertEquals(7, submission.streak().current(), "today's submission sees a consecutive continuation");
 	}
 	
 	@Test

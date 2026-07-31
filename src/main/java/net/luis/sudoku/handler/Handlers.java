@@ -28,4 +28,15 @@ final class Handlers {
 			throw ApiException.badRequest("Path parameter " + name + " must be a UUID, got: " + raw);
 		}
 	}
+	
+	/**
+	 * The same conversion for a UUID that arrived in a request body rather than the path.
+	 */
+	static @NonNull UUID uuid(@NonNull String raw, @NonNull String field) {
+		try {
+			return UUID.fromString(raw);
+		} catch (IllegalArgumentException e) {
+			throw ApiException.badRequest("Field " + field + " must be a UUID, got: " + raw);
+		}
+	}
 }

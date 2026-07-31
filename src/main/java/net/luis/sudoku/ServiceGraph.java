@@ -8,10 +8,13 @@ import net.luis.sudoku.db.*;
 import net.luis.sudoku.device.DeviceLinkService;
 import net.luis.sudoku.invite.InviteService;
 import net.luis.sudoku.invite.RegistrationService;
+import net.luis.sudoku.mail.MailService;
 import net.luis.sudoku.match.MatchRegistry;
 import net.luis.sudoku.match.MatchService;
 import net.luis.sudoku.permission.UserAdminService;
+import net.luis.sudoku.presence.PresenceService;
 import net.luis.sudoku.puzzle.PuzzleQueue;
+import net.luis.sudoku.recovery.RecoveryService;
 import net.luis.sudoku.repository.*;
 import net.luis.sudoku.security.CodeGenerator;
 import net.luis.sudoku.security.RateLimiter;
@@ -48,6 +51,8 @@ public final class ServiceGraph implements AutoCloseable {
 	private final SessionRepository sessions = new SessionRepository();
 	private final AuthChallengeRepository challenges = new AuthChallengeRepository();
 	private final LinkCodeRepository linkCodes = new LinkCodeRepository();
+	private final EmailVerificationRepository emailVerifications = new EmailVerificationRepository();
+	private final RecoveryCodeRepository recoveryCodes = new RecoveryCodeRepository();
 	private final PreferenceRepository preferences = new PreferenceRepository();
 	private final DailyResultRepository dailyResults = new DailyResultRepository();
 	private final StreakRepository streaks = new StreakRepository();
@@ -67,10 +72,13 @@ public final class ServiceGraph implements AutoCloseable {
 	private final InviteService inviteService;
 	private final UserAdminService userAdminService;
 	private final DeviceLinkService deviceLinkService;
+	private final MailService mailService;
+	private final RecoveryService recoveryService;
 	private final DailyService dailyService;
 	private final StatsService statsService;
 	private final CurrencyService currencyService;
 	private final MatchRegistry matchRegistry = new MatchRegistry();
+	private final PresenceService presenceService = new PresenceService();
 	private final MatchService matchService;
 	private final PuzzleQueue puzzleQueue;
 	
@@ -102,6 +110,9 @@ public final class ServiceGraph implements AutoCloseable {
 		
 		this.deviceLinkService = new DeviceLinkService(this.database, this.linkCodes, this.devices, this.users, this.sessionService, this.signatureVerifier, this.codes, clock);
 		
+		this.mailService = new MailService(config.mail());
+		this.recoveryService = new RecoveryService(this.database, this.emailVerifications, this.recoveryCodes, this.users, this.devices, this.sessionService, this.signatureVerifier, this.codes, this.mailService, clock);
+		
 		this.statsService = new StatsService(this.database, this.stats, this.users, this.streaks, this.dailyResults, this.dailyLeaderboard, config, clock);
 		this.currencyService = new CurrencyService(this.database, this.ledger, this.stats, config, clock);
 		this.dailyService = new DailyService(this.database, config, this.serverId, this.preferences, this.dailyResults, this.streaks, this.dailyLeaderboard, this.currencyService, this.statsService, clock);
@@ -123,6 +134,8 @@ public final class ServiceGraph implements AutoCloseable {
 				this.database.execute(connection -> {
 					this.sessions.deleteExpired(connection, this.clock.instant());
 					this.challenges.deleteExpired(connection, this.clock.instant());
+					this.emailVerifications.deleteExpired(connection, this.clock.instant());
+					this.recoveryCodes.deleteExpired(connection, this.clock.instant());
 				});
 			} catch (RuntimeException e) {
 				// A failed sweep must never kill the scheduled task, or the leak it prevents comes back.
@@ -211,6 +224,22 @@ public final class ServiceGraph implements AutoCloseable {
 		return this.deviceLinkService;
 	}
 	
+	public @NonNull MailService mailService() {
+		return this.mailService;
+	}
+	
+	public @NonNull RecoveryService recoveryService() {
+		return this.recoveryService;
+	}
+	
+	public @NonNull EmailVerificationRepository emailVerifications() {
+		return this.emailVerifications;
+	}
+	
+	public @NonNull RecoveryCodeRepository recoveryCodes() {
+		return this.recoveryCodes;
+	}
+	
 	public @NonNull DailyService dailyService() {
 		return this.dailyService;
 	}
@@ -229,6 +258,10 @@ public final class ServiceGraph implements AutoCloseable {
 	
 	public @NonNull MatchService matchService() {
 		return this.matchService;
+	}
+	
+	public @NonNull PresenceService presenceService() {
+		return this.presenceService;
 	}
 	
 	public @NonNull MatchRegistry matchRegistry() {

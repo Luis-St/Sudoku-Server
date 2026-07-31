@@ -81,10 +81,12 @@ public class Application {
 		var userHandler = new UserHandler(services.authentication(), services.userAdminService());
 		var inviteHandler = new InviteHandler(services.authentication(), services.inviteService());
 		var deviceHandler = new DeviceHandler(services.authentication(), services.deviceLinkService(), services.userAdminService(), services.rateLimiter(), services.config().trustProxy());
+		var recoveryHandler = new RecoveryHandler(services.authentication(), services.recoveryService(), services.rateLimiter(), services.config().trustProxy());
 		var dailyHandler = new DailyHandler(services.authentication(), services.dailyService());
-		var statsHandler = new StatsHandler(services.authentication(), services.statsService());
+		var statsHandler = new StatsHandler(services.authentication(), services.statsService(), services.presenceService());
 		var currencyHandler = new CurrencyHandler(services.authentication(), services.currencyService());
-		var matchHandler = new MatchHandler(services.authentication(), services.matchService());
+		var matchHandler = new MatchHandler(services.authentication(), services.matchService(), services.presenceService());
+		var presenceSocketHandler = new PresenceSocketHandler(services.sessionService(), services.presenceService(), services.clock());
 		var matchSocketHandler = new MatchSocketHandler(services.authentication(), services.sessionService(), services.matchService(), services.rateLimiter(), services.clock());
 		
 		// Health
@@ -114,10 +116,18 @@ public class Application {
 		javalin.routes.get(ApiVersion.PATH_PREFIX + "/devices", deviceHandler::list);
 		javalin.routes.delete(ApiVersion.PATH_PREFIX + "/devices/{id}", deviceHandler::revoke);
 		
+		// Account recovery
+		javalin.routes.post(ApiVersion.PATH_PREFIX + "/users/me/email", recoveryHandler::requestEmailVerification);
+		javalin.routes.post(ApiVersion.PATH_PREFIX + "/users/me/email/verify", recoveryHandler::confirmEmail);
+		javalin.routes.post(ApiVersion.PATH_PREFIX + "/auth/recovery/request", recoveryHandler::requestRecovery);
+		javalin.routes.post(ApiVersion.PATH_PREFIX + "/auth/recovery/redeem", recoveryHandler::redeemRecovery);
+		
 		// Daily puzzle
 		javalin.routes.get(ApiVersion.PATH_PREFIX + "/daily", dailyHandler::daily);
 		javalin.routes.get(ApiVersion.PATH_PREFIX + "/daily/leaderboard", dailyHandler::leaderboard);
 		javalin.routes.post(ApiVersion.PATH_PREFIX + "/daily/result", dailyHandler::submitResult);
+		javalin.routes.get(ApiVersion.PATH_PREFIX + "/daily/streak", dailyHandler::streak);
+		javalin.routes.post(ApiVersion.PATH_PREFIX + "/daily/streak/restore", dailyHandler::restoreStreak);
 		javalin.routes.get(ApiVersion.PATH_PREFIX + "/preferences", dailyHandler::preferences);
 		javalin.routes.put(ApiVersion.PATH_PREFIX + "/preferences", dailyHandler::setPreferences);
 		
@@ -135,6 +145,10 @@ public class Application {
 		javalin.routes.get(ApiVersion.PATH_PREFIX + "/matches/{id}", matchHandler::get);
 		javalin.routes.post(ApiVersion.PATH_PREFIX + "/matches/{id}/join", matchHandler::join);
 		javalin.routes.post(ApiVersion.PATH_PREFIX + "/matches/{id}/invite", matchHandler::invite);
+		javalin.routes.post(ApiVersion.PATH_PREFIX + "/matches/{id}/request", matchHandler::request);
 		javalin.routes.ws(ApiVersion.WS_PATH_PREFIX + "/matches/{id}", matchSocketHandler);
+		
+		// Presence: who is online, and the channel player-to-player match requests arrive on
+		javalin.routes.ws(ApiVersion.WS_PATH_PREFIX + "/presence", presenceSocketHandler);
 	}
 }

@@ -11,8 +11,6 @@ import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.testcontainers.containers.PostgreSQLContainer;
 
-import java.sql.*;
-
 /**
  * Base class for tests that need a real Postgres.
  * <p>
@@ -70,11 +68,11 @@ public abstract class PostgresTest {
 	 * {@link Migrations#migrate} genuinely re-runs rather than reporting itself already applied.
 	 */
 	@BeforeEach
-	void resetSchema() throws SQLException {
-		try (Connection connection = dataSource.getConnection(); Statement statement = connection.createStatement()) {
-			statement.execute("DROP SCHEMA public CASCADE");
-			statement.execute("CREATE SCHEMA public");
-		}
+	void resetSchema() {
+		database.execute(transaction -> {
+			transaction.dropSchema("public", true);
+			transaction.createSchema("public");
+		});
 		Migrations.migrate(database);
 	}
 }

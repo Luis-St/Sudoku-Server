@@ -79,7 +79,7 @@ class MatchServiceTest extends PostgresTest {
 	
 	private Principal player(String name) {
 		String code = BOOTSTRAP;
-		if (!name.equals("Owner")) {
+		if (!"Owner".equals(name)) {
 			code = "INV" + UUID.randomUUID().toString().replace("-", "").substring(0, 8).toUpperCase();
 			String finalCode = code;
 			database.execute(connection -> this.invites.create(connection, finalCode, null, Role.NEW, null, NOW));

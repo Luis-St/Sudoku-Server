@@ -83,7 +83,14 @@ public final class RateLimiter {
 		/** Guessing an invite code should be hopeless well before the TTL expires. */
 		REGISTER(10, Duration.ofMinutes(10)),
 		/** Link codes are the shortest secret in the system, so this is the tightest budget. */
-		DEVICE_LINK(10, Duration.ofMinutes(10));
+		DEVICE_LINK(10, Duration.ofMinutes(10)),
+		/** Cheap and unauthenticated, but sending mail on demand is not free. */
+		EMAIL_VERIFY_REQUEST(5, Duration.ofMinutes(15)),
+		/** Unauthenticated and reveals nothing itself (the response is enumeration-safe), but still cheap
+		 *  to spam, so it is limited by client IP. */
+		RECOVERY_REQUEST(5, Duration.ofMinutes(15)),
+		/** A recovery code hands over the whole account, so this is the tightest budget of all. */
+		RECOVERY_REDEEM(10, Duration.ofMinutes(10));
 		
 		private final int limit;
 		private final Duration window;

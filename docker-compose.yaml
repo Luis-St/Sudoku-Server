@@ -1,0 +1,16 @@
+services:
+  sudoku:
+    image: sudoku-server:latest
+    restart: unless-stopped
+    env_file:
+      - .env
+    ports:
+      - "7000:7000"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    healthcheck:
+      test: [ "CMD-SHELL", "wget -qO- http://localhost:7000/health || exit 1" ]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s

@@ -34,6 +34,16 @@ public enum ErrorCode {
 	/** Link code missing, expired, or already consumed. */
 	LINK_CODE_INVALID(403),
 	
+	// Account recovery
+	/** That email is already verified on another account. */
+	EMAIL_TAKEN(409),
+	/** Email verification code missing, expired, or already consumed. */
+	EMAIL_VERIFICATION_INVALID(403),
+	/** Recovery code missing, expired, or already consumed. */
+	RECOVERY_CODE_INVALID(403),
+	/** No SMTP settings are configured on this server. */
+	MAIL_NOT_CONFIGURED(503),
+	
 	// Authorization
 	/** The caller has been kicked. */
 	USER_REVOKED(403),
@@ -53,12 +63,18 @@ public enum ErrorCode {
 	LISA_NOT_ALLOWED(400),
 	/** Balance is below the match stake. */
 	INSUFFICIENT_BALANCE(409),
+	/** A match request was addressed to a player with no presence socket open. */
+	PLAYER_OFFLINE(409),
 	
 	// Daily
 	/** A success already exists for that date; the date is locked. */
 	DAILY_ALREADY_SOLVED(409),
 	/** Submission for a past or future date. */
 	DAILY_DATE_INVALID(409),
+	/** There is no gap to restore, or the streak has never been started. */
+	STREAK_RESTORE_NOT_NEEDED(409),
+	/** Fewer banked restore points than the number of missed days. */
+	INSUFFICIENT_RESTORE_POINTS(409),
 	
 	// Generic
 	BAD_REQUEST(400),

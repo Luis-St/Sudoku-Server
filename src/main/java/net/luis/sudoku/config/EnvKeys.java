@@ -46,5 +46,13 @@ public final class EnvKeys {
 	// Currency
 	public static final String CURRENCY_DAILY_GAME_CAP = "SUDOKU_CURRENCY_DAILY_GAME_CAP";
 	
+	// Mail (account recovery); unset means mail is not configured
+	public static final String SMTP_HOST = "SUDOKU_SMTP_HOST";
+	public static final String SMTP_PORT = "SUDOKU_SMTP_PORT";
+	public static final String SMTP_SECURITY = "SUDOKU_SMTP_SECURITY";
+	public static final String SMTP_USERNAME = "SUDOKU_SMTP_USERNAME";
+	public static final String SMTP_PASSWORD = "SUDOKU_SMTP_PASSWORD";
+	public static final String SMTP_FROM = "SUDOKU_SMTP_FROM";
+	
 	private EnvKeys() {}
 }

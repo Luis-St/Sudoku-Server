@@ -3,6 +3,7 @@ package net.luis.sudoku.config;
 import net.luis.sudoku.grid.GridSize;
 import net.luis.sudoku.grid.Variant;
 import org.jspecify.annotations.NonNull;
+import org.jspecify.annotations.Nullable;
 
 import java.time.DateTimeException;
 import java.time.ZoneId;
@@ -28,6 +29,7 @@ import java.time.ZoneId;
  * @param duel duel-mode time-bank tuning
  * @param match match reconnect tuning
  * @param currencyDailyGameCap currency-earning normal games per day
+ * @param mail SMTP settings for account recovery email, or null if mail is not configured
  */
 public record ServerConfig(
 	int port,
@@ -39,7 +41,8 @@ public record ServerConfig(
 	boolean trustProxy,
 	@NonNull DuelConfig duel,
 	@NonNull MatchConfig match,
-	int currencyDailyGameCap
+	int currencyDailyGameCap,
+	@Nullable MailConfig mail
 ) {
 	
 	/**
@@ -71,7 +74,8 @@ public record ServerConfig(
 			env.bool(EnvKeys.TRUST_PROXY, true),
 			DuelConfig.from(env),
 			MatchConfig.from(env),
-			env.integer(EnvKeys.CURRENCY_DAILY_GAME_CAP, 10)
+			env.integer(EnvKeys.CURRENCY_DAILY_GAME_CAP, 10),
+			MailConfig.from(env)
 		);
 	}
 	

@@ -1,6 +1,6 @@
 [versions]
 sudoku-lib = "1.0.0"
-lutils = "10.4.0-beta.3"
+lutils = "10.4.0-beta.4"
 javalin = "7.2.0"
 javalin-openapi = "7.2.2"
 jackson = "3.1.3"

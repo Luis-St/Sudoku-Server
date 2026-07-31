@@ -7,6 +7,7 @@ import net.luis.sudoku.auth.Authentication;
 import net.luis.sudoku.domain.Principal;
 import net.luis.sudoku.dto.request.StatsSyncRequest;
 import net.luis.sudoku.dto.response.*;
+import net.luis.sudoku.presence.PresenceService;
 import net.luis.sudoku.stats.StatsService;
 import org.jspecify.annotations.NonNull;
 
@@ -19,10 +20,12 @@ public class StatsHandler {
 	
 	private final Authentication authentication;
 	private final StatsService stats;
+	private final PresenceService presence;
 	
-	public StatsHandler(@NonNull Authentication authentication, @NonNull StatsService stats) {
+	public StatsHandler(@NonNull Authentication authentication, @NonNull StatsService stats, @NonNull PresenceService presence) {
 		this.authentication = authentication;
 		this.stats = stats;
+		this.presence = presence;
 	}
 	
 	@OpenApi(
@@ -35,7 +38,9 @@ public class StatsHandler {
 	)
 	public void players(@NonNull Context ctx) {
 		this.authentication.require(ctx);
-		List<PlayerResponse> players = this.stats.players().stream().map(PlayerResponse::of).toList();
+		List<PlayerResponse> players = this.stats.players().stream()
+			.map(summary -> PlayerResponse.of(summary, this.presence.isOnline(summary.id())))
+			.toList();
 		ctx.json(players);
 	}
 	

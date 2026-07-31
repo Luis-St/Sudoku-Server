@@ -2,12 +2,13 @@ package net.luis.sudoku.repository;
 
 import net.luis.utils.io.database.Sql;
 import net.luis.utils.io.database.exception.SqlException;
+import net.luis.utils.io.database.query.SqlAlias;
 import net.luis.utils.io.database.query.row.SqlRow4;
+import net.luis.utils.io.database.query.util.SqlSetClause;
+import net.luis.utils.io.database.query.util.SqlSetType;
 import net.luis.utils.io.database.transaction.SqlTransaction;
 import org.jspecify.annotations.NonNull;
 
-import java.sql.PreparedStatement;
-import java.sql.SQLException;
 import java.time.LocalDate;
 import java.util.*;
 
@@ -24,30 +25,21 @@ public final class DailyLeaderboardRepository {
 	/**
 	 * Records a successful attempt, keeping the player's best time for the day.
 	 * <p>
-	 * The upsert has a composite conflict key and a {@code least()} merge on one column, neither of
-	 * which the query builder's generic upsert supports (single conflict column, always
-	 * {@code col = EXCLUDED.col}), so this stays raw SQL.
+	 * A player can solve the same daily on several attempts; the row keeps the fastest of them, which is
+	 * what {@code least()} over the stored and the incoming time expresses. The attempt count and hints
+	 * come from the latest attempt, so they are simply overwritten.
 	 */
 	public void record(@NonNull SqlTransaction transaction, @NonNull UUID userId, @NonNull LocalDate date, int difficulty, long elapsedMs, int attempts, int hintsUsed) throws SqlException {
-		String sql = """
-			INSERT INTO daily_leaderboard (date, difficulty, user_id, elapsed_ms, attempts, hints_used)
-			VALUES (?, ?, ?, ?, ?, ?)
-			ON CONFLICT (date, difficulty, user_id) DO UPDATE
-			   SET elapsed_ms = least(daily_leaderboard.elapsed_ms, EXCLUDED.elapsed_ms),
-			       attempts = EXCLUDED.attempts,
-			       hints_used = EXCLUDED.hints_used
-			""";
-		try (PreparedStatement statement = transaction.getConnection().prepareStatement(sql)) {
-			statement.setObject(1, date);
-			statement.setInt(2, difficulty);
-			statement.setObject(3, userId);
-			statement.setLong(4, elapsedMs);
-			statement.setInt(5, attempts);
-			statement.setInt(6, hintsUsed);
-			statement.executeUpdate();
-		} catch (SQLException e) {
-			throw new SqlException("Failed to record leaderboard entry", e);
-		}
+		LeaderboardRow row = new LeaderboardRow(date, difficulty, userId, elapsedMs, attempts, hintsUsed);
+		Upserts.upsert(
+			transaction, DAILY_LEADERBOARD, row,
+			List.of(LEADERBOARD_DATE, LEADERBOARD_DIFFICULTY, LEADERBOARD_USER_ID),
+			List.of(
+				new SqlSetClause<>(LEADERBOARD_ELAPSED_MS, Sql.least(LEADERBOARD_ELAPSED_MS, LEADERBOARD_ELAPSED_MS.of(SqlAlias.EXCLUDED)), SqlSetType.EXPRESSION),
+				new SqlSetClause<>(LEADERBOARD_ATTEMPTS, LEADERBOARD_ATTEMPTS.of(SqlAlias.EXCLUDED), SqlSetType.EXPRESSION),
+				new SqlSetClause<>(LEADERBOARD_HINTS_USED, LEADERBOARD_HINTS_USED.of(SqlAlias.EXCLUDED), SqlSetType.EXPRESSION)
+			)
+		);
 	}
 	
 	/**
