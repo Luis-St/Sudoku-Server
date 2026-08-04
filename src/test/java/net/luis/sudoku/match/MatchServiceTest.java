@@ -4,6 +4,7 @@ import net.luis.sudoku.auth.*;
 import net.luis.sudoku.config.*;
 import net.luis.sudoku.currency.CurrencyService;
 import net.luis.sudoku.difficulty.Difficulty;
+import net.luis.sudoku.dto.request.CreateMatchRequest;
 import net.luis.sudoku.domain.Match;
 import net.luis.sudoku.domain.Principal;
 import net.luis.sudoku.error.ApiException;
@@ -95,8 +96,36 @@ class MatchServiceTest extends PostgresTest {
 			this.ledger.append(connection, player.userId(), amount, net.luis.sudoku.currency.LedgerReason.EARN_GAME, null, NOW));
 	}
 	
+	/**
+	 * Multiplayer-game item 1: hints are a match setting now, chosen once by the creator and persisted with
+	 * the rest of the configuration. It used to be an in-game switch on the co-op screen, which two players
+	 * sharing one board could disagree about.
+	 */
+	@Test
+	void create_withHintsDisabled_persistsTheSetting() {
+		Principal owner = this.player("Owner");
+		
+		MatchService.Created created = this.matches.create(owner, MatchMode.COOP, GridSize.FOUR, Variant.CLASSIC,
+			Difficulty.TWO, false, false, 0);
+		
+		assertFalse(created.match().hintsEnabled());
+	}
+	
+	/**
+	 * The opposite default from lives, and deliberately so: a client that says nothing about hints is asking
+	 * for the ordinary game, and an older client cannot say anything at all.
+	 */
+	@Test
+	void settings_omittingHints_defaultsToEnabled() {
+		assertAll(
+			() -> assertTrue(new CreateMatchRequest.Settings(null, null, null).hintsEnabledOrDefault()),
+			() -> assertFalse(new CreateMatchRequest.Settings(null, false, null).hintsEnabledOrDefault()),
+			() -> assertFalse(new CreateMatchRequest.Settings(null, null, null).livesEnabledOrDefault())
+		);
+	}
+	
 	private MatchService.Created createRace(Principal creator, int stake) {
-		return this.matches.create(creator, MatchMode.RACE, GridSize.FOUR, Variant.CLASSIC, Difficulty.TWO, false, stake);
+		return this.matches.create(creator, MatchMode.RACE, GridSize.FOUR, Variant.CLASSIC, Difficulty.TWO, false, true, stake);
 	}
 	
 	@Test
@@ -120,7 +149,7 @@ class MatchServiceTest extends PostgresTest {
 		Principal owner = this.player("Owner");
 		
 		ApiException e = assertThrows(ApiException.class, () -> this.matches.create(owner, MatchMode.DUEL,
-			GridSize.NINE, Variant.CLASSIC, Difficulty.LISA, false, 0));
+			GridSize.NINE, Variant.CLASSIC, Difficulty.LISA, false, true, 0));
 		
 		assertAll(
 			() -> assertEquals(ErrorCode.LISA_NOT_ALLOWED, e.code()),
@@ -191,7 +220,7 @@ class MatchServiceTest extends PostgresTest {
 	void join_aCoopMatch_admitsFour() {
 		Principal owner = this.player("Owner");
 		MatchService.Created created = this.matches.create(owner, MatchMode.COOP, GridSize.FOUR, Variant.CLASSIC,
-			Difficulty.TWO, false, 0);
+			Difficulty.TWO, false, true, 0);
 		
 		for (String name : new String[] { "Second", "Third", "Fourth" }) {
 			this.matches.join(this.player(name), created.match().id(), created.inviteToken());

@@ -110,29 +110,46 @@ class StatsServiceTest extends PostgresTest {
 		this.player("Owner");
 		this.player("Second");
 		
-		List<StatsService.PlayerSummary> players = this.stats.players();
-		
+		List<StatsService.PlayerSummary> players = this.stats.players(false);
+
 		assertAll(
 			() -> assertEquals(2, players.size()),
 			() -> assertTrue(players.stream().anyMatch(p -> "Owner".equals(p.displayName()))),
 			() -> assertTrue(players.stream().anyMatch(p -> "Second".equals(p.displayName())))
 		);
 	}
-	
+
 	@Test
 	void players_excludesKickedPlayers() {
 		this.player("Owner");
 		Principal kicked = this.player("Gone");
 		database.execute(connection -> new UserRepository().revoke(connection, kicked.userId()));
-		
-		assertEquals(1, this.stats.players().size());
+
+		assertEquals(1, this.stats.players(false).size());
 	}
-	
+
+	@Test
+	void players_includesKickedPlayersWhenAsked() {
+		this.player("Owner");
+		Principal kicked = this.player("Gone");
+		database.execute(connection -> new UserRepository().revoke(connection, kicked.userId()));
+
+		List<StatsService.PlayerSummary> players = this.stats.players(true);
+
+		assertAll(
+			() -> assertEquals(2, players.size()),
+			// The flag is the whole point of including them: without it the row is indistinguishable from an
+			// ordinary player and there is nothing for an admin to reinstate from.
+			() -> assertTrue(players.stream().anyMatch(p -> "Gone".equals(p.displayName()) && p.revoked())),
+			() -> assertTrue(players.stream().anyMatch(p -> "Owner".equals(p.displayName()) && !p.revoked()))
+		);
+	}
+
 	@Test
 	void players_reportsLastSeen() {
 		Principal player = this.player("Owner");
 		// Registration issues a session, which touches the device.
-		StatsService.PlayerSummary summary = this.stats.players().stream()
+		StatsService.PlayerSummary summary = this.stats.players(false).stream()
 			.filter(p -> p.id().equals(player.userId()))
 			.findFirst()
 			.orElseThrow();

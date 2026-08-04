@@ -64,7 +64,7 @@ public final class MatchService {
 	 *
 	 * @throws ApiException {@code LISA_NOT_ALLOWED} if Lisa is requested (spec 10.1)
 	 */
-	public @NonNull Created create(@NonNull Principal actor, @NonNull MatchMode mode, @NonNull GridSize size, @NonNull Variant variant, @NonNull Difficulty difficulty, boolean livesEnabled, int stake) {
+	public @NonNull Created create(@NonNull Principal actor, @NonNull MatchMode mode, @NonNull GridSize size, @NonNull Variant variant, @NonNull Difficulty difficulty, boolean livesEnabled, boolean hintsEnabled, int stake) {
 		actor.require(Permission.CAN_PLAY);
 		// Lisa carries single-player gameplay modifiers, so it is refused for every mode (spec 10.1).
 		PuzzleFactory.requireMultiplayerSafe(difficulty);
@@ -82,7 +82,7 @@ public final class MatchService {
 		Instant now = this.clock.instant();
 		
 		Match match = this.database.transaction(connection -> {
-			Match created = this.matches.create(connection, mode, actor.userId(), size, variant, difficulty, puzzle.key().seed(), livesEnabled, stake, inviteToken, now);
+			Match created = this.matches.create(connection, mode, actor.userId(), size, variant, difficulty, puzzle.key().seed(), livesEnabled, hintsEnabled, stake, inviteToken, now);
 			this.matches.addParticipant(connection, created.id(), actor.userId(), now);
 			return created;
 		});

@@ -68,22 +68,32 @@ public final class StatsService {
 	}
 	
 	/**
-	 * @return every non-revoked player, with the summary shown in the player browser (spec 9)
+	 * The player browser's list (spec 9).
+	 * <p>
+	 * A kicked player is not a player any more, so they are absent from everyone's list - except an
+	 * admin's. A kick is reversible (spec 7.2), and this is the only listing there is: without the removed
+	 * rows an admin has nowhere to reinstate anybody <em>from</em>, since a kicked account is by definition
+	 * not going to show up again on its own.
+	 *
+	 * @param includeRevoked whether kicked players are included, which the caller decides from
+	 *   {@link net.luis.sudoku.permission.Permission#CAN_KICK} - never from a request parameter
+	 * @return every player the caller may see, with the summary the browser shows
 	 */
-	public @NonNull List<PlayerSummary> players() {
+	public @NonNull List<PlayerSummary> players(boolean includeRevoked) {
 		return this.database.read(connection -> {
 			List<PlayerSummary> summaries = new java.util.ArrayList<>();
 			for (User user : this.users.findAll(connection)) {
-				if (user.revoked()) {
+				if (user.revoked() && !includeRevoked) {
 					continue;
 				}
-				
+
 				summaries.add(new PlayerSummary(
 					user.id(),
 					user.displayName(),
 					user.role().name(),
 					this.streaks.find(connection, user.id()).current(),
-					lastSeen(connection, user.id())
+					lastSeen(connection, user.id()),
+					user.revoked()
 				));
 			}
 			return summaries;
@@ -175,7 +185,12 @@ public final class StatsService {
 	 * @param streak current daily streak
 	 * @param lastSeenAt ISO-8601 last authentication, or null
 	 */
-	public record PlayerSummary(@NonNull UUID id, @NonNull String displayName, @NonNull String role, int streak, @Nullable String lastSeenAt) {}
+	/**
+	 * @param revoked whether this player has been kicked - only ever true for a caller allowed to see them,
+	 *   and what lets that caller offer to reinstate them
+	 */
+	public record PlayerSummary(@NonNull UUID id, @NonNull String displayName, @NonNull String role, int streak, @Nullable String lastSeenAt,
+	                            boolean revoked) {}
 	
 	/**
 	 * One uploaded aggregate from a client's local history.

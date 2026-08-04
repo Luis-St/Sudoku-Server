@@ -35,6 +35,12 @@ public final class MatchFixture {
 	
 	public static @NonNull Match match(@NonNull MatchMode mode, boolean livesEnabled, int stake,
 	                                   @NonNull GeneratedPuzzle puzzle) {
+		return match(mode, livesEnabled, true, stake, puzzle);
+	}
+	
+	/** Hints default to true everywhere else, matching {@code Settings.hintsEnabledOrDefault}. */
+	public static @NonNull Match match(@NonNull MatchMode mode, boolean livesEnabled, boolean hintsEnabled, int stake,
+	                                   @NonNull GeneratedPuzzle puzzle) {
 		return new Match(
 			UUID.randomUUID(),
 			mode,
@@ -45,6 +51,7 @@ public final class MatchFixture {
 			Difficulty.TWO,
 			puzzle.key().seed(),
 			livesEnabled,
+			hintsEnabled,
 			stake,
 			"invite-token",
 			null,
@@ -132,6 +139,19 @@ public final class MatchFixture {
 			}
 		}
 		return holes;
+	}
+	
+	/**
+	 * @return every given cell index, in order, for the fixture puzzle - the complement of {@link #holes}
+	 */
+	public static @NonNull List<Integer> givens(@NonNull GeneratedPuzzle puzzle) {
+		List<Integer> givens = new ArrayList<>();
+		for (int index = 0; index < puzzle.puzzle().size().cellCount(); index++) {
+			if (puzzle.puzzle().cell(index).isGiven()) {
+				givens.add(index);
+			}
+		}
+		return givens;
 	}
 	
 	/**

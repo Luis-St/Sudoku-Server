@@ -30,7 +30,7 @@ public record CreateMatchRequest(@Nullable String mode, @Nullable Config config,
 	}
 	
 	public @NonNull Settings settingsOrDefault() {
-		return this.settings == null ? new Settings(null, null) : this.settings;
+		return this.settings == null ? new Settings(null, null, null) : this.settings;
 	}
 	
 	/**
@@ -72,12 +72,27 @@ public record CreateMatchRequest(@Nullable String mode, @Nullable Config config,
 	
 	/**
 	 * @param livesEnabled whether lives apply; defaults to false
+	 * @param hintsEnabled whether participants may spend hints; defaults to true
 	 * @param stake Rhubarb each participant escrows; defaults to 0, which lets anyone join
 	 */
-	public record Settings(@Nullable Boolean livesEnabled, @Nullable Integer stake) {
+	public record Settings(@Nullable Boolean livesEnabled, @Nullable Boolean hintsEnabled, @Nullable Integer stake) {
 		
 		public boolean livesEnabledOrDefault() {
 			return this.livesEnabled != null && this.livesEnabled;
+		}
+		
+		/**
+		 * Defaults to <em>true</em>, the opposite way round from lives.
+		 * <p>
+		 * Hints are available in single-player unless the difficulty forbids them, so a client that says
+		 * nothing about them is asking for the ordinary game rather than for a harder one; and an older
+		 * client, which cannot say anything, must not have its matches silently made stricter.
+		 * </p>
+		 *
+		 * @return whether hints may be spent in this match
+		 */
+		public boolean hintsEnabledOrDefault() {
+			return this.hintsEnabled == null || this.hintsEnabled;
 		}
 		
 		public int stakeOrZero() {

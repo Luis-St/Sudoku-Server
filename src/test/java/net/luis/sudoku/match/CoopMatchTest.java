@@ -125,6 +125,79 @@ class CoopMatchTest {
 		);
 	}
 	
+	/**
+	 * Multiplayer item 2: a wrong entry is a shared event, so every participant hears about it.
+	 * <p>
+	 * It used to be sent only to the placer, which desynchronised two things at once: the shared lives pool
+	 * had already been decremented, so everybody else's hearts sat at a stale count until a reconnect, and
+	 * the only trace of the mistake an onlooker got was the placer's own presence highlight.
+	 * </p>
+	 */
+	@Test
+	void place_anIncorrectDigit_isBroadcastWithTheNewSharedLivesCount() {
+		this.start(true, this.alice, this.bob, this.carol);
+		int cell = MatchFixture.holes(this.puzzle).getFirst();
+		int wrong = MatchFixture.wrongDigitFor(this.puzzle, cell);
+		this.bob.clear();
+		this.carol.clear();
+		
+		place(this.coop, this.alice, cell, wrong);
+		
+		MessageEnvelope entry = this.bob.lastOf(MessageType.ENTRY_RESULT);
+		assertAll(
+			() -> assertNotNull(entry, "a wrong entry has to reach the other participants"),
+			() -> assertEquals(cell, entry.payloadOrEmpty().get("cell")),
+			() -> assertEquals(wrong, entry.payloadOrEmpty().get("digit")),
+			() -> assertEquals(false, entry.payloadOrEmpty().get("correct")),
+			() -> assertEquals(this.alice.userId().toString(), entry.payloadOrEmpty().get("byUser")),
+			() -> assertEquals(CoopMatch.SHARED_LIVES - 1, entry.payloadOrEmpty().get("livesLeft"),
+				"the shared pool everyone draws from has to travel with it"),
+			() -> assertTrue(this.carol.sawType(MessageType.ENTRY_RESULT))
+		);
+	}
+	
+	@Test
+	void place_anIncorrectDigit_reachesThePlacerExactlyOnce() {
+		// The placer is inside a broadcast, so switching from sendTo must not double up their own result.
+		this.start(true, this.alice, this.bob);
+		int cell = MatchFixture.holes(this.puzzle).getFirst();
+		this.alice.clear();
+		
+		place(this.coop, this.alice, cell, MatchFixture.wrongDigitFor(this.puzzle, cell));
+		
+		assertEquals(1, this.alice.receivedOf(MessageType.ENTRY_RESULT).size());
+	}
+	
+	@Test
+	void place_aCorrectDigit_keepsTheEntryResultPrivateToThePlacer() {
+		// Nothing shared follows from a correct entry beyond the digit itself, and that is the BOARD_UPDATE's
+		// job - the result is the placer's own receipt.
+		this.start(true, this.alice, this.bob);
+		int cell = MatchFixture.holes(this.puzzle).getFirst();
+		this.bob.clear();
+		
+		place(this.coop, this.alice, cell, this.puzzle.solutionAt(cell));
+		
+		assertAll(
+			() -> assertFalse(this.bob.sawType(MessageType.ENTRY_RESULT)),
+			() -> assertTrue(this.bob.sawType(MessageType.BOARD_UPDATE))
+		);
+	}
+	
+	@Test
+	void place_intoAnAlreadyFilledCell_staysPrivateToTheLoserOfTheRace() {
+		// Feedback about your own entry not landing. Nothing happened to the board or the pool, so there is
+		// nothing for anyone else to be told.
+		this.start(true, this.alice, this.bob);
+		int cell = MatchFixture.holes(this.puzzle).getFirst();
+		place(this.coop, this.alice, cell, this.puzzle.solutionAt(cell));
+		this.alice.clear();
+		
+		place(this.coop, this.bob, cell, this.puzzle.solutionAt(cell));
+		
+		assertFalse(this.alice.sawType(MessageType.ENTRY_RESULT));
+	}
+	
 	@Test
 	void place_anIncorrectDigit_costsFromTheSharedPool() {
 		this.start(true, this.alice, this.bob);
@@ -216,6 +289,7 @@ class CoopMatchTest {
 			() -> assertNotNull(state),
 			() -> assertTrue(state.payloadOrEmpty().containsKey("board")),
 			() -> assertTrue(state.payloadOrEmpty().containsKey("presence")),
+			() -> assertTrue(state.payloadOrEmpty().containsKey("notes")),
 			() -> assertEquals(CoopMatch.SHARED_LIVES, state.payloadOrEmpty().get("livesLeft"))
 		);
 	}
@@ -243,13 +317,116 @@ class CoopMatchTest {
 	}
 	
 	@Test
-	void note_isNeverBroadcast() {
+	void note_isBroadcastToTheGroup() {
+		// Co-op shares its notes, unlike race and duel: the owner asked for pencil marks to be visible to the
+		// other players, since four people privately eliminating the same candidate on one board is four
+		// people doing the same work. This used to be `case NOTE -> {}`, so a note reached nobody at all.
+		this.start(false, this.alice, this.bob, this.carol);
+		int cell = MatchFixture.holes(this.puzzle).getFirst();
+		this.bob.clear();
+		this.carol.clear();
+		
+		send(this.coop, this.alice, MessageType.NOTE, Map.of("cell", cell, "digit", 1, "add", true));
+		
+		MessageEnvelope note = this.bob.lastOf(MessageType.NOTE);
+		assertAll(
+			() -> assertNotNull(note),
+			() -> assertEquals(cell, note.payloadOrEmpty().get("cell")),
+			() -> assertEquals(1, note.payloadOrEmpty().get("digit")),
+			() -> assertEquals(true, note.payloadOrEmpty().get("add")),
+			() -> assertEquals(this.alice.userId().toString(), note.payloadOrEmpty().get("byUser")),
+			() -> assertTrue(this.carol.sawType(MessageType.NOTE))
+		);
+	}
+	
+	@Test
+	void note_withAnInvalidCellOrDigit_isIgnored() {
 		this.start(false, this.alice, this.bob);
 		this.bob.clear();
 		
-		send(this.coop, this.alice, MessageType.NOTE, Map.of("cell", 0, "digit", 1, "add", true));
+		send(this.coop, this.alice, MessageType.NOTE, Map.of("cell", 9999, "digit", 1, "add", true));
+		send(this.coop, this.alice, MessageType.NOTE, Map.of("cell", 0, "digit", 9999, "add", true));
 		
-		assertTrue(this.bob.received().isEmpty(), "pencil layers stay private");
+		assertFalse(this.bob.sawType(MessageType.NOTE));
+	}
+	
+	@Test
+	void note_onAGivenCell_isIgnored() {
+		// There is nothing to annotate under a digit that was never in question.
+		this.start(false, this.alice, this.bob);
+		int given = MatchFixture.givens(this.puzzle).getFirst();
+		this.bob.clear();
+		
+		send(this.coop, this.alice, MessageType.NOTE, Map.of("cell", given, "digit", 1, "add", true));
+		
+		assertFalse(this.bob.sawType(MessageType.NOTE));
+	}
+	
+	/**
+	 * Multiplayer-game item 1: hints are a property of the match, so a joiner learns them from the match.
+	 * <p>
+	 * The Android client had this as an in-game switch, which two players on one shared board could set
+	 * differently. It sits beside {@code livesEnabled} in the snapshot now, decided once at creation.
+	 * </p>
+	 */
+	@Test
+	void matchState_carriesWhetherHintsAreEnabled() {
+		Match match = MatchFixture.match(MatchMode.COOP, false, false, 0, this.puzzle);
+		this.coop = new CoopMatch(match, this.puzzle, MatchFixture.matchConfig(), this.callbacks);
+		connect(this.coop, this.alice);
+		
+		assertEquals(false, this.alice.lastOf(MessageType.MATCH_STATE).payloadOrEmpty().get("hintsEnabled"));
+	}
+	
+	@Test
+	void matchState_hintsDefaultToEnabled() {
+		this.start(false, this.alice, this.bob);
+		
+		assertEquals(true, this.alice.lastOf(MessageType.MATCH_STATE).payloadOrEmpty().get("hintsEnabled"));
+	}
+	
+	@Test
+	void matchState_carriesTheAccumulatedNotes() {
+		// Kept server-side rather than only echoed: a note that existed solely as a broadcast would be
+		// invisible to anyone who joined or reconnected afterwards, which is the case MATCH_STATE exists for.
+		this.start(false, this.alice, this.bob);
+		int cell = MatchFixture.holes(this.puzzle).getFirst();
+		send(this.coop, this.alice, MessageType.NOTE, Map.of("cell", cell, "digit", 1, "add", true));
+		send(this.coop, this.alice, MessageType.NOTE, Map.of("cell", cell, "digit", 3, "add", true));
+		this.carol.clear();
+		
+		connect(this.coop, this.carol);
+		
+		Object notes = this.carol.lastOf(MessageType.MATCH_STATE).payloadOrEmpty().get("notes");
+		assertEquals(Map.of(Integer.toString(cell), (1 << 1) | (1 << 3)), notes);
+	}
+	
+	@Test
+	void note_removedAgain_dropsTheCellFromTheSnapshot() {
+		this.start(false, this.alice, this.bob);
+		int cell = MatchFixture.holes(this.puzzle).getFirst();
+		send(this.coop, this.alice, MessageType.NOTE, Map.of("cell", cell, "digit", 1, "add", true));
+		send(this.coop, this.alice, MessageType.NOTE, Map.of("cell", cell, "digit", 1, "add", false));
+		this.carol.clear();
+		
+		connect(this.coop, this.carol);
+		
+		assertEquals(Map.of(), this.carol.lastOf(MessageType.MATCH_STATE).payloadOrEmpty().get("notes"));
+	}
+	
+	@Test
+	void place_aCorrectDigit_retiresThatCellsNotes() {
+		// The notes on a solved cell annotate nothing, and a reconnecting player must not be handed
+		// candidates for a cell that already holds a digit.
+		this.start(false, this.alice, this.bob);
+		int cell = MatchFixture.holes(this.puzzle).getFirst();
+		send(this.coop, this.alice, MessageType.NOTE, Map.of("cell", cell, "digit", 1, "add", true));
+		place(this.coop, this.alice, cell, this.puzzle.solutionAt(cell));
+		this.carol.clear();
+		
+		connect(this.coop, this.carol);
+		
+		assertEquals(Map.of(), this.carol.lastOf(MessageType.MATCH_STATE).payloadOrEmpty().get("notes"));
 	}
 	
 	@Test

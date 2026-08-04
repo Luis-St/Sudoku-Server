@@ -57,6 +57,7 @@ public class MatchHandler {
 			config.requireVariant(),
 			config.requireDifficulty(),
 			settings.livesEnabledOrDefault(),
+			settings.hintsEnabledOrDefault(),
 			settings.stakeOrZero()
 		);
 		

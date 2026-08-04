@@ -101,4 +101,25 @@ public class UserHandler {
 		this.admin.kick(actor, Handlers.pathUuid(ctx, "id"));
 		ctx.status(204);
 	}
+
+	@OpenApi(
+		summary = "Reinstate a kicked user",
+		description = "Requires CAN_KICK. Undoes a kick: clears the revocation and restores the device keys the kick "
+			+ "revoked, so the account returns with the same id and therefore all of its history. Idempotent for a "
+			+ "user who is not revoked. No session is issued - the returning client re-authenticates with its key.",
+		operationId = "reinstateUser",
+		path = ApiVersion.PATH_PREFIX + "/users/{id}/reinstate",
+		methods = HttpMethod.POST,
+		tags = "Users",
+		pathParams = @OpenApiParam(name = "id", description = "User id"),
+		responses = {
+			@OpenApiResponse(status = "200", content = @OpenApiContent(from = UserResponse.class)),
+			@OpenApiResponse(status = "403", description = "FORBIDDEN", content = @OpenApiContent(from = ErrorResponse.class)),
+			@OpenApiResponse(status = "404", description = "NOT_FOUND", content = @OpenApiContent(from = ErrorResponse.class))
+		}
+	)
+	public void reinstate(@NonNull Context ctx) {
+		Principal actor = this.authentication.require(ctx);
+		ctx.json(UserResponse.of(this.admin.reinstate(actor, Handlers.pathUuid(ctx, "id"))));
+	}
 }

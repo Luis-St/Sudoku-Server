@@ -117,7 +117,7 @@ class CurrencyServiceTest extends PostgresTest {
 	private UUID match(UUID creatorId, int stake) {
 		Match draft = new Match(
 			UUID.randomUUID(), MatchMode.DUEL, MatchState.WAITING, creatorId, GridSize.NINE, Variant.CLASSIC, Difficulty.THREE,
-			42L, true, stake, "token", null, null, NOW, null, null
+			42L, true, true, stake, "token", null, null, NOW, null, null
 		);
 		return database.transaction(connection -> connection.from(Schema.MATCHES).insert(draft).returning().getFirst()).id();
 	}

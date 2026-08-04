@@ -27,6 +27,8 @@ import java.util.UUID;
  * @param difficulty tier index 1-5; Lisa is rejected for every mode (spec 10.1)
  * @param seed the puzzle seed, from which the key is rebuilt
  * @param livesEnabled whether lives apply
+ * @param hintsEnabled whether participants may spend hints; a match setting rather than a per-player one,
+ *   so everybody on a shared board is playing the same game
  * @param stake Rhubarb each participant escrows; no minimum, no maximum
  * @param inviteToken bearer token allowing a join
  * @param winnerId the winner, or null while running or on a draw
@@ -45,6 +47,7 @@ public record Match(
 	@NonNull Difficulty difficulty,
 	long seed,
 	boolean livesEnabled,
+	boolean hintsEnabled,
 	int stake,
 	@NonNull String inviteToken,
 	@Nullable UUID winnerId,

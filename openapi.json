@@ -1212,6 +1212,55 @@
         }
       }
     },
+    "/api/v1/users/{id}/reinstate" : {
+      "post" : {
+        "tags" : [ "Users" ],
+        "summary" : "Reinstate a kicked user",
+        "description" : "Requires CAN_KICK. Undoes a kick: clears the revocation and restores the device keys the kick revoked, so the account returns with the same id and therefore all of its history. Idempotent for a user who is not revoked. No session is issued - the returning client re-authenticates with its key.",
+        "operationId" : "reinstateUser",
+        "parameters" : [ {
+          "name" : "id",
+          "in" : "path",
+          "description" : "User id",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "description" : "OK",
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/UserResponse"
+                }
+              }
+            }
+          },
+          "403" : {
+            "description" : "FORBIDDEN",
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404" : {
+            "description" : "NOT_FOUND",
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/users/{id}/role" : {
       "patch" : {
         "tags" : [ "Users" ],
@@ -1403,6 +1452,9 @@
           "livesEnabledOrDefault" : {
             "type" : "boolean"
           },
+          "hintsEnabledOrDefault" : {
+            "type" : "boolean"
+          },
           "stakeOrZero" : {
             "type" : "integer",
             "format" : "int32"
@@ -1410,12 +1462,15 @@
           "livesEnabled" : {
             "type" : "boolean"
           },
+          "hintsEnabled" : {
+            "type" : "boolean"
+          },
           "stake" : {
             "type" : "integer",
             "format" : "int32"
           }
         },
-        "required" : [ "livesEnabledOrDefault", "stakeOrZero" ]
+        "required" : [ "livesEnabledOrDefault", "hintsEnabledOrDefault", "stakeOrZero" ]
       },
       "CurrencySyncRequest" : {
         "type" : "object",
@@ -2020,6 +2075,9 @@
           "livesEnabled" : {
             "type" : "boolean"
           },
+          "hintsEnabled" : {
+            "type" : "boolean"
+          },
           "stake" : {
             "type" : "integer",
             "format" : "int32"
@@ -2037,7 +2095,7 @@
             }
           }
         },
-        "required" : [ "livesEnabled", "stake" ]
+        "required" : [ "livesEnabled", "hintsEnabled", "stake" ]
       },
       "ParticipantResponse" : {
         "type" : "object",
@@ -2074,9 +2132,12 @@
           },
           "online" : {
             "type" : "boolean"
+          },
+          "revoked" : {
+            "type" : "boolean"
           }
         },
-        "required" : [ "streak", "online" ]
+        "required" : [ "streak", "online", "revoked" ]
       },
       "PreferencesResponse" : {
         "type" : "object",

@@ -27,9 +27,9 @@ public final class MatchRepository {
 	
 	public @NonNull Match create(
 		@NonNull SqlTransaction transaction, @NonNull MatchMode mode, @NonNull UUID creatorId, @NonNull GridSize size, @NonNull Variant variant, @NonNull Difficulty difficulty,
-		long seed, boolean livesEnabled, int stake, @NonNull String inviteToken, @NonNull Instant now
+		long seed, boolean livesEnabled, boolean hintsEnabled, int stake, @NonNull String inviteToken, @NonNull Instant now
 	) throws SqlException {
-		Match draft = new Match(UUID.randomUUID(), mode, MatchState.WAITING, creatorId, size, variant, difficulty, seed, livesEnabled, stake, inviteToken, null, null, now, null, null);
+		Match draft = new Match(UUID.randomUUID(), mode, MatchState.WAITING, creatorId, size, variant, difficulty, seed, livesEnabled, hintsEnabled, stake, inviteToken, null, null, now, null, null);
 		return transaction.from(MATCHES).insert(draft).returning().getFirst();
 	}
 	

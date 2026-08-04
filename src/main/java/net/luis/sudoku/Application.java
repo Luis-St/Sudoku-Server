@@ -105,6 +105,7 @@ public class Application {
 		javalin.routes.get(ApiVersion.PATH_PREFIX + "/users/me", userHandler::me);
 		javalin.routes.patch(ApiVersion.PATH_PREFIX + "/users/{id}/role", userHandler::changeRole);
 		javalin.routes.delete(ApiVersion.PATH_PREFIX + "/users/{id}", userHandler::kick);
+		javalin.routes.post(ApiVersion.PATH_PREFIX + "/users/{id}/reinstate", userHandler::reinstate);
 		
 		// Invites
 		javalin.routes.post(ApiVersion.PATH_PREFIX + "/invites", inviteHandler::create);

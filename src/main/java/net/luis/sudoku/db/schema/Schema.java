@@ -118,6 +118,8 @@ public final class Schema {
 	public static final SqlColumn<Device, Instant> DEVICE_CREATED_AT = DEVICES.column("created_at", TIMESTAMP, Device::createdAt, SqlColumnBuilder::notNull);
 	public static final SqlColumn<Device, Instant> DEVICE_LAST_SEEN_AT = DEVICES.column("last_seen_at", TIMESTAMP, Device::lastSeenAt);
 	public static final SqlColumn<Device, Boolean> DEVICE_REVOKED = DEVICES.column("revoked", SqlTypes.BOOLEAN, Device::revoked, col -> col.notNull().defaultValue(false));
+	/** Which revocations a reinstatement undoes (spec 7.2) - see {@link Device#revokedByKick()}. */
+	public static final SqlColumn<Device, Boolean> DEVICE_REVOKED_BY_KICK = DEVICES.column("revoked_by_kick", SqlTypes.BOOLEAN, Device::revokedByKick, col -> col.notNull().defaultValue(false));
 	public static final SqlTable<Invite> INVITES = SqlTable.create(Invite.class, "invites");
 	
 	// --- invites -------------------------------------------------------------------------------
@@ -235,6 +237,8 @@ public final class Schema {
 	/** The PuzzleKey seed; the grid itself is never stored or sent (spec 1). */
 	public static final SqlColumn<Match, Long> MATCH_SEED = MATCHES.column("seed", SqlTypes.LONG, Match::seed, SqlColumnBuilder::notNull);
 	public static final SqlColumn<Match, Boolean> MATCH_LIVES_ENABLED = MATCHES.column("lives_enabled", SqlTypes.BOOLEAN, Match::livesEnabled, col -> col.notNull().defaultValue(false));
+	/** Defaults to true, unlike lives: a match created before this column existed had hints available, since nothing stopped them. */
+	public static final SqlColumn<Match, Boolean> MATCH_HINTS_ENABLED = MATCHES.column("hints_enabled", SqlTypes.BOOLEAN, Match::hintsEnabled, col -> col.notNull().defaultValue(true));
 	/** No minimum, no maximum (spec 9a.3). 0 means anyone may join. */
 	public static final SqlColumn<Match, Integer> MATCH_STAKE = MATCHES.column("stake", SqlTypes.INTEGER, Match::stake, col -> col.notNull().defaultValue(0));
 	public static final SqlColumn<Match, String> MATCH_INVITE_TOKEN = MATCHES.column("invite_token", SqlTypes.TEXT, Match::inviteToken, SqlColumnBuilder::notNull);

@@ -44,10 +44,10 @@ import static net.luis.sudoku.db.schema.Schema.*;
 public final class SchemaMigration {
 	
 	/** Every migration, in version order. */
-	public static final List<SqlMigration> ALL = List.of(new InitialSchema(), new PresencePolling());
+	public static final List<SqlMigration> ALL = List.of(new InitialSchema(), new PresencePolling(), new ReinstatableKicks(), new MatchHintSetting());
 
 	/** The version the schema is at once {@link #ALL} has been applied, reported by {@code /health}. */
-	public static final int CURRENT_VERSION = 2;
+	public static final int CURRENT_VERSION = 4;
 	
 	private SchemaMigration() {}
 	
@@ -224,6 +224,101 @@ public final class SchemaMigration {
 		public void down(@NonNull SqlMigrationBuilder builder, @NonNull SqlMigrationSchema schema) throws SqlException {
 			builder.dropTable(MATCH_REQUESTS);
 			builder.dropTable(PRESENCE);
+		}
+	}
+
+	/**
+	 * Records which device revocations came from a kick, so a kick can be undone (spec 7.2).
+	 * <p>
+	 * A kick revokes every key the user has, which is what makes it stick. Reinstating them has to give
+	 * those keys back - there is no other way for that account to authenticate again, and issuing a fresh
+	 * invite would produce a <em>new</em> user with none of the old one's history. What it must not give
+	 * back is a key its owner revoked deliberately before the kick, and once both are simply
+	 * {@code revoked = true} the two are indistinguishable. Hence one column, written by the kick and
+	 * cleared by the reinstatement.
+	 * <p>
+	 * The default of {@code false} is the right answer for every row that already exists: a device revoked
+	 * before this migration is one nobody can prove was kicked, and leaving it dead is the safe direction.
+	 * <p>
+	 * <strong>Why the column is added conditionally.</strong> {@link #table} builds a table from whatever
+	 * {@link Schema} declares <em>now</em>, so adding a column to {@code Schema} retroactively changes what
+	 * the initial migration creates: a database created today already has {@code revoked_by_kick} by the
+	 * time this migration runs, while one deployed before today does not. Both must end up at the same
+	 * schema, so this asks. That is a property of deriving DDL from the live table definitions rather than
+	 * a quirk of this column - <strong>every future column addition needs the same guard</strong>. The
+	 * drift is invisible to the runner, which skips applied versions without re-rendering them; it would
+	 * surface as a checksum mismatch only if {@code SqlMigrationRunner.validate()} were ever called, which
+	 * {@code db/Migrations} deliberately does not do.
+	 */
+	/**
+	 * Makes "may hints be spent" a property of the match rather than of each client.
+	 * <p>
+	 * The Android client had it as an in-game switch, which is wrong twice over on a shared board: the
+	 * players in one co-op match could disagree about whether the match allowed hints, and nothing the
+	 * creator configured said anything about it. It belongs with {@code lives_enabled}, decided once when
+	 * the match is created and reported to every participant in {@code MATCH_STATE}.
+	 * <p>
+	 * The default is {@code true}, the opposite way round from {@code lives_enabled}. Every match that
+	 * exists today was played by clients that offered hints with nothing to stop them, so {@code true} is
+	 * what those rows actually were; defaulting to {@code false} would retroactively describe them as
+	 * stricter matches than they were.
+	 * <p>
+	 * Guarded with {@code hasColumn} for the reason spelled out on {@link ReinstatableKicks}: {@link #table}
+	 * renders the initial migration from {@link Schema} as it stands <em>now</em>, so a database created
+	 * after this column was declared already has it by the time this migration runs, while one deployed
+	 * before does not.
+	 */
+	private static final class MatchHintSetting implements SqlMigration {
+
+		@Override
+		public @NonNull Version version() {
+			return Version.of(4, 0);
+		}
+
+		@Override
+		public @NonNull String description() {
+			return "make hints a per-match setting";
+		}
+
+		@Override
+		public void up(@NonNull SqlMigrationBuilder builder, @NonNull SqlMigrationSchema schema) throws SqlException {
+			if (!schema.hasColumn(MATCHES.name(), MATCH_HINTS_ENABLED.name())) {
+				builder.addColumn(MATCH_HINTS_ENABLED, MATCH_HINTS_ENABLED.type(), options -> options.notNull().defaultValue(true));
+			}
+		}
+
+		@Override
+		public void down(@NonNull SqlMigrationBuilder builder, @NonNull SqlMigrationSchema schema) throws SqlException {
+			if (schema.hasColumn(MATCHES.name(), MATCH_HINTS_ENABLED.name())) {
+				builder.dropColumn(MATCH_HINTS_ENABLED);
+			}
+		}
+	}
+	
+	private static final class ReinstatableKicks implements SqlMigration {
+
+		@Override
+		public @NonNull Version version() {
+			return Version.of(3, 0);
+		}
+
+		@Override
+		public @NonNull String description() {
+			return "record kick-revoked devices so a kick can be reversed";
+		}
+
+		@Override
+		public void up(@NonNull SqlMigrationBuilder builder, @NonNull SqlMigrationSchema schema) throws SqlException {
+			if (!schema.hasColumn(DEVICES.name(), DEVICE_REVOKED_BY_KICK.name())) {
+				builder.addColumn(DEVICE_REVOKED_BY_KICK, DEVICE_REVOKED_BY_KICK.type(), options -> options.notNull().defaultValue(false));
+			}
+		}
+
+		@Override
+		public void down(@NonNull SqlMigrationBuilder builder, @NonNull SqlMigrationSchema schema) throws SqlException {
+			if (schema.hasColumn(DEVICES.name(), DEVICE_REVOKED_BY_KICK.name())) {
+				builder.dropColumn(DEVICE_REVOKED_BY_KICK);
+			}
 		}
 	}
 }

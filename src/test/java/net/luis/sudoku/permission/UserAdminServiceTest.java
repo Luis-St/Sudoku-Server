@@ -395,4 +395,127 @@ class UserAdminServiceTest extends PostgresTest {
 		ApiException e = assertThrows(ApiException.class, () -> this.admin.revokeDevice(owner, UUID.randomUUID()));
 		assertEquals(ErrorCode.NOT_FOUND, e.code());
 	}
+
+	// --- reinstating a kicked user (spec 7.2) ---
+
+	@Test
+	void reinstate_aKickedUser_clearsTheRevocationAndRestoresTheirKeys() {
+		Principal owner = this.admin("Owner");
+		Principal player = this.member(owner, "Player", Role.NEW);
+		this.admin.kick(owner, player.userId());
+
+		User reinstated = this.admin.reinstate(owner, player.userId());
+
+		Device key = database.read(connection -> this.devices.find(connection, player.deviceId()));
+		assertAll(
+			() -> assertFalse(reinstated.revoked()),
+			() -> assertFalse(this.admin.get(player.userId()).revoked()),
+			() -> assertFalse(key.revoked()),
+			// Cleared as well as un-revoked: leaving it set would make a later, deliberate revocation of this
+			// same key undone by the next reinstatement.
+			() -> assertFalse(key.revokedByKick())
+		);
+	}
+
+	@Test
+	void reinstate_returnsTheSameAccountRatherThanANewOne() {
+		Principal owner = this.admin("Owner");
+		Principal player = this.member(owner, "Player", Role.MEMBER);
+		this.admin.kick(owner, player.userId());
+
+		User reinstated = this.admin.reinstate(owner, player.userId());
+
+		// The id is what every statistic, streak and ledger row hangs off, and the role is what they had
+		// when they were removed - a reinstatement is not a re-registration.
+		assertAll(
+			() -> assertEquals(player.userId(), reinstated.id()),
+			() -> assertEquals("Player", reinstated.displayName()),
+			() -> assertEquals(Role.MEMBER, reinstated.role())
+		);
+	}
+
+	@Test
+	void reinstate_letsTheReturningKeyAuthenticateAgain() {
+		Principal owner = this.admin("Owner");
+		Principal player = this.member(owner, "Player", Role.NEW);
+		this.admin.kick(owner, player.userId());
+
+		this.admin.reinstate(owner, player.userId());
+
+		// The kick deleted the session, so the old token stays dead; what has to come back is the ability to
+		// obtain a new one, which is exactly what an unrevoked user plus an unrevoked key permits.
+		Device key = database.read(connection -> this.devices.find(connection, player.deviceId()));
+		assertAll(
+			() -> assertFalse(key.revoked()),
+			() -> assertFalse(this.admin.get(player.userId()).revoked()),
+			() -> assertNull(database.read(connection -> this.sessions.findByToken(connection, player.session().token())))
+		);
+	}
+
+	@Test
+	void reinstate_doesNotRestoreADeviceTheOwnerRevokedBeforeTheKick() {
+		Principal owner = this.admin("Owner");
+		Principal player = this.member(owner, "Player", Role.NEW);
+		TestKeys tablet = TestKeys.ecdsa("player-tablet");
+		Device second = database.transaction(connection -> this.devices.create(connection, player.userId(),
+			tablet.publicKey(), KeyAlgorithm.ECDSA_P256, "Tablet", NOW));
+		// The player drops the tablet themselves - a lost device, say - and is kicked afterwards.
+		this.admin.revokeDevice(player, second.id());
+		this.admin.kick(owner, player.userId());
+
+		this.admin.reinstate(owner, player.userId());
+
+		Device phone = database.read(connection -> this.devices.find(connection, player.deviceId()));
+		Device tabletAfter = database.read(connection -> this.devices.find(connection, second.id()));
+		assertAll(
+			() -> assertFalse(phone.revoked()),
+			// A key its owner deliberately killed must survive a kick and a reinstatement still dead, which
+			// is the entire reason the kick records which revocations were its own.
+			() -> assertTrue(tabletAfter.revoked())
+		);
+	}
+
+	@Test
+	void reinstate_aUserWhoWasNeverKicked_isIdempotent() {
+		Principal owner = this.admin("Owner");
+		Principal player = this.member(owner, "Player", Role.NEW);
+
+		User unchanged = assertDoesNotThrow(() -> this.admin.reinstate(owner, player.userId()));
+
+		assertAll(
+			() -> assertFalse(unchanged.revoked()),
+			() -> assertEquals(player.userId(), unchanged.id())
+		);
+	}
+
+	@Test
+	void reinstate_byANonAdmin_isForbidden() {
+		Principal owner = this.admin("Owner");
+		Principal member = this.member(owner, "Member", Role.MEMBER);
+		Principal player = this.member(owner, "Player", Role.NEW);
+		this.admin.kick(owner, player.userId());
+
+		ApiException e = assertThrows(ApiException.class, () -> this.admin.reinstate(member, player.userId()));
+		assertEquals(ErrorCode.FORBIDDEN, e.code());
+	}
+
+	@Test
+	void reinstate_anUnknownUser_isNotFound() {
+		Principal owner = this.admin("Owner");
+		ApiException e = assertThrows(ApiException.class, () -> this.admin.reinstate(owner, UUID.randomUUID()));
+		assertEquals(ErrorCode.NOT_FOUND, e.code());
+	}
+
+	@Test
+	void reinstate_aKickedAdmin_bringsBackAnAdmin() {
+		Principal owner = this.admin("Owner");
+		Principal second = this.member(owner, "Second", Role.ADMIN);
+		this.admin.kick(owner, second.userId());
+
+		this.admin.reinstate(owner, second.userId());
+
+		// Reinstating can only raise the admin count, which is why it needs no invariant lock.
+		int activeAdmins = database.read(connection -> this.users.countActiveAdmins(connection, null));
+		assertEquals(2, activeAdmins);
+	}
 }

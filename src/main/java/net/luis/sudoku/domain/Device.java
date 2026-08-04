@@ -19,6 +19,10 @@ import java.util.UUID;
  * @param createdAt when the device was registered or linked
  * @param lastSeenAt last successful authentication, null if never
  * @param revoked true once the key may no longer authenticate
+ * @param revokedByKick true if {@link #revoked} was set by a kick rather than by dropping this device
+ *   deliberately. Reinstating a user restores exactly these keys: a device its owner revoked - a phone
+ *   they lost, say - must stay dead through a kick and a reinstatement, and the two are indistinguishable
+ *   without recording which of them did it.
  */
 public record Device(
 	@NonNull UUID id,
@@ -28,7 +32,8 @@ public record Device(
 	@NonNull String label,
 	@NonNull Instant createdAt,
 	@Nullable Instant lastSeenAt,
-	boolean revoked
+	boolean revoked,
+	boolean revokedByKick
 ) {
 	
 	public Device {

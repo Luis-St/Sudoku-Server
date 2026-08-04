@@ -17,6 +17,7 @@ import java.util.List;
  * @param state where it is in the lifecycle
  * @param puzzleKey what the client regenerates the grid from
  * @param livesEnabled whether lives apply
+ * @param hintsEnabled whether participants may spend hints
  * @param stake Rhubarb each participant escrows
  * @param winnerId the winner, or null
  * @param endReason why it ended, or null
@@ -28,6 +29,7 @@ public record MatchResponse(
 	@NonNull String state,
 	@NonNull PuzzleKeyResponse puzzleKey,
 	boolean livesEnabled,
+	boolean hintsEnabled,
 	int stake,
 	@Nullable String winnerId,
 	@Nullable String endReason,
@@ -41,6 +43,7 @@ public record MatchResponse(
 			match.state().name(),
 			PuzzleKeyResponse.of(match.key()),
 			match.livesEnabled(),
+			match.hintsEnabled(),
 			match.stake(),
 			match.winnerId() == null ? null : match.winnerId().toString(),
 			match.endReason() == null ? null : match.endReason().name(),

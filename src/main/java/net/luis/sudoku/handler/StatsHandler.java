@@ -7,6 +7,7 @@ import net.luis.sudoku.auth.Authentication;
 import net.luis.sudoku.domain.Principal;
 import net.luis.sudoku.dto.request.StatsSyncRequest;
 import net.luis.sudoku.dto.response.*;
+import net.luis.sudoku.permission.Permission;
 import net.luis.sudoku.presence.PresenceService;
 import net.luis.sudoku.stats.StatsService;
 import org.jspecify.annotations.NonNull;
@@ -39,11 +40,13 @@ public class StatsHandler {
 		responses = @OpenApiResponse(status = "200", content = @OpenApiContent(from = PlayerResponse[].class))
 	)
 	public void players(@NonNull Context ctx) {
-		this.authentication.require(ctx);
+		Principal actor = this.authentication.require(ctx);
 		// One read of the whole online set, not one per player: this list is polled while the friends screen is
 		// open, and asking per row would turn a fixed two queries into one per registered player every time.
 		Set<UUID> online = this.presence.onlineUsers();
-		List<PlayerResponse> players = this.stats.players().stream()
+		// Kicked players are visible to whoever could kick them, and to nobody else - reinstating (spec 7.2)
+		// has to start from a list the removed player is actually in.
+		List<PlayerResponse> players = this.stats.players(actor.has(Permission.CAN_KICK)).stream()
 			.map(summary -> PlayerResponse.of(summary, online.contains(summary.id())))
 			.toList();
 		ctx.json(players);

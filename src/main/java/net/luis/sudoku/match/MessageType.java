@@ -15,8 +15,16 @@ public enum MessageType {
 	READY(Direction.INBOUND),
 	/** {@code { cell, digit }} - commit a pen value. */
 	PLACE(Direction.INBOUND),
-	/** {@code { cell, digit, add }} - a private pencil mark, never authoritative (spec 10.5). */
-	NOTE(Direction.INBOUND),
+	/**
+	 * {@code { cell, digit, add }} - a pencil mark, never authoritative (spec 10.5).
+	 * <p>
+	 * {@link Direction#BOTH} because co-op shares its notes: the owner asked for pencil marks to be visible
+	 * to the other players, since a shared board that everybody annotates privately means the same
+	 * elimination is worked out four times over. {@link RaceMatch} and {@link DuelMatch} still drop it -
+	 * their notes stay private, and race in particular must never emit cell content (spec 11.1).
+	 * </p>
+	 */
+	NOTE(Direction.BOTH),
 	/** {@code { cell }} - co-op only; which cell this player has selected. */
 	PRESENCE(Direction.BOTH),
 	/** Give up. */
