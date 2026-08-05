@@ -364,6 +364,108 @@ class MatchServiceTest extends PostgresTest {
 		);
 	}
 	
+	/**
+	 * The startup question a client asks after being killed mid-match: which match am I still in? Nothing on
+	 * the device survives the process to answer it.
+	 */
+	@Test
+	void activeMatch_whileRunning_isTheMatchThisPlayerIsIn() {
+		Principal owner = this.player("Owner");
+		Principal guest = this.player("Guest");
+		Principal stranger = this.player("Stranger");
+		MatchService.Created created = this.createRace(owner, 0);
+		this.matches.join(guest, created.match().id(), created.inviteToken());
+		database.execute(connection -> this.matchRepository.markRunning(connection, created.match().id(), NOW));
+
+		Match active = this.matches.activeMatch(owner);
+		assertAll(
+			() -> assertNotNull(active),
+			() -> assertEquals(created.match().id(), active.id()),
+			() -> assertEquals(created.match().id(), this.matches.activeMatch(guest).id(), "both sides are in it"),
+			() -> assertNull(this.matches.activeMatch(stranger), "and nobody else is")
+		);
+	}
+
+	/**
+	 * A lobby is not something a player has to be asked about: they can walk back into it from the
+	 * multiplayer screen, and nothing is escrowed yet.
+	 */
+	@Test
+	void activeMatch_aWaitingMatch_isNotOne() {
+		Principal owner = this.player("Owner");
+		this.createRace(owner, 0);
+
+		assertNull(this.matches.activeMatch(owner));
+	}
+
+	@Test
+	void activeMatch_afterItEnded_isNothing() {
+		Principal owner = this.player("Owner");
+		MatchService.Created created = this.createRace(owner, 0);
+		database.execute(connection -> this.matchRepository.markRunning(connection, created.match().id(), NOW));
+		// The registry's copy is the one a real running match would have transitioned itself; this test drives
+		// the row directly, so the live object is removed and the persisted path is what runs.
+		this.registry.remove(created.match().id());
+		this.matches.resign(owner, created.match().id());
+
+		assertNull(this.matches.activeMatch(owner));
+	}
+
+	/**
+	 * Declining to rejoin ends the match there and then. The point of the whole call: the other players are
+	 * sitting at a paused board waiting out a grace window this player has already decided not to use.
+	 */
+	@Test
+	void resign_aRunningMatch_endsItAndRefundsTheStakes() {
+		Principal owner = this.player("Owner");
+		Principal guest = this.player("Guest");
+		this.fund(owner, 100);
+		this.fund(guest, 100);
+		MatchService.Created created = this.createRace(owner, 30);
+		this.matches.join(guest, created.match().id(), created.inviteToken());
+		database.execute(connection -> {
+			this.matchRepository.markRunning(connection, created.match().id(), NOW);
+			this.currency.escrowStake(connection, owner.userId(), 30, created.match().id());
+			this.currency.escrowStake(connection, guest.userId(), 30, created.match().id());
+		});
+		// No live object: the registry lost it, which is exactly the state a restart leaves behind.
+		this.registry.remove(created.match().id());
+
+		this.matches.resign(owner, created.match().id());
+
+		Match after = this.matches.get(created.match().id());
+		assertAll(
+			() -> assertEquals(MatchState.ABANDONED, after.state()),
+			() -> assertEquals(EndReason.RESIGNED, after.endReason()),
+			() -> assertEquals(100, this.currency.balance(owner.userId()), "nobody won, so both stakes come back"),
+			() -> assertEquals(100, this.currency.balance(guest.userId()))
+		);
+	}
+
+	@Test
+	void resign_byAPlayerWhoIsNotInIt_isForbidden() {
+		Principal owner = this.player("Owner");
+		Principal stranger = this.player("Stranger");
+		MatchService.Created created = this.createRace(owner, 0);
+		database.execute(connection -> this.matchRepository.markRunning(connection, created.match().id(), NOW));
+
+		ApiException thrown = assertThrows(ApiException.class, () -> this.matches.resign(stranger, created.match().id()));
+		assertEquals(ErrorCode.FORBIDDEN, thrown.code());
+	}
+
+	@Test
+	void resign_aMatchThatAlreadyEnded_isAccepted() {
+		Principal owner = this.player("Owner");
+		MatchService.Created created = this.createRace(owner, 0);
+		database.execute(connection -> this.matchRepository.markRunning(connection, created.match().id(), NOW));
+		this.registry.remove(created.match().id());
+		this.matches.resign(owner, created.match().id());
+
+		// Idempotent: the answer to a retry after an uncertain failure must not be an error.
+		assertDoesNotThrow(() -> this.matches.resign(owner, created.match().id()));
+		assertEquals(EndReason.RESIGNED, this.matches.get(created.match().id()).endReason());
+	}
+
 	@Test
 	void recoverAfterRestart_abandonsUnfinishedMatchesAndRefundsStakes() {
 		// Live board state is memory-resident, so a restart can only abandon (spec 9a.3).
@@ -430,6 +532,23 @@ class MatchServiceTest extends PostgresTest {
 		);
 	}
 	
+	@Test
+	void liveFor_aMatchThatAlreadyEnded_isRefused() {
+		Principal owner = this.player("Owner");
+		MatchService.Created created = this.createRace(owner, 0);
+		this.matches.cancel(owner, created.match().id());
+
+		Match ended = this.matches.get(created.match().id());
+
+		// Rebuilding one would hand a returning player an empty board that has forgotten it ever ended, which
+		// is what left a player who closed the app mid-match staring at a match nothing could end.
+		assertAll(
+			() -> assertTrue(ended.state().isTerminal()),
+			() -> assertThrows(IllegalStateException.class, () -> this.matches.liveFor(ended)),
+			() -> assertNull(this.registry.find(created.match().id()))
+		);
+	}
+
 	@Test
 	void registry_activeCount_tracksLiveMatches() {
 		Principal owner = this.player("Owner");

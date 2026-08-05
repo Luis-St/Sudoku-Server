@@ -156,11 +156,14 @@ public class Application {
 		
 		// Matches
 		javalin.routes.post(ApiVersion.PATH_PREFIX + "/matches", matchHandler::create);
+		// Before the {id} route: "active" is a name, not a match id, and a path parameter would swallow it.
+		javalin.routes.get(ApiVersion.PATH_PREFIX + "/matches/active", matchHandler::active);
 		javalin.routes.get(ApiVersion.PATH_PREFIX + "/matches/{id}", matchHandler::get);
 		javalin.routes.delete(ApiVersion.PATH_PREFIX + "/matches/{id}", matchHandler::cancel);
 		javalin.routes.post(ApiVersion.PATH_PREFIX + "/matches/{id}/join", matchHandler::join);
 		javalin.routes.post(ApiVersion.PATH_PREFIX + "/matches/{id}/invite", matchHandler::invite);
 		javalin.routes.post(ApiVersion.PATH_PREFIX + "/matches/{id}/request", matchHandler::request);
+		javalin.routes.post(ApiVersion.PATH_PREFIX + "/matches/{id}/resign", matchHandler::resign);
 		javalin.routes.ws(ApiVersion.WS_PATH_PREFIX + "/matches/{id}", matchSocketHandler);
 
 		// Presence: the heartbeat every signed-in client sends, and the match requests it collects. There is no

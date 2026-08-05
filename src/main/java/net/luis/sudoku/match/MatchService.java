@@ -200,6 +200,60 @@ public final class MatchService {
 	public @NonNull List<MatchParticipant> participants(@NonNull UUID matchId) {
 		return this.database.read(connection -> this.matches.participants(connection, matchId));
 	}
+
+	/**
+	 * The match this user is currently playing, if any.
+	 *
+	 * What a client asks on startup. Killing the app closes the socket but leaves the player in the match
+	 * for the length of the reconnect grace (spec 10.4), and nothing on the device remembers which match
+	 * that was - the board is memory-resident and the navigation state died with the process. Without this
+	 * the player had no route back in at all: they could only wait for their own match to time out.
+	 *
+	 * @return the running match, or null when this player is not in one
+	 */
+	public @Nullable Match activeMatch(@NonNull Principal actor) {
+		return this.database.read(connection -> this.matches.findRunningFor(connection, actor.userId()));
+	}
+
+	/**
+	 * Leaves a running match for good, now rather than when the grace window expires.
+	 *
+	 * The answer to "do you want to rejoin?" being no. A player who has decided not to come back should not
+	 * hold everybody else at a paused board for the rest of a minute they are never going to use, so this
+	 * takes the deliberate-quit path: the same one the in-match RESIGN message takes, which ends the match
+	 * immediately and settles stakes rather than starting a grace window.
+	 *
+	 * Idempotent. A match that has already ended answers as though this call ended it, because from the
+	 * caller's side there is no difference worth reporting.
+	 */
+	public void resign(@NonNull Principal actor, @NonNull UUID matchId) {
+		Match match = this.get(matchId);
+		if (!this.isParticipant(matchId, actor.userId())) {
+			throw ApiException.forbidden("Only a participant may leave a match");
+		}
+		if (match.state().isTerminal()) {
+			return;
+		}
+
+		LiveMatch live = this.registry.find(matchId);
+		if (live == null) {
+			// No live object, so there is nobody to tell and nothing to settle through the match: the row is
+			// wreckage of the same kind a restart leaves, and is closed out the same way.
+			this.database.execute(connection -> {
+				this.matches.markEnded(connection, matchId, MatchState.ABANDONED, null, EndReason.RESIGNED, this.clock.instant());
+				if (match.state() == MatchState.RUNNING && match.stake() > 0) {
+					for (MatchParticipant participant : this.matches.participants(connection, matchId)) {
+						this.currency.refund(connection, participant.userId(), match.stake(), matchId);
+						this.matches.setResult(connection, matchId, participant.userId(), MatchResult.ABANDONED);
+					}
+				}
+			});
+			log.info("Match {}: user {} left a match with no live object; abandoned", matchId, actor.userId());
+			return;
+		}
+		live.submit(() -> live.onDisconnect(actor.userId(), true));
+		log.info("Match {}: user {} declined to rejoin, ending it now", matchId, actor.userId());
+	}
 	
 	/**
 	 * Confirms a user may attach a socket to this match.
@@ -215,6 +269,13 @@ public final class MatchService {
 		LiveMatch existing = this.registry.find(match.id());
 		if (existing != null) {
 			return existing;
+		}
+		if (match.state().isTerminal()) {
+			// A finished match must never be rebuilt. The reconstruction starts from the row, and the row holds
+			// no board, so what comes back is an empty grid that has forgotten it ever ended - and it would then
+			// be served to a returning player as an ordinary snapshot of a match that is over. Callers check the
+			// state and tell the player instead (MatchSocketHandler.onConnect); this is the invariant behind it.
+			throw new IllegalStateException("Match " + match.id() + " has already ended (" + match.state() + ")");
 		}
 		LiveMatch live = this.buildLive(match, PuzzleFactory.generate(match.key()));
 		this.registry.register(live);

@@ -639,6 +639,29 @@
         }
       }
     },
+    "/api/v1/matches/active" : {
+      "get" : {
+        "tags" : [ "Matches" ],
+        "summary" : "The match this player is currently in",
+        "description" : "The running match the caller is a participant of, or 204 when there is none. A client asks this on startup: killing the app closes the socket but leaves the player in the match for the length of the reconnect grace, and nothing on the device survives the process to say which match that was.",
+        "operationId" : "activeMatch",
+        "responses" : {
+          "200" : {
+            "description" : "OK",
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/MatchResponse"
+                }
+              }
+            }
+          },
+          "204" : {
+            "description" : "Not in a match"
+          }
+        }
+      }
+    },
     "/api/v1/matches/{id}" : {
       "get" : {
         "tags" : [ "Matches" ],
@@ -813,6 +836,38 @@
           },
           "409" : {
             "description" : "PLAYER_OFFLINE",
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/matches/{id}/resign" : {
+      "post" : {
+        "tags" : [ "Matches" ],
+        "summary" : "Leave a running match",
+        "description" : "Answering \"no\" to rejoining. Ends the match immediately rather than holding the other players at a paused board for the rest of a reconnect grace the player has already decided not to use, and settles stakes exactly as an in-match RESIGN does. Idempotent: a match that has already ended answers 204.",
+        "operationId" : "resignMatch",
+        "parameters" : [ {
+          "name" : "id",
+          "in" : "path",
+          "description" : "Match id",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        } ],
+        "responses" : {
+          "204" : {
+            "description" : "No Content"
+          },
+          "403" : {
+            "description" : "FORBIDDEN",
             "content" : {
               "application/json" : {
                 "schema" : {

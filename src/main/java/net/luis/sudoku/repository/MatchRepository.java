@@ -52,6 +52,35 @@ public final class MatchRepository {
 			.fetch();
 	}
 	
+	/**
+	 * The match one player is currently in, if any.
+	 *
+	 * Only {@code RUNNING} counts. A waiting lobby is something they can walk back into from the multiplayer
+	 * screen and nothing is at stake in it yet; a running match is the one that ends without them, which is
+	 * the whole reason a client asks this question on startup.
+	 *
+	 * There is at most one - joining escrows a stake and a player can only be in one board at a time - but
+	 * the id list is read rather than assumed, and the newest wins if a stale row ever survives.
+	 *
+	 * @return the running match this user is a participant of, or null
+	 */
+	public @Nullable Match findRunningFor(@NonNull SqlTransaction transaction, @NonNull UUID userId) throws SqlException {
+		List<UUID> ids = transaction.from(MATCH_PARTICIPANTS).select(PARTICIPANT_MATCH_ID)
+			.innerJoin(MATCHES, Sql.equalTo(MATCH_ID, PARTICIPANT_MATCH_ID))
+			.where(Sql.equalTo(PARTICIPANT_USER_ID, userId))
+			.where(Sql.equalTo(MATCH_STATE, MatchState.RUNNING))
+			.fetch();
+
+		Match newest = null;
+		for (UUID id : ids) {
+			Match match = this.find(transaction, id);
+			if (match != null && (newest == null || match.createdAt().isAfter(newest.createdAt()))) {
+				newest = match;
+			}
+		}
+		return newest;
+	}
+
 	public void markRunning(@NonNull SqlTransaction transaction, @NonNull UUID id, @NonNull Instant at) throws SqlException {
 		transaction.from(MATCHES).update().set(MATCH_STATE, MatchState.RUNNING).set(MATCH_STARTED_AT, at)
 			.where(Sql.equalTo(MATCH_ID, id)).execute();

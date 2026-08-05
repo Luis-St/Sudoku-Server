@@ -98,6 +98,27 @@ public class MatchSocketHandler implements Consumer<WsConfig> {
 			}
 			
 			Match match = this.matches.get(matchId);
+
+			// A match that is already over must never be rebuilt. `liveFor` reconstructs a LiveMatch from the
+			// row when the registry has lost it, and for a finished row that produced a *zombie*: a fresh
+			// board, an empty grid and no memory of having ended, which it then served to the returning
+			// player as an ordinary snapshot. The player who closed the app during a co-op game came back to
+			// a match that had been abandoned while they were gone and was shown a blank board instead of
+			// being told, so nothing ever sent them back to the home screen.
+			//
+			// The outcome is on the row, so it can be told properly: the same MATCH_ENDED every other player
+			// received when it happened, then the socket closes. The client shows the match-over dialog and
+			// leaves from there.
+			if (match.state().isTerminal()) {
+				log.info("Match {}: user {} connected to a match that already ended ({})", matchId, principal.userId(), match.endReason());
+				Map<String, Object> payload = new java.util.HashMap<>();
+				payload.put("winnerId", match.winnerId() == null ? null : match.winnerId().toString());
+				payload.put("reason", match.endReason() == null ? EndReason.DISCONNECTED.name() : match.endReason().name());
+				context.send(new MessageEnvelope(MessageType.MATCH_ENDED.name(), 0, System.currentTimeMillis(), payload));
+				context.closeSession(4000, "MATCH_OVER");
+				return;
+			}
+
 			LiveMatch live = this.matches.liveFor(match);
 			SocketConnection connection = new SocketConnection(context, principal);
 			

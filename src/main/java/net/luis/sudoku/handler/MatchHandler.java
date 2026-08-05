@@ -106,6 +106,51 @@ public class MatchHandler {
 	}
 	
 	@OpenApi(
+		summary = "The match this player is currently in",
+		description = "The running match the caller is a participant of, or 204 when there is none. A client asks this "
+			+ "on startup: killing the app closes the socket but leaves the player in the match for the length of the "
+			+ "reconnect grace, and nothing on the device survives the process to say which match that was.",
+		operationId = "activeMatch",
+		path = ApiVersion.PATH_PREFIX + "/matches/active",
+		methods = HttpMethod.GET,
+		tags = "Matches",
+		responses = {
+			@OpenApiResponse(status = "200", content = @OpenApiContent(from = MatchResponse.class)),
+			@OpenApiResponse(status = "204", description = "Not in a match")
+		}
+	)
+	public void active(@NonNull Context ctx) {
+		Principal actor = this.authentication.require(ctx);
+		Match match = this.matches.activeMatch(actor);
+		if (match == null) {
+			ctx.status(204);
+			return;
+		}
+		ctx.json(MatchResponse.of(match, this.matches.participants(match.id())));
+	}
+
+	@OpenApi(
+		summary = "Leave a running match",
+		description = "Answering \"no\" to rejoining. Ends the match immediately rather than holding the other players "
+			+ "at a paused board for the rest of a reconnect grace the player has already decided not to use, and "
+			+ "settles stakes exactly as an in-match RESIGN does. Idempotent: a match that has already ended answers 204.",
+		operationId = "resignMatch",
+		path = ApiVersion.PATH_PREFIX + "/matches/{id}/resign",
+		methods = HttpMethod.POST,
+		tags = "Matches",
+		pathParams = @OpenApiParam(name = "id", description = "Match id"),
+		responses = {
+			@OpenApiResponse(status = "204"),
+			@OpenApiResponse(status = "403", description = "FORBIDDEN", content = @OpenApiContent(from = ErrorResponse.class))
+		}
+	)
+	public void resign(@NonNull Context ctx) {
+		Principal actor = this.authentication.require(ctx);
+		this.matches.resign(actor, Handlers.pathUuid(ctx, "id"));
+		ctx.status(204);
+	}
+
+	@OpenApi(
 		summary = "Cancel a match",
 		description = "The creator calls off a match nobody joined - the lobby's cancel button. Refused with CONFLICT "
 			+ "once the match is running, where leaving is resigning rather than cancelling. Idempotent: a match that "
