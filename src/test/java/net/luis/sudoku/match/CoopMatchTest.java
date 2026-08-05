@@ -285,7 +285,7 @@ class CoopMatchTest {
 	}
 
 	@Test
-	void hint_clearedByAnotherPlayer_isIgnored() {
+	void hint_clearedByAnotherPlayer_isWithdrawn() {
 		this.start(false, this.alice, this.bob);
 		int cell = MatchFixture.holes(this.puzzle).getFirst();
 		send(this.coop, this.alice, MessageType.HINT, Map.of("cell", cell));
@@ -293,8 +293,9 @@ class CoopMatchTest {
 
 		send(this.coop, this.bob, MessageType.HINT, Map.of("clear", true));
 
-		// Only its owner may withdraw it - the cap it will be charged against is theirs.
-		assertFalse(this.alice.sawType(MessageType.HINT));
+		// The offer belongs to the group, not to whoever asked: anybody may take it back, and the asker's own
+		// board has to follow, since the mark is on every board.
+		assertNull(this.alice.lastOf(MessageType.HINT).payloadOrEmpty().get("cell"));
 	}
 
 	@Test

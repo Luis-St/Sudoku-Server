@@ -215,9 +215,10 @@ public final class CoopMatch extends LiveMatch {
 	 * is the part the other players have to see and the part a reconnecting player has to get back.
 	 * </p>
 	 * <p>
-	 * Only one at a time, and only its owner may withdraw or spend it. Otherwise a second player could
-	 * replace the offer somebody is deciding on, or take a hint whose cost was counted against somebody
-	 * else's cap.
+	 * Only one at a time, so a second player cannot move the cell the others are deciding about - but once it
+	 * is up, the offer belongs to the group: anybody may withdraw it, and anybody may spend it by placing the
+	 * digit. The cap stays per player because the client charges whoever presses reveal, so nothing here has
+	 * to know whose it was.
 	 * </p>
 	 */
 	private void onHint(@NonNull UUID userId, @NonNull Map<String, Object> payload) {
@@ -226,9 +227,7 @@ public final class CoopMatch extends LiveMatch {
 		}
 
 		if (payload.get("clear") instanceof Boolean clear && clear) {
-			if (userId.equals(this.hintOwner)) {
-				this.clearHint();
-			}
+			this.clearHint();
 			return;
 		}
 
@@ -268,8 +267,8 @@ public final class CoopMatch extends LiveMatch {
 	private void onResign(@NonNull UUID userId) {
 		this.participants().remove(userId);
 		if (userId.equals(this.hintOwner)) {
-			// Their offer leaves with them; nobody else can spend or withdraw it, so it would block the
-			// single slot for the rest of the match.
+			// Their question leaves with them. Anybody left could withdraw it now, but a marked cell nobody
+			// present asked about is a mark that means nothing.
 			this.clearHint();
 		}
 		if (this.participants().size() < 2) {
@@ -311,8 +310,8 @@ public final class CoopMatch extends LiveMatch {
 	@Override
 	protected void onParticipantDisconnected(@NonNull ParticipantState participant) {
 		if (participant.userId().equals(this.hintOwner)) {
-			// Same reason as a resignation: only its owner can spend or withdraw an offer, so one left behind
-			// by somebody who is gone holds the single slot against the players who are still here.
+			// Same reason as a resignation: the question was theirs, and nobody still here asked it. The others
+			// could clear it themselves now, but a mark whose asker is gone explains nothing.
 			this.clearHint();
 		}
 	}
