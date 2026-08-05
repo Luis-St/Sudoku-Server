@@ -25,8 +25,22 @@ public enum MessageType {
 	 * </p>
 	 */
 	NOTE(Direction.BOTH),
-	/** {@code { cell }} - co-op only; which cell this player has selected. */
-	PRESENCE(Direction.BOTH),
+	/**
+	 * {@code { cell }} to ask, {@code { clear: true }} to withdraw - co-op only; the shared hint offer.
+	 * <p>
+	 * {@link Direction#BOTH} and held by the match rather than each client, because a hint on a shared board
+	 * is a statement about the board: everybody sees the offered cell marked, so the group can decide
+	 * together and nobody fills it from under the player who asked. Broadcast back as
+	 * {@code { cell, byUser }}, or {@code { cell: null }} once it is spent or withdrawn.
+	 * </p>
+	 * <p>
+	 * This replaced {@code PRESENCE}, which broadcast which cell each player had merely *selected*. The
+	 * owner had it removed: a highlight on every tap marked cells nothing had happened to, and the two
+	 * things worth seeing about somebody else's cell are that they got it wrong (which
+	 * {@link #ENTRY_RESULT} carries) and that they are asking about it - this.
+	 * </p>
+	 */
+	HINT(Direction.BOTH),
 	/** Give up. */
 	RESIGN(Direction.INBOUND),
 	/** Duel only: the app was backgrounded, which forfeits immediately (spec 11.2). */

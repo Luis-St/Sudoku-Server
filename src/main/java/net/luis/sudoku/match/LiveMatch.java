@@ -109,17 +109,26 @@ public abstract class LiveMatch {
 	public void onConnect(@NonNull Connection connection) {
 		UUID userId = connection.userId();
 		ParticipantState participant = this.participants.computeIfAbsent(userId, id -> new ParticipantState(id, connection.displayName()));
-		
-		if (participant.reconnects > 0) {
-			// Returning from a drop: the grace timer stops and the match resumes.
-			this.cancelGrace();
-		}
+
+		// Returning from a drop: the grace timer stops and the match resumes.
+		boolean resumed = participant.reconnects > 0 && this.cancelGrace();
 		this.connections.put(userId, connection);
 		participant.connected = true;
-		
+
 		// MATCH_STATE on every connect and reconnect makes the protocol resynchronising by
 		// construction: the client replaces its state wholesale rather than trying to patch (spec 10.3).
-		connection.send(this.matchStateMessage(userId));
+		if (resumed) {
+			// To *everybody*, not just the returning player. The pause is announced by a broadcast
+			// ({@link #startGrace}) but used to be lifted by a message only the reconnecting side received,
+			// so the players who waited were never told the match had resumed: their countdown ran to zero
+			// and the "a participant disconnected" banner stayed up for the rest of a match that was running
+			// perfectly well underneath it. There is no separate "resumed" type - a full snapshot says it,
+			// and resynchronises anything the waiting clients missed while the match was paused.
+			log.info("Match {}: user {} reconnected, resuming", this.match.id(), userId);
+			this.broadcastAll();
+		} else {
+			connection.send(this.matchStateMessage(userId));
+		}
 		this.onParticipantConnected(participant);
 	}
 	
@@ -129,11 +138,29 @@ public abstract class LiveMatch {
 	 * @param explicit true for a deliberate quit, which gets no grace at all (spec 10.4)
 	 */
 	public void onDisconnect(@NonNull UUID userId, boolean explicit) {
+		this.onDisconnect(userId, null, explicit);
+	}
+
+	/**
+	 * Detaches a specific connection. Called on the queue.
+	 *
+	 * @param connection the connection that closed, or null to detach whichever one is current
+	 * @param explicit true for a deliberate quit, which gets no grace at all (spec 10.4)
+	 */
+	public void onDisconnect(@NonNull UUID userId, @Nullable Connection connection, boolean explicit) {
 		ParticipantState participant = this.participants.get(userId);
 		if (participant == null || this.ended) {
 			return;
 		}
-		
+
+		Connection current = this.connections.get(userId);
+		if (connection != null && current != null && current != connection) {
+			// A close for a socket this participant has already replaced. Acting on it would drop the live
+			// connection that superseded it - see MatchSocketHandler.onClose.
+			log.debug("Match {}: ignoring a stale close for user {}", this.match.id(), userId);
+			return;
+		}
+
 		this.connections.remove(userId);
 		participant.connected = false;
 		
@@ -155,7 +182,7 @@ public abstract class LiveMatch {
 		}
 		
 		this.onParticipantDisconnected(participant);
-		this.startGrace();
+		this.startGrace(participant);
 	}
 	
 	/**
@@ -172,26 +199,37 @@ public abstract class LiveMatch {
 		});
 	}
 	
-	private void startGrace() {
+	private void startGrace(@NonNull ParticipantState dropped) {
 		this.cancelGrace();
 		int seconds = this.config.reconnectGraceSeconds();
-		
+
+		// Who dropped, by name. The waiting players are being asked to sit still for up to a minute, and
+		// "a participant" is not enough to decide whether that is worth doing - in a four-player co-op it does
+		// not even say how much of the group is missing. The id travels too, so a client can tell the pause is
+		// about somebody else without matching on a display name.
 		this.broadcast(MessageEnvelope.of(MessageType.MATCH_STATE, Map.of(
 			"paused", true,
-			"graceSeconds", seconds
+			"graceSeconds", seconds,
+			"disconnectedUserId", dropped.userId().toString(),
+			"disconnectedName", dropped.displayName()
 		)));
-		
+
 		this.graceTimer = this.schedule(() -> {
 			log.info("Match {}: reconnect grace expired", this.match.id());
 			this.endMatch(null, EndReason.DISCONNECTED);
 		}, seconds, TimeUnit.SECONDS);
 	}
 	
-	private void cancelGrace() {
-		if (this.graceTimer != null) {
-			this.graceTimer.cancel(false);
-			this.graceTimer = null;
+	/**
+	 * @return true if a grace window was actually running, so the match has just resumed
+	 */
+	private boolean cancelGrace() {
+		if (this.graceTimer == null) {
+			return false;
 		}
+		this.graceTimer.cancel(false);
+		this.graceTimer = null;
+		return true;
 	}
 	
 	// --- state ---

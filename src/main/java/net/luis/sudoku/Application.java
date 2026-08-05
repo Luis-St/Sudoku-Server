@@ -13,6 +13,7 @@ import net.luis.sudoku.version.GenVersion;
 import org.jspecify.annotations.NonNull;
 import org.slf4j.*;
 
+import java.time.Duration;
 import java.util.UUID;
 
 public class Application {
@@ -50,7 +51,18 @@ public class Application {
 	static void configure(@NonNull JavalinConfig javalin, @NonNull ServiceGraph services) {
 		javalin.startup.showJavalinBanner = false;
 		javalin.http.defaultContentType = "application/json";
-		
+
+		// Jetty closes an idle WebSocket after 30 seconds by default, which is *shorter than a player
+		// thinking about a cell*: a co-op or race match sends nothing at all while nobody is typing, so a
+		// perfectly healthy connection was being dropped mid-match and reported to the other side as a
+		// disconnect. Clients ping every MatchSocketHandler.CLIENT_PING_SECONDS, so this only has to be a
+		// comfortable multiple of that - long enough to survive a few missed pings on mobile, short enough
+		// that a genuinely dead peer is still noticed inside the reconnect grace window.
+		javalin.jetty.modifyWebSocketServletFactory(factory -> {
+			factory.setIdleTimeout(Duration.ofSeconds(MatchSocketHandler.SOCKET_IDLE_TIMEOUT_SECONDS));
+			factory.setMaxTextMessageSize(MatchSocketHandler.MAX_FRAME_BYTES);
+		});
+
 		javalin.registerPlugin(new OpenApiPlugin(pluginConfig ->
 			pluginConfig.withDefinitionConfiguration((_, definition) ->
 				definition.info(info ->

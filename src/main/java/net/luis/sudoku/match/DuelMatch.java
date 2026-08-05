@@ -64,7 +64,7 @@ public final class DuelMatch extends LiveMatch {
 			case RESIGN -> this.onResign(userId);
 			case BACKGROUNDED -> this.onBackgrounded(userId);
 			// Notes are private and never broadcast, even though the pen layer is shared (spec 10.5).
-			case NOTE, PRESENCE, HELLO -> {}
+			case NOTE, HELLO -> {}
 			default -> this.sendTo(userId, MessageEnvelope.of(MessageType.ERROR, Map.of("error", "UNSUPPORTED", "message", type + " is not valid in a duel")));
 		}
 	}

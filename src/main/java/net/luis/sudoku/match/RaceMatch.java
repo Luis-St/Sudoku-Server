@@ -46,7 +46,7 @@ public final class RaceMatch extends LiveMatch {
 			case RESIGN -> this.onResign(userId);
 			// NOTE is private to the sender and never authoritative (spec 10.5); nothing to do server-side
 			// in race, where boards are independent anyway.
-			case NOTE, PRESENCE, HELLO -> {}
+			case NOTE, HELLO -> {}
 			default -> this.sendTo(userId, MessageEnvelope.of(MessageType.ERROR, Map.of("error", "UNSUPPORTED", "message", type + " is not valid in a race")));
 		}
 	}

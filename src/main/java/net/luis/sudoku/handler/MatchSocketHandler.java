@@ -31,8 +31,22 @@ public class MatchSocketHandler implements Consumer<WsConfig> {
 	private static final Logger log = LoggerFactory.getLogger(MatchSocketHandler.class);
 	
 	/** Spec 12: WebSocket frames are size-capped. A PLACE payload is tens of bytes. */
-	private static final int MAX_FRAME_BYTES = 8 * 1024;
-	
+	public static final int MAX_FRAME_BYTES = 8 * 1024;
+
+	/**
+	 * How long a match socket may be silent before Jetty closes it (set in {@code Application}).
+	 * <p>
+	 * A match is legitimately silent for minutes at a time - co-op and race send nothing while the players
+	 * are thinking - so this is not a liveness signal on its own. What makes it one is the client's ping
+	 * every {@link #CLIENT_PING_SECONDS}: this is that interval with room for several to go missing on a
+	 * mobile connection, while still expiring inside the reconnect grace window so a peer that really is
+	 * gone is noticed rather than held open until the match ends.
+	 */
+	public static final long SOCKET_IDLE_TIMEOUT_SECONDS = 90;
+
+	/** The ping interval the clients are configured with; documented here because the timeout above derives from it. */
+	public static final long CLIENT_PING_SECONDS = 20;
+
 	/** Spec 12: the message rate per connection is limited. */
 	private static final int MAX_MESSAGES_PER_WINDOW = 120;
 	private static final long RATE_WINDOW_MS = 10_000;
@@ -88,8 +102,9 @@ public class MatchSocketHandler implements Consumer<WsConfig> {
 			SocketConnection connection = new SocketConnection(context, principal);
 			
 			this.states.put(context.sessionId(), new SocketState(matchId, principal.userId(), live, connection));
+			log.info("Match {}: user {} opened a socket", matchId, principal.userId());
 			live.submit(() -> live.onConnect(connection));
-			
+
 		} catch (ApiException e) {
 			context.closeSession(4401, e.code().name());
 		} catch (RuntimeException e) {
@@ -173,15 +188,24 @@ public class MatchSocketHandler implements Consumer<WsConfig> {
 		state.connection.send(MessageEnvelope.of(MessageType.ACK, Map.of("seq", state.highestSeq.get())));
 	}
 	
-	private void onClose(@NonNull WsContext context) {
+	private void onClose(@NonNull WsCloseContext context) {
 		SocketState state = this.states.remove(context.sessionId());
 		if (state == null) {
 			return;
 		}
+		// Logged at info because this is the event the players see as "disconnected", and it was previously
+		// silent on both sides: an idle-timeout close and a phone leaving the network were indistinguishable
+		// from the logs, which is to say invisible.
+		log.info("Match {}: user {} socket closed ({} {})", state.matchId, state.userId, context.status(), context.reason());
 		LiveMatch live = state.live;
 		// A bare socket close is a network failure, not a quit: the ordinary grace window applies
 		// (spec 10.4). An explicit RESIGN takes the other path.
-		live.submit(() -> live.onDisconnect(state.userId, false));
+		//
+		// The connection is passed so a *stale* close cannot end a live match. Jetty may report a dropped
+		// socket well after the client has already reconnected on a new one, and without this the late close
+		// tears down the replacement: the returning player is dropped again, their reconnect count rises
+		// towards the cap, and the other player is shown a disconnect for somebody who is sitting there.
+		live.submit(() -> live.onDisconnect(state.userId, state.connection, false));
 	}
 	
 	/**

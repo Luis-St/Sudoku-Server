@@ -4,6 +4,7 @@ import net.luis.sudoku.config.MatchConfig;
 import net.luis.sudoku.domain.Match;
 import net.luis.sudoku.generation.GeneratedPuzzle;
 import org.jspecify.annotations.NonNull;
+import org.jspecify.annotations.Nullable;
 
 import java.util.*;
 
@@ -26,11 +27,16 @@ public final class CoopMatch extends LiveMatch {
 	
 	private final BitSet filled;
 	private final int holes;
-	private final Map<UUID, Integer> presence = new LinkedHashMap<>();
 	/** cell index -&gt; bitmask of noted digits, bit {@code d} for digit {@code d}. Shared by the whole group. */
 	private final Map<Integer, Integer> notes = new LinkedHashMap<>();
-	
+
 	private int sharedLivesLeft = SHARED_LIVES;
+	/**
+	 * The one hint currently on offer, or null. One per match, not one per player: everybody is looking at
+	 * the same board, so two hints pointing at two cells would be two groups playing it.
+	 */
+	private @Nullable Integer hintCell;
+	private @Nullable UUID hintOwner;
 	
 	public CoopMatch(@NonNull Match match, @NonNull GeneratedPuzzle puzzle, @NonNull MatchConfig config, @NonNull MatchCallbacks callbacks) {
 		super(match, puzzle, config, callbacks);
@@ -50,7 +56,7 @@ public final class CoopMatch extends LiveMatch {
 		switch (type) {
 			case READY -> this.onReady(userId);
 			case PLACE -> this.onPlace(userId, payload);
-			case PRESENCE -> this.onPresence(userId, payload);
+			case HINT -> this.onHint(userId, payload);
 			case RESIGN -> this.onResign(userId);
 			case NOTE -> this.onNote(userId, payload);
 			case HELLO -> {}
@@ -104,6 +110,11 @@ public final class CoopMatch extends LiveMatch {
 			// The notes on a solved cell annotate nothing. Dropped here rather than left for the clients to
 			// forget individually, so a reconnecting player is not handed candidates for a filled cell.
 			this.notes.remove(cell);
+			if (Integer.valueOf(cell).equals(this.hintCell)) {
+				// The offer has been taken - by its owner spending it, or by anybody simply solving the cell
+				// first, which is just as good an answer to "look here".
+				this.clearHint();
+			}
 		} else if (this.match.livesEnabled()) {
 			this.sharedLivesLeft--;
 		}
@@ -125,8 +136,11 @@ public final class CoopMatch extends LiveMatch {
 			// A *wrong* entry is a shared event, and used to be private. Two things went wrong because of
 			// that, both reported by the owner: the shared lives pool is decremented here and only the
 			// placer was told, so everybody else's hearts sat at a stale count until a reconnect; and the
-			// only thing the others could see of the mistake was the placer's own PRESENCE highlight, which
-			// left a cell somebody had just got wrong sitting there in the "somebody is here" colour.
+			// only trace of the mistake the others got was the selection highlight that used to follow every
+			// player around, which said "somebody is here" about a cell somebody had just got wrong.
+			//
+			// That highlight is gone now (see MessageType.HINT), which makes this the *only* thing one player
+			// ever sees about another player's cell - so it carries the whole weight of the report.
 			//
 			// Broadcast rather than sent, so one message does both: it carries livesLeft to everyone and it
 			// is what each client flashes the cell red from. The placer is included in a broadcast, so they
@@ -194,24 +208,70 @@ public final class CoopMatch extends LiveMatch {
 	}
 	
 	/**
-	 * Broadcasts which cell a player has selected, so the group can avoid colliding in the first place
-	 * (spec 11.3).
+	 * Claims or withdraws the shared hint offer.
+	 * <p>
+	 * The <i>cell</i> is chosen by the client - shared-core's hint engine runs there, and the server has no
+	 * reason to duplicate it. What the server owns is the fact that a hint is pending and whose it is, which
+	 * is the part the other players have to see and the part a reconnecting player has to get back.
+	 * </p>
+	 * <p>
+	 * Only one at a time, and only its owner may withdraw or spend it. Otherwise a second player could
+	 * replace the offer somebody is deciding on, or take a hint whose cost was counted against somebody
+	 * else's cap.
+	 * </p>
 	 */
-	private void onPresence(@NonNull UUID userId, @NonNull Map<String, Object> payload) {
-		Integer cell = MatchPayloads.cell(payload, this.size());
-		if (cell == null) {
+	private void onHint(@NonNull UUID userId, @NonNull Map<String, Object> payload) {
+		if (this.state() != MatchState.RUNNING || this.hasEnded() || !this.match.hintsEnabled()) {
 			return;
 		}
-		this.presence.put(userId, cell);
-		this.broadcast(MessageEnvelope.of(MessageType.PRESENCE, Map.of(
-			"userId", userId.toString(),
-			"cell", cell
-		)));
+
+		if (payload.get("clear") instanceof Boolean clear && clear) {
+			if (userId.equals(this.hintOwner)) {
+				this.clearHint();
+			}
+			return;
+		}
+
+		Integer cell = MatchPayloads.cell(payload, this.size());
+		if (cell == null || this.filled.get(cell) || this.puzzle.puzzle().cell(cell).isGiven()) {
+			return;
+		}
+		if (this.hintCell != null) {
+			// Somebody is already deciding. The asker is told what the offer actually is rather than being
+			// ignored, so a client that missed the broadcast does not sit with a hint button that does nothing.
+			this.sendTo(userId, this.hintMessage());
+			return;
+		}
+
+		this.hintCell = cell;
+		this.hintOwner = userId;
+		this.broadcast(this.hintMessage());
 	}
-	
+
+	/** Drops the pending offer, if there is one, and tells everybody. */
+	private void clearHint() {
+		if (this.hintCell == null) {
+			return;
+		}
+		this.hintCell = null;
+		this.hintOwner = null;
+		this.broadcast(this.hintMessage());
+	}
+
+	private @NonNull MessageEnvelope hintMessage() {
+		Map<String, Object> payload = new HashMap<>();
+		payload.put("cell", this.hintCell);
+		payload.put("byUser", this.hintOwner == null ? null : this.hintOwner.toString());
+		return new MessageEnvelope(MessageType.HINT.name(), 0, System.currentTimeMillis(), payload);
+	}
+
 	private void onResign(@NonNull UUID userId) {
 		this.participants().remove(userId);
-		this.presence.remove(userId);
+		if (userId.equals(this.hintOwner)) {
+			// Their offer leaves with them; nobody else can spend or withdraw it, so it would block the
+			// single slot for the rest of the match.
+			this.clearHint();
+		}
 		if (this.participants().size() < 2) {
 			this.endMatch(null, EndReason.RESIGNED);
 		} else {
@@ -227,9 +287,6 @@ public final class CoopMatch extends LiveMatch {
 		Map<String, Object> noteMap = new LinkedHashMap<>();
 		this.notes.forEach((cell, mask) -> noteMap.put(Integer.toString(cell), mask));
 		
-		Map<String, Object> presenceMap = new LinkedHashMap<>();
-		this.presence.forEach((userId, cell) -> presenceMap.put(userId.toString(), cell));
-		
 		Map<String, Object> payload = new HashMap<>();
 		payload.put("matchId", this.id().toString());
 		payload.put("mode", this.mode().name());
@@ -237,7 +294,10 @@ public final class CoopMatch extends LiveMatch {
 		payload.put("puzzleKey", MatchPayloads.key(this.match.key()));
 		payload.put("board", board);
 		payload.put("notes", noteMap);
-		payload.put("presence", presenceMap);
+		// The pending offer travels in the snapshot as well as in its own broadcast: a player who joins or
+		// reconnects while a hint is on the board has to see the same marked cell as everybody else.
+		payload.put("hintCell", this.hintCell);
+		payload.put("hintBy", this.hintOwner == null ? null : this.hintOwner.toString());
 		payload.put("livesEnabled", this.match.livesEnabled());
 		// A match setting, not a per-player one: everybody on one shared board plays the same game, and a
 		// joiner has no other way to learn what the creator configured.
@@ -248,6 +308,15 @@ public final class CoopMatch extends LiveMatch {
 		return new MessageEnvelope(MessageType.MATCH_STATE.name(), 0, System.currentTimeMillis(), payload);
 	}
 	
+	@Override
+	protected void onParticipantDisconnected(@NonNull ParticipantState participant) {
+		if (participant.userId().equals(this.hintOwner)) {
+			// Same reason as a resignation: only its owner can spend or withdraw an offer, so one left behind
+			// by somebody who is gone holds the single slot against the players who are still here.
+			this.clearHint();
+		}
+	}
+
 	int sharedLivesLeft() {
 		return this.sharedLivesLeft;
 	}

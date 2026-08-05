@@ -319,6 +319,50 @@ class RaceMatchTest {
 	}
 	
 	@Test
+	void onConnect_afterADrop_tellsTheWaitingParticipantTheMatchResumed() {
+		this.start(false);
+		this.race.submit(() -> this.race.onDisconnect(this.alice.userId(), false));
+		MatchFixture.drain(this.race);
+		// The pause reaches Bob as a broadcast; everything asserted below is about it being lifted.
+		assertTrue(this.bob.lastOf(MessageType.MATCH_STATE).payloadOrEmpty().containsKey("paused"));
+		this.bob.clear();
+
+		connect(this.race, this.alice);
+
+		// Bob is the one who was told to wait, so Bob is the one who has to be told it is over. While the
+		// resume went only to the returning player, his countdown ran to zero and the disconnect banner
+		// stayed up over a match that had already resumed.
+		MessageEnvelope resumed = this.bob.lastOf(MessageType.MATCH_STATE);
+		assertAll(
+			() -> assertNotNull(resumed, "the waiting participant must hear that the match resumed"),
+			() -> assertFalse(resumed.payloadOrEmpty().containsKey("paused"), "a resume is a full snapshot, not another pause")
+		);
+	}
+
+	@Test
+	void onDisconnect_aCloseForASupersededConnection_isIgnored() {
+		this.start(false);
+		FakeConnection dropped = this.alice;
+		this.race.submit(() -> this.race.onDisconnect(dropped.userId(), dropped, false));
+		MatchFixture.drain(this.race);
+		// Alice comes back on a second socket, as the client does after noticing the drop.
+		FakeConnection returned = new FakeConnection(dropped.userId(), "Alice");
+		connect(this.race, returned);
+		this.bob.clear();
+
+		// ...and only now does the old socket's close arrive. Jetty reports a dropped connection lazily, so
+		// this ordering is ordinary rather than exotic.
+		this.race.submit(() -> this.race.onDisconnect(dropped.userId(), dropped, false));
+		MatchFixture.drain(this.race);
+
+		assertAll(
+			() -> assertNull(this.callbacks.ended(), "a stale close must not end the match"),
+			() -> assertTrue(this.race.connectedUserIds().contains(dropped.userId()), "the live connection must survive its predecessor's close"),
+			() -> assertFalse(this.bob.sawType(MessageType.MATCH_STATE), "nobody should be told to wait for a player who is connected")
+		);
+	}
+
+	@Test
 	void onDisconnect_exceedingTheReconnectCap_abandonsTheMatch() {
 		this.start(false);
 		int limit = MatchFixture.matchConfig().reconnectLimit();
