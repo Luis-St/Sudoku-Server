@@ -2,7 +2,6 @@ package net.luis.sudoku.handler;
 
 import io.javalin.http.Context;
 import io.javalin.openapi.*;
-import net.luis.sudoku.ApiVersion;
 import net.luis.sudoku.auth.Authentication;
 import net.luis.sudoku.domain.Principal;
 import net.luis.sudoku.dto.request.CreateInviteRequest;
@@ -30,7 +29,7 @@ public class InviteHandler {
 		summary = "Create an invite",
 		description = "Requires CAN_INVITE. The invite always grants NEW; promotion is a separate admin action.",
 		operationId = "createInvite",
-		path = ApiVersion.PATH_PREFIX + "/invites",
+		path = "/api/v1/invites",
 		methods = HttpMethod.POST,
 		tags = "Invites",
 		requestBody = @OpenApiRequestBody(required = false, content = @OpenApiContent(from = CreateInviteRequest.class)),
@@ -54,7 +53,7 @@ public class InviteHandler {
 		summary = "List invites",
 		description = "Admins see every invite; everyone else sees only their own.",
 		operationId = "listInvites",
-		path = ApiVersion.PATH_PREFIX + "/invites",
+		path = "/api/v1/invites",
 		methods = HttpMethod.GET,
 		tags = "Invites",
 		responses = @OpenApiResponse(status = "200", content = @OpenApiContent(from = InviteResponse[].class))
@@ -69,7 +68,7 @@ public class InviteHandler {
 		summary = "Revoke an invite",
 		description = "Permitted for the invite's creator or any admin. Already-used invites cannot be revoked.",
 		operationId = "revokeInvite",
-		path = ApiVersion.PATH_PREFIX + "/invites/{code}",
+		path = "/api/v1/invites/{code}",
 		methods = HttpMethod.DELETE,
 		tags = "Invites",
 		pathParams = @OpenApiParam(name = "code", description = "Invite code"),

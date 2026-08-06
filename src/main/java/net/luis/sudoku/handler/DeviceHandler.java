@@ -2,7 +2,6 @@ package net.luis.sudoku.handler;
 
 import io.javalin.http.Context;
 import io.javalin.openapi.*;
-import net.luis.sudoku.ApiVersion;
 import net.luis.sudoku.auth.Authentication;
 import net.luis.sudoku.device.DeviceLinkService;
 import net.luis.sudoku.domain.KeyAlgorithm;
@@ -41,7 +40,7 @@ public class DeviceHandler {
 		description = "Authenticated. Returns a short, single-use code to type on the new device. Supersedes any "
 			+ "outstanding code for this user.",
 		operationId = "createLinkCode",
-		path = ApiVersion.PATH_PREFIX + "/devices/link-code",
+		path = "/api/v1/devices/link-code",
 		methods = HttpMethod.POST,
 		tags = "Devices",
 		responses = @OpenApiResponse(status = "200", content = @OpenApiContent(from = LinkCodeResponse.class))
@@ -55,7 +54,7 @@ public class DeviceHandler {
 		summary = "Link a new device with a code",
 		description = "Unauthenticated - the new device has no session yet. The device inherits the user's role.",
 		operationId = "linkDevice",
-		path = ApiVersion.PATH_PREFIX + "/devices/link",
+		path = "/api/v1/devices/link",
 		methods = HttpMethod.POST,
 		tags = "Devices",
 		requestBody = @OpenApiRequestBody(content = @OpenApiContent(from = LinkDeviceRequest.class)),
@@ -86,7 +85,7 @@ public class DeviceHandler {
 	@OpenApi(
 		summary = "List your devices",
 		operationId = "listDevices",
-		path = ApiVersion.PATH_PREFIX + "/devices",
+		path = "/api/v1/devices",
 		methods = HttpMethod.GET,
 		tags = "Devices",
 		responses = @OpenApiResponse(status = "200", content = @OpenApiContent(from = DeviceResponse[].class))
@@ -104,7 +103,7 @@ public class DeviceHandler {
 		description = "Revoking your current device ends your session. A user's last device may only be revoked if "
 			+ "they are not the last admin.",
 		operationId = "revokeDevice",
-		path = ApiVersion.PATH_PREFIX + "/devices/{id}",
+		path = "/api/v1/devices/{id}",
 		methods = HttpMethod.DELETE,
 		tags = "Devices",
 		pathParams = @OpenApiParam(name = "id", description = "Device id"),

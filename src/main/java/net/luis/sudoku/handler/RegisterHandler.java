@@ -2,7 +2,6 @@ package net.luis.sudoku.handler;
 
 import io.javalin.http.Context;
 import io.javalin.openapi.*;
-import net.luis.sudoku.ApiVersion;
 import net.luis.sudoku.domain.KeyAlgorithm;
 import net.luis.sudoku.dto.request.RegisterRequest;
 import net.luis.sudoku.dto.response.ErrorResponse;
@@ -32,7 +31,7 @@ public class RegisterHandler {
 		description = "Creates a user and their first device. The bootstrap invite grants ADMIN, but only while no "
 			+ "non-revoked admin exists.",
 		operationId = "register",
-		path = ApiVersion.PATH_PREFIX + "/register",
+		path = "/api/v1/register",
 		methods = HttpMethod.POST,
 		tags = "Auth",
 		requestBody = @OpenApiRequestBody(content = @OpenApiContent(from = RegisterRequest.class)),

@@ -2,7 +2,6 @@ package net.luis.sudoku.handler;
 
 import io.javalin.http.Context;
 import io.javalin.openapi.*;
-import net.luis.sudoku.ApiVersion;
 import net.luis.sudoku.auth.Authentication;
 import net.luis.sudoku.domain.Match;
 import net.luis.sudoku.domain.Principal;
@@ -34,7 +33,7 @@ public class MatchHandler {
 		summary = "Create a match",
 		description = "The creator chooses the configuration and settings. Difficulty LISA is rejected for every mode.",
 		operationId = "createMatch",
-		path = ApiVersion.PATH_PREFIX + "/matches",
+		path = "/api/v1/matches",
 		methods = HttpMethod.POST,
 		tags = "Matches",
 		requestBody = @OpenApiRequestBody(content = @OpenApiContent(from = CreateMatchRequest.class)),
@@ -68,7 +67,7 @@ public class MatchHandler {
 	@OpenApi(
 		summary = "Join a match",
 		operationId = "joinMatch",
-		path = ApiVersion.PATH_PREFIX + "/matches/{id}/join",
+		path = "/api/v1/matches/{id}/join",
 		methods = HttpMethod.POST,
 		tags = "Matches",
 		pathParams = @OpenApiParam(name = "id", description = "Match id"),
@@ -93,7 +92,7 @@ public class MatchHandler {
 	@OpenApi(
 		summary = "Get a match",
 		operationId = "getMatch",
-		path = ApiVersion.PATH_PREFIX + "/matches/{id}",
+		path = "/api/v1/matches/{id}",
 		methods = HttpMethod.GET,
 		tags = "Matches",
 		pathParams = @OpenApiParam(name = "id", description = "Match id"),
@@ -111,7 +110,7 @@ public class MatchHandler {
 			+ "on startup: killing the app closes the socket but leaves the player in the match for the length of the "
 			+ "reconnect grace, and nothing on the device survives the process to say which match that was.",
 		operationId = "activeMatch",
-		path = ApiVersion.PATH_PREFIX + "/matches/active",
+		path = "/api/v1/matches/active",
 		methods = HttpMethod.GET,
 		tags = "Matches",
 		responses = {
@@ -135,7 +134,7 @@ public class MatchHandler {
 			+ "at a paused board for the rest of a reconnect grace the player has already decided not to use, and "
 			+ "settles stakes exactly as an in-match RESIGN does. Idempotent: a match that has already ended answers 204.",
 		operationId = "resignMatch",
-		path = ApiVersion.PATH_PREFIX + "/matches/{id}/resign",
+		path = "/api/v1/matches/{id}/resign",
 		methods = HttpMethod.POST,
 		tags = "Matches",
 		pathParams = @OpenApiParam(name = "id", description = "Match id"),
@@ -156,7 +155,7 @@ public class MatchHandler {
 			+ "once the match is running, where leaving is resigning rather than cancelling. Idempotent: a match that "
 			+ "has already ended still answers 204.",
 		operationId = "cancelMatch",
-		path = ApiVersion.PATH_PREFIX + "/matches/{id}",
+		path = "/api/v1/matches/{id}",
 		methods = HttpMethod.DELETE,
 		tags = "Matches",
 		pathParams = @OpenApiParam(name = "id", description = "Match id"),
@@ -176,7 +175,7 @@ public class MatchHandler {
 		summary = "Invite a player to a match",
 		description = "Returns the invite token to pass on. Only a participant may invite.",
 		operationId = "inviteToMatch",
-		path = ApiVersion.PATH_PREFIX + "/matches/{id}/invite",
+		path = "/api/v1/matches/{id}/invite",
 		methods = HttpMethod.POST,
 		tags = "Matches",
 		pathParams = @OpenApiParam(name = "id", description = "Match id"),
@@ -200,7 +199,7 @@ public class MatchHandler {
 			+ "PLAYER_OFFLINE rather than an invitation they would find hours later for a match that no longer exists, "
 			+ "which is also why the stored request expires within the minute.",
 		operationId = "requestMatch",
-		path = ApiVersion.PATH_PREFIX + "/matches/{id}/request",
+		path = "/api/v1/matches/{id}/request",
 		methods = HttpMethod.POST,
 		tags = "Matches",
 		pathParams = @OpenApiParam(name = "id", description = "Match id"),

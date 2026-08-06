@@ -2,7 +2,6 @@ package net.luis.sudoku.handler;
 
 import io.javalin.http.Context;
 import io.javalin.openapi.*;
-import net.luis.sudoku.ApiVersion;
 import net.luis.sudoku.auth.Authentication;
 import net.luis.sudoku.config.PresenceConfig;
 import net.luis.sudoku.domain.Principal;
@@ -40,7 +39,7 @@ public class PresenceHandler {
 			+ "for them, because this is the one call a client already makes on a timer. A request is not consumed by "
 			+ "being read - dismiss it explicitly once it has been answered.",
 		operationId = "presenceHeartbeat",
-		path = ApiVersion.PATH_PREFIX + "/presence/heartbeat",
+		path = "/api/v1/presence/heartbeat",
 		methods = HttpMethod.POST,
 		tags = "Presence",
 		responses = @OpenApiResponse(status = "200", content = @OpenApiContent(from = HeartbeatResponse.class))
@@ -60,7 +59,7 @@ public class PresenceHandler {
 			+ "than when their last heartbeat goes stale. Purely an optimisation of the same outcome: a client that is "
 			+ "killed outright never gets here, and lapses on the TTL instead.",
 		operationId = "presenceOffline",
-		path = ApiVersion.PATH_PREFIX + "/presence/offline",
+		path = "/api/v1/presence/offline",
 		methods = HttpMethod.POST,
 		tags = "Presence",
 		responses = @OpenApiResponse(status = "204")
@@ -77,7 +76,7 @@ public class PresenceHandler {
 			+ "already gone still answers 204, so a client retrying a dismissal it is unsure landed is not handed a "
 			+ "failure for having succeeded.",
 		operationId = "dismissMatchRequest",
-		path = ApiVersion.PATH_PREFIX + "/match-requests/{id}",
+		path = "/api/v1/match-requests/{id}",
 		methods = HttpMethod.DELETE,
 		tags = "Presence",
 		pathParams = @OpenApiParam(name = "id", description = "Match request id"),

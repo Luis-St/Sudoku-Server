@@ -105,72 +105,72 @@ public class Application {
 		javalin.routes.get("/health", healthHandler::health);
 		
 		// Server
-		javalin.routes.get(ApiVersion.PATH_PREFIX + "/server-info", serverInfoHandler::serverInfo);
+		javalin.routes.get("/api/v1/server-info", serverInfoHandler::serverInfo);
 		
 		// Registration and authentication
-		javalin.routes.post(ApiVersion.PATH_PREFIX + "/register", registerHandler::register);
-		javalin.routes.post(ApiVersion.PATH_PREFIX + "/auth/challenge", authHandler::challenge);
-		javalin.routes.post(ApiVersion.PATH_PREFIX + "/auth/verify", authHandler::verify);
+		javalin.routes.post("/api/v1/register", registerHandler::register);
+		javalin.routes.post("/api/v1/auth/challenge", authHandler::challenge);
+		javalin.routes.post("/api/v1/auth/verify", authHandler::verify);
 		
 		// Users and roles
-		javalin.routes.get(ApiVersion.PATH_PREFIX + "/users", userHandler::list);
-		javalin.routes.get(ApiVersion.PATH_PREFIX + "/users/me", userHandler::me);
-		javalin.routes.patch(ApiVersion.PATH_PREFIX + "/users/{id}/role", userHandler::changeRole);
-		javalin.routes.delete(ApiVersion.PATH_PREFIX + "/users/{id}", userHandler::kick);
-		javalin.routes.post(ApiVersion.PATH_PREFIX + "/users/{id}/reinstate", userHandler::reinstate);
+		javalin.routes.get("/api/v1/users", userHandler::list);
+		javalin.routes.get("/api/v1/users/me", userHandler::me);
+		javalin.routes.patch("/api/v1/users/{id}/role", userHandler::changeRole);
+		javalin.routes.delete("/api/v1/users/{id}", userHandler::kick);
+		javalin.routes.post("/api/v1/users/{id}/reinstate", userHandler::reinstate);
 		
 		// Invites
-		javalin.routes.post(ApiVersion.PATH_PREFIX + "/invites", inviteHandler::create);
-		javalin.routes.get(ApiVersion.PATH_PREFIX + "/invites", inviteHandler::list);
-		javalin.routes.delete(ApiVersion.PATH_PREFIX + "/invites/{code}", inviteHandler::revoke);
+		javalin.routes.post("/api/v1/invites", inviteHandler::create);
+		javalin.routes.get("/api/v1/invites", inviteHandler::list);
+		javalin.routes.delete("/api/v1/invites/{code}", inviteHandler::revoke);
 		
 		// Devices
-		javalin.routes.post(ApiVersion.PATH_PREFIX + "/devices/link-code", deviceHandler::createLinkCode);
-		javalin.routes.post(ApiVersion.PATH_PREFIX + "/devices/link", deviceHandler::link);
-		javalin.routes.get(ApiVersion.PATH_PREFIX + "/devices", deviceHandler::list);
-		javalin.routes.delete(ApiVersion.PATH_PREFIX + "/devices/{id}", deviceHandler::revoke);
+		javalin.routes.post("/api/v1/devices/link-code", deviceHandler::createLinkCode);
+		javalin.routes.post("/api/v1/devices/link", deviceHandler::link);
+		javalin.routes.get("/api/v1/devices", deviceHandler::list);
+		javalin.routes.delete("/api/v1/devices/{id}", deviceHandler::revoke);
 		
 		// Account recovery
-		javalin.routes.post(ApiVersion.PATH_PREFIX + "/users/me/email", recoveryHandler::requestEmailVerification);
-		javalin.routes.post(ApiVersion.PATH_PREFIX + "/users/me/email/verify", recoveryHandler::confirmEmail);
-		javalin.routes.post(ApiVersion.PATH_PREFIX + "/auth/recovery/request", recoveryHandler::requestRecovery);
-		javalin.routes.post(ApiVersion.PATH_PREFIX + "/auth/recovery/redeem", recoveryHandler::redeemRecovery);
+		javalin.routes.post("/api/v1/users/me/email", recoveryHandler::requestEmailVerification);
+		javalin.routes.post("/api/v1/users/me/email/verify", recoveryHandler::confirmEmail);
+		javalin.routes.post("/api/v1/auth/recovery/request", recoveryHandler::requestRecovery);
+		javalin.routes.post("/api/v1/auth/recovery/redeem", recoveryHandler::redeemRecovery);
 		
 		// Daily puzzle
-		javalin.routes.get(ApiVersion.PATH_PREFIX + "/daily", dailyHandler::daily);
-		javalin.routes.get(ApiVersion.PATH_PREFIX + "/daily/leaderboard", dailyHandler::leaderboard);
-		javalin.routes.post(ApiVersion.PATH_PREFIX + "/daily/result", dailyHandler::submitResult);
-		javalin.routes.get(ApiVersion.PATH_PREFIX + "/daily/streak", dailyHandler::streak);
-		javalin.routes.post(ApiVersion.PATH_PREFIX + "/daily/streak/restore", dailyHandler::restoreStreak);
-		javalin.routes.get(ApiVersion.PATH_PREFIX + "/preferences", dailyHandler::preferences);
-		javalin.routes.put(ApiVersion.PATH_PREFIX + "/preferences", dailyHandler::setPreferences);
+		javalin.routes.get("/api/v1/daily", dailyHandler::daily);
+		javalin.routes.get("/api/v1/daily/leaderboard", dailyHandler::leaderboard);
+		javalin.routes.post("/api/v1/daily/result", dailyHandler::submitResult);
+		javalin.routes.get("/api/v1/daily/streak", dailyHandler::streak);
+		javalin.routes.post("/api/v1/daily/streak/restore", dailyHandler::restoreStreak);
+		javalin.routes.get("/api/v1/preferences", dailyHandler::preferences);
+		javalin.routes.put("/api/v1/preferences", dailyHandler::setPreferences);
 		
 		// Players and statistics
-		javalin.routes.get(ApiVersion.PATH_PREFIX + "/players", statsHandler::players);
-		javalin.routes.get(ApiVersion.PATH_PREFIX + "/players/{id}/stats", statsHandler::playerStats);
-		javalin.routes.post(ApiVersion.PATH_PREFIX + "/stats/sync", statsHandler::sync);
+		javalin.routes.get("/api/v1/players", statsHandler::players);
+		javalin.routes.get("/api/v1/players/{id}/stats", statsHandler::playerStats);
+		javalin.routes.post("/api/v1/stats/sync", statsHandler::sync);
 		
 		// Currency
-		javalin.routes.get(ApiVersion.PATH_PREFIX + "/currency", currencyHandler::balance);
-		javalin.routes.post(ApiVersion.PATH_PREFIX + "/currency/sync", currencyHandler::sync);
+		javalin.routes.get("/api/v1/currency", currencyHandler::balance);
+		javalin.routes.post("/api/v1/currency/sync", currencyHandler::sync);
 		
 		// Matches
-		javalin.routes.post(ApiVersion.PATH_PREFIX + "/matches", matchHandler::create);
+		javalin.routes.post("/api/v1/matches", matchHandler::create);
 		// Before the {id} route: "active" is a name, not a match id, and a path parameter would swallow it.
-		javalin.routes.get(ApiVersion.PATH_PREFIX + "/matches/active", matchHandler::active);
-		javalin.routes.get(ApiVersion.PATH_PREFIX + "/matches/{id}", matchHandler::get);
-		javalin.routes.delete(ApiVersion.PATH_PREFIX + "/matches/{id}", matchHandler::cancel);
-		javalin.routes.post(ApiVersion.PATH_PREFIX + "/matches/{id}/join", matchHandler::join);
-		javalin.routes.post(ApiVersion.PATH_PREFIX + "/matches/{id}/invite", matchHandler::invite);
-		javalin.routes.post(ApiVersion.PATH_PREFIX + "/matches/{id}/request", matchHandler::request);
-		javalin.routes.post(ApiVersion.PATH_PREFIX + "/matches/{id}/resign", matchHandler::resign);
-		javalin.routes.ws(ApiVersion.WS_PATH_PREFIX + "/matches/{id}", matchSocketHandler);
+		javalin.routes.get("/api/v1/matches/active", matchHandler::active);
+		javalin.routes.get("/api/v1/matches/{id}", matchHandler::get);
+		javalin.routes.delete("/api/v1/matches/{id}", matchHandler::cancel);
+		javalin.routes.post("/api/v1/matches/{id}/join", matchHandler::join);
+		javalin.routes.post("/api/v1/matches/{id}/invite", matchHandler::invite);
+		javalin.routes.post("/api/v1/matches/{id}/request", matchHandler::request);
+		javalin.routes.post("/api/v1/matches/{id}/resign", matchHandler::resign);
+		javalin.routes.ws("/ws/v1/matches/{id}", matchSocketHandler);
 
 		// Presence: the heartbeat every signed-in client sends, and the match requests it collects. There is no
 		// presence WebSocket - an open socket is a worse answer to "is this player there" than a recent
 		// timestamp; see PresenceService.
-		javalin.routes.post(ApiVersion.PATH_PREFIX + "/presence/heartbeat", presenceHandler::heartbeat);
-		javalin.routes.post(ApiVersion.PATH_PREFIX + "/presence/offline", presenceHandler::offline);
-		javalin.routes.delete(ApiVersion.PATH_PREFIX + "/match-requests/{id}", presenceHandler::dismissRequest);
+		javalin.routes.post("/api/v1/presence/heartbeat", presenceHandler::heartbeat);
+		javalin.routes.post("/api/v1/presence/offline", presenceHandler::offline);
+		javalin.routes.delete("/api/v1/match-requests/{id}", presenceHandler::dismissRequest);
 	}
 }

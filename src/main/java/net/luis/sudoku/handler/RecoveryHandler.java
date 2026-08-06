@@ -2,7 +2,6 @@ package net.luis.sudoku.handler;
 
 import io.javalin.http.Context;
 import io.javalin.openapi.*;
-import net.luis.sudoku.ApiVersion;
 import net.luis.sudoku.auth.Authentication;
 import net.luis.sudoku.domain.KeyAlgorithm;
 import net.luis.sudoku.domain.Principal;
@@ -35,7 +34,7 @@ public class RecoveryHandler {
 		summary = "Request email verification",
 		description = "Authenticated. Emails a 6-digit code, superseding any outstanding request.",
 		operationId = "requestEmailVerification",
-		path = ApiVersion.PATH_PREFIX + "/users/me/email",
+		path = "/api/v1/users/me/email",
 		methods = HttpMethod.POST,
 		tags = "Recovery",
 		requestBody = @OpenApiRequestBody(content = @OpenApiContent(from = EmailRequest.class)),
@@ -57,7 +56,7 @@ public class RecoveryHandler {
 	@OpenApi(
 		summary = "Confirm email verification",
 		operationId = "confirmEmailVerification",
-		path = ApiVersion.PATH_PREFIX + "/users/me/email/verify",
+		path = "/api/v1/users/me/email/verify",
 		methods = HttpMethod.POST,
 		tags = "Recovery",
 		requestBody = @OpenApiRequestBody(content = @OpenApiContent(from = EmailVerifyRequest.class)),
@@ -79,7 +78,7 @@ public class RecoveryHandler {
 		description = "Unauthenticated. Always returns 204, whether or not the address matched a verified account, "
 			+ "so the endpoint cannot be used to enumerate accounts.",
 		operationId = "requestRecovery",
-		path = ApiVersion.PATH_PREFIX + "/auth/recovery/request",
+		path = "/api/v1/auth/recovery/request",
 		methods = HttpMethod.POST,
 		tags = "Recovery",
 		requestBody = @OpenApiRequestBody(content = @OpenApiContent(from = RecoveryRequestRequest.class)),
@@ -97,7 +96,7 @@ public class RecoveryHandler {
 		summary = "Redeem an account recovery code",
 		description = "Unauthenticated - the new device has no session yet. Hands the whole account over to this device.",
 		operationId = "redeemRecovery",
-		path = ApiVersion.PATH_PREFIX + "/auth/recovery/redeem",
+		path = "/api/v1/auth/recovery/redeem",
 		methods = HttpMethod.POST,
 		tags = "Recovery",
 		requestBody = @OpenApiRequestBody(content = @OpenApiContent(from = RecoveryRedeemRequest.class)),

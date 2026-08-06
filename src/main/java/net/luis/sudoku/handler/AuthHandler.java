@@ -2,7 +2,6 @@ package net.luis.sudoku.handler;
 
 import io.javalin.http.Context;
 import io.javalin.openapi.*;
-import net.luis.sudoku.ApiVersion;
 import net.luis.sudoku.auth.ChallengeService;
 import net.luis.sudoku.dto.request.ChallengeRequest;
 import net.luis.sudoku.dto.request.VerifyRequest;
@@ -39,7 +38,7 @@ public class AuthHandler {
 		description = "Returns a single-use nonce the device must sign. 404 if the key is unknown, in which case the "
 			+ "client should register or link a device instead.",
 		operationId = "authChallenge",
-		path = ApiVersion.PATH_PREFIX + "/auth/challenge",
+		path = "/api/v1/auth/challenge",
 		methods = HttpMethod.POST,
 		tags = "Auth",
 		requestBody = @OpenApiRequestBody(content = @OpenApiContent(from = ChallengeRequest.class)),
@@ -66,7 +65,7 @@ public class AuthHandler {
 		description = "Issues a session token. Any failure - bad signature, expired nonce, reused nonce - returns the "
 			+ "same INVALID_SIGNATURE.",
 		operationId = "authVerify",
-		path = ApiVersion.PATH_PREFIX + "/auth/verify",
+		path = "/api/v1/auth/verify",
 		methods = HttpMethod.POST,
 		tags = "Auth",
 		requestBody = @OpenApiRequestBody(content = @OpenApiContent(from = VerifyRequest.class)),

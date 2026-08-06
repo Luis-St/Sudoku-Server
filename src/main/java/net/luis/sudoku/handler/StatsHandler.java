@@ -2,7 +2,6 @@ package net.luis.sudoku.handler;
 
 import io.javalin.http.Context;
 import io.javalin.openapi.*;
-import net.luis.sudoku.ApiVersion;
 import net.luis.sudoku.auth.Authentication;
 import net.luis.sudoku.domain.Principal;
 import net.luis.sudoku.dto.request.StatsSyncRequest;
@@ -34,7 +33,7 @@ public class StatsHandler {
 	@OpenApi(
 		summary = "Browse players",
 		operationId = "listPlayers",
-		path = ApiVersion.PATH_PREFIX + "/players",
+		path = "/api/v1/players",
 		methods = HttpMethod.GET,
 		tags = "Stats",
 		responses = @OpenApiResponse(status = "200", content = @OpenApiContent(from = PlayerResponse[].class))
@@ -56,7 +55,7 @@ public class StatsHandler {
 		summary = "A player's aggregate statistics",
 		description = "Grouped by difficulty tier, because solve times are only comparable within a tier.",
 		operationId = "playerStats",
-		path = ApiVersion.PATH_PREFIX + "/players/{id}/stats",
+		path = "/api/v1/players/{id}/stats",
 		methods = HttpMethod.GET,
 		tags = "Stats",
 		pathParams = @OpenApiParam(name = "id", description = "Player id"),
@@ -75,7 +74,7 @@ public class StatsHandler {
 		description = "Called once on the offline-to-online transition. Local daily streaks are NOT merged; server "
 			+ "streaks start fresh.",
 		operationId = "syncStats",
-		path = ApiVersion.PATH_PREFIX + "/stats/sync",
+		path = "/api/v1/stats/sync",
 		methods = HttpMethod.POST,
 		tags = "Stats",
 		requestBody = @OpenApiRequestBody(content = @OpenApiContent(from = StatsSyncRequest.class)),

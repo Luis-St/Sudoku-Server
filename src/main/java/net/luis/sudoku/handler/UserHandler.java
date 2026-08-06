@@ -2,7 +2,6 @@ package net.luis.sudoku.handler;
 
 import io.javalin.http.Context;
 import io.javalin.openapi.*;
-import net.luis.sudoku.ApiVersion;
 import net.luis.sudoku.auth.Authentication;
 import net.luis.sudoku.domain.Principal;
 import net.luis.sudoku.dto.request.ChangeRoleRequest;
@@ -31,7 +30,7 @@ public class UserHandler {
 	@OpenApi(
 		summary = "List users",
 		operationId = "listUsers",
-		path = ApiVersion.PATH_PREFIX + "/users",
+		path = "/api/v1/users",
 		methods = HttpMethod.GET,
 		tags = "Users",
 		responses = @OpenApiResponse(status = "200", content = @OpenApiContent(from = UserResponse[].class))
@@ -48,7 +47,7 @@ public class UserHandler {
 			+ "has no other way to notice a promotion, and nothing else reports whether the recovery address was ever "
 			+ "verified - both would otherwise stay whatever they were when the session was created.",
 		operationId = "currentAccount",
-		path = ApiVersion.PATH_PREFIX + "/users/me",
+		path = "/api/v1/users/me",
 		methods = HttpMethod.GET,
 		tags = "Users",
 		responses = @OpenApiResponse(status = "200", content = @OpenApiContent(from = AccountResponse.class))
@@ -63,7 +62,7 @@ public class UserHandler {
 		summary = "Change a user's role",
 		description = "Requires CAN_CHANGE_ROLE. Rejected with LAST_ADMIN if it would leave zero administrators.",
 		operationId = "changeUserRole",
-		path = ApiVersion.PATH_PREFIX + "/users/{id}/role",
+		path = "/api/v1/users/{id}/role",
 		methods = HttpMethod.PATCH,
 		tags = "Users",
 		pathParams = @OpenApiParam(name = "id", description = "User id"),
@@ -86,7 +85,7 @@ public class UserHandler {
 		summary = "Kick a user",
 		description = "Requires CAN_KICK. Revokes every device key and ends the session; historical results are kept.",
 		operationId = "kickUser",
-		path = ApiVersion.PATH_PREFIX + "/users/{id}",
+		path = "/api/v1/users/{id}",
 		methods = HttpMethod.DELETE,
 		tags = "Users",
 		pathParams = @OpenApiParam(name = "id", description = "User id"),
@@ -108,7 +107,7 @@ public class UserHandler {
 			+ "revoked, so the account returns with the same id and therefore all of its history. Idempotent for a "
 			+ "user who is not revoked. No session is issued - the returning client re-authenticates with its key.",
 		operationId = "reinstateUser",
-		path = ApiVersion.PATH_PREFIX + "/users/{id}/reinstate",
+		path = "/api/v1/users/{id}/reinstate",
 		methods = HttpMethod.POST,
 		tags = "Users",
 		pathParams = @OpenApiParam(name = "id", description = "User id"),

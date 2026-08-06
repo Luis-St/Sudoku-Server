@@ -32,7 +32,7 @@ public class ServerInfoHandler {
 		summary = "Server description",
 		description = "Unauthenticated. Clients call this first and refuse to connect on a genVersion mismatch.",
 		operationId = "serverInfo",
-		path = ApiVersion.PATH_PREFIX + "/server-info",
+		path = "/api/v1/server-info",
 		methods = HttpMethod.GET,
 		tags = "Server",
 		responses = @OpenApiResponse(

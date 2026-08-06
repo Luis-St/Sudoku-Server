@@ -2,7 +2,6 @@ package net.luis.sudoku.handler;
 
 import io.javalin.http.Context;
 import io.javalin.openapi.*;
-import net.luis.sudoku.ApiVersion;
 import net.luis.sudoku.auth.Authentication;
 import net.luis.sudoku.daily.DailyService;
 import net.luis.sudoku.domain.Principal;
@@ -33,7 +32,7 @@ public class DailyHandler {
 		description = "Returns the key only; the client generates the grid locally. The first request of a date locks "
 			+ "in that day's difficulty tier.",
 		operationId = "getDaily",
-		path = ApiVersion.PATH_PREFIX + "/daily",
+		path = "/api/v1/daily",
 		methods = HttpMethod.GET,
 		tags = "Daily",
 		responses = @OpenApiResponse(status = "200", content = @OpenApiContent(from = DailyResponse.class))
@@ -46,7 +45,7 @@ public class DailyHandler {
 	@OpenApi(
 		summary = "Get your daily preferences",
 		operationId = "getPreferences",
-		path = ApiVersion.PATH_PREFIX + "/preferences",
+		path = "/api/v1/preferences",
 		methods = HttpMethod.GET,
 		tags = "Daily",
 		responses = @OpenApiResponse(status = "200", content = @OpenApiContent(from = PreferencesResponse.class))
@@ -60,7 +59,7 @@ public class DailyHandler {
 		summary = "Set your daily difficulty",
 		description = "Takes effect from the next day only; today's tier was fixed when the day began.",
 		operationId = "setPreferences",
-		path = ApiVersion.PATH_PREFIX + "/preferences",
+		path = "/api/v1/preferences",
 		methods = HttpMethod.PUT,
 		tags = "Daily",
 		requestBody = @OpenApiRequestBody(content = @OpenApiContent(from = PreferencesRequest.class)),
@@ -79,7 +78,7 @@ public class DailyHandler {
 		description = "Verified by replaying the solve order against the regenerated puzzle. A SOLVED result locks the "
 			+ "date; FAILED results may be retried all day.",
 		operationId = "submitDailyResult",
-		path = ApiVersion.PATH_PREFIX + "/daily/result",
+		path = "/api/v1/daily/result",
 		methods = HttpMethod.POST,
 		tags = "Daily",
 		requestBody = @OpenApiRequestBody(content = @OpenApiContent(from = DailyResultRequest.class)),
@@ -109,7 +108,7 @@ public class DailyHandler {
 		summary = "Get your daily streak",
 		description = "Current and longest run, and banked restore points.",
 		operationId = "getStreak",
-		path = ApiVersion.PATH_PREFIX + "/daily/streak",
+		path = "/api/v1/daily/streak",
 		methods = HttpMethod.GET,
 		tags = "Daily",
 		responses = @OpenApiResponse(status = "200", content = @OpenApiContent(from = DailyResultResponse.StreakResponse.class))
@@ -124,7 +123,7 @@ public class DailyHandler {
 		description = "Spends banked restore points (1 per missed day, 10 Rhubarb per point) to repair a gap, so "
 			+ "today's submission extends the streak instead of restarting it.",
 		operationId = "restoreStreak",
-		path = ApiVersion.PATH_PREFIX + "/daily/streak/restore",
+		path = "/api/v1/daily/streak/restore",
 		methods = HttpMethod.POST,
 		tags = "Daily",
 		responses = {
@@ -142,7 +141,7 @@ public class DailyHandler {
 		summary = "Today's daily leaderboard for one tier",
 		description = "Ranked within a single difficulty tier. Hints used are not exposed.",
 		operationId = "dailyLeaderboard",
-		path = ApiVersion.PATH_PREFIX + "/daily/leaderboard",
+		path = "/api/v1/daily/leaderboard",
 		methods = HttpMethod.GET,
 		tags = "Daily",
 		queryParams = @OpenApiParam(name = "difficulty", description = "Tier index 1-5", required = true),

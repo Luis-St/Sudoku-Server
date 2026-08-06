@@ -2,7 +2,6 @@ package net.luis.sudoku.handler;
 
 import io.javalin.http.Context;
 import io.javalin.openapi.*;
-import net.luis.sudoku.ApiVersion;
 import net.luis.sudoku.auth.Authentication;
 import net.luis.sudoku.currency.CurrencyService;
 import net.luis.sudoku.domain.Principal;
@@ -26,7 +25,7 @@ public class CurrencyHandler {
 	@OpenApi(
 		summary = "Your Rhubarb balance",
 		operationId = "getCurrency",
-		path = ApiVersion.PATH_PREFIX + "/currency",
+		path = "/api/v1/currency",
 		methods = HttpMethod.GET,
 		tags = "Currency",
 		responses = @OpenApiResponse(status = "200", content = @OpenApiContent(from = CurrencyResponse.class))
@@ -41,7 +40,7 @@ public class CurrencyHandler {
 		description = "Called on connect. The reported balance is plausibility-checked and may be clamped SILENTLY - "
 			+ "the response simply carries the reconciled value, with no indication that it was adjusted.",
 		operationId = "syncCurrency",
-		path = ApiVersion.PATH_PREFIX + "/currency/sync",
+		path = "/api/v1/currency/sync",
 		methods = HttpMethod.POST,
 		tags = "Currency",
 		requestBody = @OpenApiRequestBody(content = @OpenApiContent(from = CurrencySyncRequest.class)),
