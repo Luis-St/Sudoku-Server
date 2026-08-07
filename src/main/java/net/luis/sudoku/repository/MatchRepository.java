@@ -42,6 +42,37 @@ public final class MatchRepository {
 	}
 	
 	/**
+	 * Resolves a match code to the lobby it opens.
+	 *
+	 * Only a match that is still accepting participants can be found this way, which is what lets the code be
+	 * eight characters: a code stops meaning anything the moment the match starts, so the window in which
+	 * guessing one is worth anything is the length of a lobby. Matches that have started or ended keep their
+	 * code on the row for the record, and are invisible here.
+	 *
+	 * Newest wins if two joinable rows ever share a code. {@code create} already checks the code is free
+	 * before using it and there is no unique index behind that check, so two lobbies opened in the same
+	 * instant could in principle collide; at 32^8 codes that is not a thing that happens, and picking one of
+	 * them deterministically is better than failing the join.
+	 *
+	 * @param code the canonical {@code XXXX-XXXX} form, as {@code CodeGenerator.canonicalMatchCode} produces
+	 * @return the joinable match holding that code, or null
+	 */
+	public @Nullable Match findJoinableByCode(@NonNull SqlTransaction transaction, @NonNull String code) throws SqlException {
+		List<Match> found = transaction.from(MATCHES).select()
+			.where(Sql.equalTo(MATCH_INVITE_TOKEN, code))
+			.where(SqlCondition.anyOf(Sql.equalTo(MATCH_STATE, MatchState.CREATED), Sql.equalTo(MATCH_STATE, MatchState.WAITING)))
+			.fetch();
+
+		Match newest = null;
+		for (Match match : found) {
+			if (newest == null || match.createdAt().isAfter(newest.createdAt())) {
+				newest = match;
+			}
+		}
+		return newest;
+	}
+
+	/**
 	 * @return matches left in a non-terminal state, which after a restart can only be wreckage
 	 *   (spec 9a.3)
 	 */

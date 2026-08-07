@@ -198,7 +198,124 @@ class MatchServiceTest extends PostgresTest {
 			() -> this.matches.join(guest, created.match().id(), "not-the-token"));
 		assertEquals(ErrorCode.FORBIDDEN, e.code());
 	}
-	
+
+	@Test
+	void create_theInviteToken_isATypableMatchCode() {
+		// The whole reason the token stopped being a session token: a player reads this one out loud.
+		Principal owner = this.player("Owner");
+
+		String code = this.createRace(owner, 0).inviteToken();
+
+		assertAll(
+			() -> assertEquals(9, code.length()),
+			() -> assertEquals('-', code.charAt(4)),
+			() -> assertTrue(code.matches("[0-9A-HJKMNP-TV-Z]{4}-[0-9A-HJKMNP-TV-Z]{4}"), code + " is not Crockford Base32"),
+			() -> assertEquals(code, CodeGenerator.canonicalMatchCode(code), "already canonical")
+		);
+	}
+
+	@Test
+	void create_twoMatches_getDifferentCodes() {
+		Principal owner = this.player("Owner");
+
+		assertNotEquals(this.createRace(owner, 0).inviteToken(), this.createRace(owner, 0).inviteToken());
+	}
+
+	@Test
+	void joinByCode_withTheCode_addsTheParticipantWithoutAMatchId() {
+		Principal owner = this.player("Owner");
+		Principal guest = this.player("Guest");
+		MatchService.Created created = this.createRace(owner, 0);
+
+		Match joined = this.matches.joinByCode(guest, created.inviteToken());
+
+		assertAll(
+			() -> assertEquals(created.match().id(), joined.id(), "the id the caller never had comes back"),
+			() -> assertEquals(2, this.matches.participants(created.match().id()).size())
+		);
+	}
+
+	@Test
+	void joinByCode_ignoresCasingAndGrouping() {
+		// A code arrives by whatever means people talk to each other, so it arrives mistyped in these ways.
+		Principal owner = this.player("Owner");
+		Principal guest = this.player("Guest");
+		MatchService.Created created = this.createRace(owner, 0);
+		String typed = created.inviteToken().replace("-", "").toLowerCase(Locale.ROOT);
+
+		assertDoesNotThrow(() -> this.matches.joinByCode(guest, " " + typed + " "));
+		assertEquals(2, this.matches.participants(created.match().id()).size());
+	}
+
+	@Test
+	void joinByCode_withAnUnknownCode_isNotFound() {
+		Principal guest = this.player("Guest");
+
+		ApiException e = assertThrows(ApiException.class, () -> this.matches.joinByCode(guest, "ZZZZ-ZZZZ"));
+		assertEquals(ErrorCode.NOT_FOUND, e.code());
+	}
+
+	@Test
+	void joinByCode_withAMalformedCode_isNotFoundRatherThanBadRequest() {
+		// Same answer as a code that simply does not exist: telling a guesser which of their attempts was
+		// even the right shape is telling them something.
+		Principal guest = this.player("Guest");
+
+		assertAll(
+			() -> assertEquals(ErrorCode.NOT_FOUND, assertThrows(ApiException.class, () -> this.matches.joinByCode(guest, "")).code()),
+			() -> assertEquals(ErrorCode.NOT_FOUND, assertThrows(ApiException.class, () -> this.matches.joinByCode(guest, "TOOSHORT1234")).code()),
+			() -> assertEquals(ErrorCode.NOT_FOUND, assertThrows(ApiException.class, () -> this.matches.joinByCode(guest, "IIII-LLLL")).code())
+		);
+	}
+
+	@Test
+	void joinByCode_afterTheMatchStarted_isNotFound() {
+		// A code only opens a lobby. Once the match is running it stops resolving at all, which is what keeps
+		// eight characters an acceptable length.
+		Principal owner = this.player("Owner");
+		Principal guest = this.player("Guest");
+		MatchService.Created created = this.createRace(owner, 0);
+		database.execute(connection -> this.matchRepository.markRunning(connection, created.match().id(), NOW));
+
+		ApiException e = assertThrows(ApiException.class, () -> this.matches.joinByCode(guest, created.inviteToken()));
+		assertEquals(ErrorCode.NOT_FOUND, e.code());
+	}
+
+	@Test
+	void joinByCode_afterTheMatchWasCancelled_isNotFound() {
+		Principal owner = this.player("Owner");
+		Principal guest = this.player("Guest");
+		MatchService.Created created = this.createRace(owner, 0);
+		this.matches.cancel(owner, created.match().id());
+
+		ApiException e = assertThrows(ApiException.class, () -> this.matches.joinByCode(guest, created.inviteToken()));
+		assertEquals(ErrorCode.NOT_FOUND, e.code());
+	}
+
+	@Test
+	void joinByCode_reusesACodeOnceItsMatchIsOver() {
+		// Codes are unique among lobbies, not across history: a finished match keeps its code on the row and
+		// the space is recycled rather than exhausted.
+		Principal owner = this.player("Owner");
+		MatchService.Created first = this.createRace(owner, 0);
+		this.matches.cancel(owner, first.match().id());
+
+		Match stored = this.matches.get(first.match().id());
+		assertEquals(first.inviteToken(), stored.inviteToken(), "the code stays on the row for the record");
+	}
+
+	@Test
+	void joinByCode_whenFull_isRejectedWithMatchFull() {
+		// The code resolves; capacity is still capacity, and the reason must say so rather than "no such match".
+		Principal owner = this.player("Owner");
+		MatchService.Created created = this.createRace(owner, 0);
+		this.matches.joinByCode(this.player("Guest"), created.inviteToken());
+
+		ApiException e = assertThrows(ApiException.class,
+			() -> this.matches.joinByCode(this.player("Third"), created.inviteToken()));
+		assertEquals(ErrorCode.MATCH_FULL, e.code());
+	}
+
 	@Test
 	void join_beyondCapacity_isRejectedWithMatchFull() {
 		Principal owner = this.player("Owner");

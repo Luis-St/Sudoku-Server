@@ -36,7 +36,16 @@ public final class DailyService {
 	
 	/** Rhubarb per missed day repaired by spending a restore point. */
 	public static final int RESTORE_COST_PER_DAY = 10;
-	
+
+	/**
+	 * The longest run {@link #syncStreak} will adopt from a client's own count.
+	 * <p>
+	 * Not a security boundary - the claim is unverified whatever the number - but a self-reported count is
+	 * the one input here with no upper bound of its own, and a corrupt or absurd one should be refused
+	 * rather than stored as somebody's record.
+	 */
+	private static final int MAX_SYNCED_STREAK = 3650;
+
 	private final Database database;
 	private final ServerConfig config;
 	private final String serverId;
@@ -97,7 +106,7 @@ public final class DailyService {
 	 */
 	public @NonNull PuzzleKey keyFor(@NonNull LocalDate date, @NonNull Difficulty difficulty) {
 		long seed = SeedDerivation.seedFor(this.serverId, date);
-		return PuzzleFactory.key(this.config.dailySize(), this.config.dailyVariant(), difficulty, seed);
+		return PuzzleFactory.singlePlayerKey(this.config.dailySize(), this.config.dailyVariant(), difficulty, seed);
 	}
 	
 	public int preference(@NonNull Principal actor) {
@@ -109,7 +118,7 @@ public final class DailyService {
 	 * today's tier is already locked in {@code daily_assignments} (spec 8.1).
 	 */
 	public void setPreference(@NonNull Principal actor, int difficultyIndex) {
-		PuzzleFactory.difficultyOfIndex(difficultyIndex);
+		PuzzleFactory.singlePlayerDifficultyOfIndex(difficultyIndex);
 		Instant now = this.clock.instant();
 		this.database.execute(connection -> this.preferences.setDailyDifficulty(connection, actor.userId(), difficultyIndex, now));
 	}
@@ -117,14 +126,14 @@ public final class DailyService {
 	/**
 	 * Records a daily attempt (spec 8.2, 8.3).
 	 *
-	 * @throws ApiException {@code DAILY_DATE_INVALID} for a past or future date;
+	 * @throws ApiException {@code DAILY_DATE_INVALID} for a future date;
 	 *   {@code DAILY_ALREADY_SOLVED} once a success exists for that date
 	 */
 	public @NonNull Submission submit(@NonNull Principal actor, @NonNull Submit submit) {
 		LocalDate today = this.today();
 		this.requireSubmittableDate(submit.date(), today);
 		
-		Difficulty difficulty = PuzzleFactory.difficultyOfIndex(submit.difficulty());
+		Difficulty difficulty = PuzzleFactory.singlePlayerDifficultyOfIndex(submit.difficulty());
 		GeneratedPuzzle puzzle = PuzzleFactory.generate(this.keyFor(submit.date(), difficulty));
 		SolveVerifier.Verification verification = submit.outcome() == DailyOutcome.SOLVED
 			? SolveVerifier.verify(puzzle, submit.solveOrder(), submit.elapsedMs())
@@ -189,6 +198,46 @@ public final class DailyService {
 	public @NonNull Streak streak(@NonNull UUID userId) {
 		return this.database.read(connection -> this.streaks.find(connection, userId));
 	}
+
+	/**
+	 * Adopts a streak a client counted locally, when it knows about more days than the server does
+	 * (spec 8.3).
+	 * <p>
+	 * The gap this closes: the server's count only ever moves on a replay-verified {@code SOLVED}, so a
+	 * daily solved while the server was unreachable lives on the device until its queued submission
+	 * lands - and if that submission is lost, the day is gone from the server's side for good with no way
+	 * to report it afterwards. Existing installs are in exactly that position, having queued dailies in a
+	 * format the current client can no longer submit.
+	 * <p>
+	 * Unverified by nature, which is why {@link Streak#mergedWith} keeps it one-way and refuses to mint
+	 * restore points from it. Safe to call on every reconnect: a claim that adds nothing is a no-op, so
+	 * the client does not have to remember whether it has published before.
+	 *
+	 * @throws ApiException {@code BAD_REQUEST} for a negative count, a date in the future, or a run longer
+	 *   than {@link #MAX_SYNCED_STREAK} days
+	 */
+	public @NonNull Streak syncStreak(@NonNull Principal actor, int claimedCurrent, @NonNull LocalDate claimedLastCompleted) {
+		if (claimedCurrent < 0) {
+			throw ApiException.badRequest("streak must not be negative, got: " + claimedCurrent);
+		}
+		if (claimedCurrent > MAX_SYNCED_STREAK) {
+			throw ApiException.badRequest("streak is longer than " + MAX_SYNCED_STREAK + " days, got: " + claimedCurrent);
+		}
+		if (claimedLastCompleted.isAfter(this.today())) {
+			throw new ApiException(ErrorCode.DAILY_DATE_INVALID, "That streak ends in the future");
+		}
+
+		return this.database.transaction(connection -> {
+			Streak stored = this.streaks.findForUpdate(connection, actor.userId());
+			Streak merged = stored.mergedWith(claimedCurrent, claimedLastCompleted);
+			if (merged.equals(stored)) {
+				return stored;
+			}
+			this.streaks.save(connection, merged);
+			log.info("Adopted client streak {} (ending {}) for user {}, was {}", claimedCurrent, claimedLastCompleted, actor.userId(), stored.current());
+			return merged;
+		});
+	}
 	
 	/**
 	 * Spends banked restore points to repair a broken streak, patching it up to yesterday so today's
@@ -225,24 +274,35 @@ public final class DailyService {
 	}
 	
 	public @NonNull List<DailyLeaderboardRepository.Entry> leaderboard(int difficultyIndex) {
-		PuzzleFactory.difficultyOfIndex(difficultyIndex);
+		PuzzleFactory.singlePlayerDifficultyOfIndex(difficultyIndex);
 		LocalDate date = this.today();
 		return this.database.read(connection -> this.leaderboard.ranking(connection, date, difficultyIndex));
 	}
 	
 	/**
-	 * The daily is accepted only for the current date in the server zone (spec 8.3).
+	 * Accepts a result for any date that has actually happened.
 	 * <p>
-	 * Yesterday is refused too. That is stricter than the offline queue would ideally like, but the
-	 * spec is explicit that past dates are rejected, and accepting them would let a player bank an
-	 * unlimited backlog of "streak days" to submit at leisure.
+	 * Today-only was a rule that quietly cancelled the feature it was supposed to serve. Spec 8.3.1 says a
+	 * daily finished without a reachable server "is queued locally and submitted on the next successful
+	 * connection", and the whole queue is built for it - the row carries its own date so credit stays
+	 * pinned to the day played, and {@link Streak#completedOn} is written to take a date that is not
+	 * today. But a queue drains *after* the outage, which is by definition later, and the first thing this
+	 * method did was refuse it. A player offline overnight lost the day, was told nothing, and the client
+	 * dropped the row as permanently rejected. Every offline daily this app has ever queued died here.
+	 * <p>
+	 * No lower bound at all, by the owner's decision: a bounded window is still a deadline, and a queue
+	 * that misses it loses the day just as silently as today-only did. What a lower bound buys is not
+	 * integrity - the daily is a deterministic derivation of a public {@code serverId} and date, so any
+	 * past puzzle is precomputable and spec 12 already accepts that - but only a limit on how far back a
+	 * player can fill in. The streak has never been evidence of having played on the day, only of having
+	 * solved the puzzle for it. {@link Streak#completedOn} ignores a date that is not after the last one
+	 * completed, so an old submission can extend a run forwards but never rewrite one.
+	 *
+	 * @throws ApiException {@code DAILY_DATE_INVALID} for a future date
 	 */
 	private void requireSubmittableDate(@NonNull LocalDate date, @NonNull LocalDate today) {
 		if (date.isAfter(today)) {
 			throw new ApiException(ErrorCode.DAILY_DATE_INVALID, "That daily is in the future");
-		}
-		if (date.isBefore(today)) {
-			throw new ApiException(ErrorCode.DAILY_DATE_INVALID, "That daily is no longer open");
 		}
 	}
 	

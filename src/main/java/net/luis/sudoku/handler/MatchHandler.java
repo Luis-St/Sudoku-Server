@@ -10,6 +10,7 @@ import net.luis.sudoku.dto.response.*;
 import net.luis.sudoku.error.ApiException;
 import net.luis.sudoku.match.MatchService;
 import net.luis.sudoku.presence.PresenceService;
+import net.luis.sudoku.security.RateLimiter;
 import org.jspecify.annotations.NonNull;
 
 import java.util.UUID;
@@ -22,11 +23,13 @@ public class MatchHandler {
 	private final Authentication authentication;
 	private final MatchService matches;
 	private final PresenceService presence;
-	
-	public MatchHandler(@NonNull Authentication authentication, @NonNull MatchService matches, @NonNull PresenceService presence) {
+	private final RateLimiter rateLimiter;
+
+	public MatchHandler(@NonNull Authentication authentication, @NonNull MatchService matches, @NonNull PresenceService presence, @NonNull RateLimiter rateLimiter) {
 		this.authentication = authentication;
 		this.matches = matches;
 		this.presence = presence;
+		this.rateLimiter = rateLimiter;
 	}
 	
 	@OpenApi(
@@ -89,6 +92,38 @@ public class MatchHandler {
 		ctx.json(MatchResponse.of(match, this.matches.participants(matchId)));
 	}
 	
+	@OpenApi(
+		summary = "Join a match by its code",
+		description = "The code is the whole invitation: it resolves to the lobby on its own, so no match id is "
+			+ "needed and the creator has one value to pass on rather than two. Answers NOT_FOUND for a code that is "
+			+ "mistyped, belongs to a match that has already started, or was cancelled - telling those apart would "
+			+ "answer the only question somebody guessing codes is asking. Attempt limited per caller.",
+		operationId = "joinMatchByCode",
+		path = "/api/v1/matches/join",
+		methods = HttpMethod.POST,
+		tags = "Matches",
+		requestBody = @OpenApiRequestBody(content = @OpenApiContent(from = JoinByCodeRequest.class)),
+		responses = {
+			@OpenApiResponse(status = "200", content = @OpenApiContent(from = MatchResponse.class)),
+			@OpenApiResponse(status = "404", description = "NOT_FOUND", content = @OpenApiContent(from = ErrorResponse.class)),
+			@OpenApiResponse(status = "409", description = "MATCH_FULL or INSUFFICIENT_BALANCE",
+				content = @OpenApiContent(from = ErrorResponse.class)),
+			@OpenApiResponse(status = "429", description = "RATE_LIMITED", content = @OpenApiContent(from = ErrorResponse.class))
+		}
+	)
+	public void joinByCode(@NonNull Context ctx) {
+		Principal actor = this.authentication.require(ctx);
+		JoinByCodeRequest request = ctx.bodyAsClass(JoinByCodeRequest.class);
+		String code = Requests.require(request.code(), "code");
+
+		// Keyed by caller rather than by IP: the route needs a session, so there is a better identity to
+		// spend the budget against than an address several players may share.
+		this.rateLimiter.check(RateLimiter.Bucket.MATCH_JOIN_CODE, actor.userId().toString());
+
+		Match match = this.matches.joinByCode(actor, code);
+		ctx.json(MatchResponse.of(match, this.matches.participants(match.id())));
+	}
+
 	@OpenApi(
 		summary = "Get a match",
 		operationId = "getMatch",

@@ -16,6 +16,8 @@ import net.luis.sudoku.puzzle.PuzzleQueue;
 import net.luis.sudoku.repository.MatchRepository;
 import net.luis.sudoku.security.CodeGenerator;
 import net.luis.sudoku.security.ConstantTime;
+import net.luis.utils.io.database.exception.SqlException;
+import net.luis.utils.io.database.transaction.SqlTransaction;
 import org.jspecify.annotations.NonNull;
 import org.jspecify.annotations.Nullable;
 import org.slf4j.Logger;
@@ -35,6 +37,9 @@ import java.util.UUID;
 public final class MatchService {
 	
 	private static final Logger log = LoggerFactory.getLogger(MatchService.class);
+
+	/** How many codes to draw before giving up on finding a free one. See {@code freeMatchCode}. */
+	private static final int CODE_ATTEMPTS = 10;
 	
 	private final Database database;
 	private final MatchRepository matches;
@@ -78,14 +83,14 @@ public final class MatchService {
 		// Taken from the pre-generation pool so creation never blocks on generation (spec: keep the
 		// queue at 2x the active-player count).
 		GeneratedPuzzle puzzle = this.puzzles.take(size, variant, difficulty);
-		String inviteToken = this.codes.sessionToken();
 		Instant now = this.clock.instant();
-		
+
 		Match match = this.database.transaction(connection -> {
-			Match created = this.matches.create(connection, mode, actor.userId(), size, variant, difficulty, puzzle.key().seed(), livesEnabled, hintsEnabled, stake, inviteToken, now);
+			Match created = this.matches.create(connection, mode, actor.userId(), size, variant, difficulty, puzzle.key().seed(), livesEnabled, hintsEnabled, stake, this.freeMatchCode(connection), now);
 			this.matches.addParticipant(connection, created.id(), actor.userId(), now);
 			return created;
 		});
+		String inviteToken = match.inviteToken();
 		
 		LiveMatch live = this.buildLive(match, puzzle);
 		live.submit(() -> {});
@@ -139,7 +144,56 @@ public final class MatchService {
 		log.info("User {} joined match {}", actor.userId(), matchId);
 		return joined;
 	}
-	
+
+	/**
+	 * Joins a match from its code alone (server-spec 10.1).
+	 * <p>
+	 * The code is the whole invitation, which is the point of it: {@link #join} needs a match id as well, so
+	 * the creator had to pass on two values and the client had to print both. Here the code resolves to the
+	 * lobby itself, and the match id travels back in the response for everything that comes after.
+	 * <p>
+	 * A code that cannot be resolved is {@code NOT_FOUND}, whether it was mistyped, belongs to a match that
+	 * has already started, or was cancelled. Distinguishing those would answer the one question an attacker
+	 * guessing codes is asking.
+	 *
+	 * @throws ApiException {@code NOT_FOUND} if no lobby holds that code
+	 */
+	public @NonNull Match joinByCode(@NonNull Principal actor, @NonNull String code) {
+		String canonical = CodeGenerator.canonicalMatchCode(code);
+		if (canonical == null) {
+			throw ApiException.notFound("No match is waiting behind that code");
+		}
+
+		UUID matchId = this.database.transaction(connection -> {
+			Match match = this.matches.findJoinableByCode(connection, canonical);
+			if (match == null) {
+				throw ApiException.notFound("No match is waiting behind that code");
+			}
+			return match.id();
+		});
+		// The token check in join() is then a formality - the code came from the row - but it is left to run
+		// rather than bypassed, so there is exactly one place that decides whether a join is allowed.
+		return this.join(actor, matchId, canonical);
+	}
+
+	/**
+	 * Picks a match code no joinable lobby is already using.
+	 * <p>
+	 * Codes are only unique among lobbies, not across all matches ever played: a finished match keeps its code
+	 * on the row for the record, and {@code findJoinableByCode} cannot see it, so the space is recycled rather
+	 * than exhausted. Retrying is close to free and close to never needed - a collision requires two of the
+	 * few lobbies open at once to draw the same one of 32^8 codes.
+	 */
+	private @NonNull String freeMatchCode(@NonNull SqlTransaction connection) throws SqlException {
+		for (int attempt = 0; attempt < CODE_ATTEMPTS; attempt++) {
+			String code = this.codes.matchCode();
+			if (this.matches.findJoinableByCode(connection, code) == null) {
+				return code;
+			}
+		}
+		throw new ApiException(ErrorCode.INTERNAL, "Could not allocate a free match code");
+	}
+
 	/**
 	 * Calls off a match nobody has joined yet, at its creator's request.
 	 * <p>
@@ -321,7 +375,9 @@ public final class MatchService {
 	
 	/**
 	 * @param match the created match
-	 * @param inviteToken the token another player needs to join
+	 * @param inviteToken the match code another player needs to join. Still named {@code inviteToken} because
+	 *   that is what the field is called on the wire and clients already in the wild read it by that name;
+	 *   what it holds is now a {@code CodeGenerator.matchCode()}.
 	 */
 	public record Created(@NonNull Match match, @NonNull String inviteToken) {}
 	

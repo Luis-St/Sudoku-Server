@@ -44,10 +44,10 @@ import static net.luis.sudoku.db.schema.Schema.*;
 public final class SchemaMigration {
 	
 	/** Every migration, in version order. */
-	public static final List<SqlMigration> ALL = List.of(new InitialSchema(), new PresencePolling(), new ReinstatableKicks(), new MatchHintSetting());
+	public static final List<SqlMigration> ALL = List.of(new InitialSchema(), new PresencePolling(), new ReinstatableKicks(), new MatchHintSetting(), new RecordedGames());
 
 	/** The version the schema is at once {@link #ALL} has been applied, reported by {@code /health}. */
-	public static final int CURRENT_VERSION = 4;
+	public static final int CURRENT_VERSION = 5;
 	
 	private SchemaMigration() {}
 	
@@ -319,6 +319,49 @@ public final class SchemaMigration {
 			if (schema.hasColumn(DEVICES.name(), DEVICE_REVOKED_BY_KICK.name())) {
 				builder.dropColumn(DEVICE_REVOKED_BY_KICK);
 			}
+		}
+	}
+
+	/**
+	 * Remembers which finished games have already been folded into {@code stats}, so that uploading one
+	 * can be retried (spec 9).
+	 * <p>
+	 * Single-player results used to reach the server exactly once per device, in the bulk
+	 * {@code POST /stats/sync} at the offline-to-online transition, and never again - so every game played
+	 * afterwards existed only on the device, and a player's statistics were frozen at whatever they were
+	 * when the device linked. The fix is to upload each game as it finishes, with an offline queue behind
+	 * it; what that queue needs and {@code stats} cannot give it is a way to be replayed safely, since
+	 * every column there increments. Hence this table: see {@link Schema#RECORDED_GAMES}.
+	 * <p>
+	 * No {@code hasColumn}-style guard is needed here, unlike {@link ReinstatableKicks} and
+	 * {@link MatchHintSetting}: that guard exists because {@link #table} renders the <em>initial</em>
+	 * migration from {@link Schema} as it stands now, and a new column therefore appears retroactively in
+	 * a freshly created database. A new table does not - {@link InitialSchema} creates the tables it names
+	 * and no others, and this one is not among them.
+	 */
+	private static final class RecordedGames implements SqlMigration {
+
+		@Override
+		public @NonNull Version version() {
+			return Version.of(5, 0);
+		}
+
+		@Override
+		public @NonNull String description() {
+			return "remember folded games so a stats upload can be retried";
+		}
+
+		@Override
+		public void up(@NonNull SqlMigrationBuilder builder, @NonNull SqlMigrationSchema schema) throws SqlException {
+			table(builder, RECORDED_GAMES, RECORDED_USER_ID, RECORDED_GAME_ID);
+
+			// The rollover prunes this table by age, which is the one query on it that is not by primary key.
+			builder.createIndex(RECORDED_GAMES, "recorded_games_recorded_at_idx", index -> index.columns(RECORDED_AT));
+		}
+
+		@Override
+		public void down(@NonNull SqlMigrationBuilder builder, @NonNull SqlMigrationSchema schema) throws SqlException {
+			builder.dropTable(RECORDED_GAMES);
 		}
 	}
 }

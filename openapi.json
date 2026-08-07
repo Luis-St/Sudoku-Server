@@ -268,7 +268,7 @@
       "post" : {
         "tags" : [ "Daily" ],
         "summary" : "Submit a daily result",
-        "description" : "Verified by replaying the solve order against the regenerated puzzle. A SOLVED result locks the date; FAILED results may be retried all day.",
+        "description" : "Verified by replaying the solve order against the regenerated puzzle. A SOLVED result locks the date; FAILED results may be retried all day. A result may be submitted for any date that is not in the future, so a client that finished a daily offline can drain its queue whenever it reconnects; credit is pinned to the date in the body, never the date it arrives. Difficulty is 1-6: Lisa is a valid daily tier, unlike in a match. solveOrder is an array of [cell, digit] PAIRS - [[12,4],[13,9],...] - one per non-given cell, and the replay only passes once every one of them is accounted for, hint-filled cells included. The generated schema below flattens the nested array to \"array of integer\", which is wrong: a client that sends bare cell indices is rejected with 400 and its daily never counts.",
         "operationId" : "submitDailyResult",
         "requestBody" : {
           "content" : {
@@ -342,6 +342,45 @@
           },
           "409" : {
             "description" : "STREAK_RESTORE_NOT_NEEDED, INSUFFICIENT_RESTORE_POINTS or INSUFFICIENT_BALANCE",
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/daily/streak/sync" : {
+      "post" : {
+        "tags" : [ "Daily" ],
+        "summary" : "Publish the streak this device counted",
+        "description" : "For a streak the server never saw earned: a daily solved while it was unreachable advances the device's count, and if that queued submission is later lost the server has no other way to hear about the day. Strictly one-way - a count lower than the stored one is ignored - so it is safe to send on every reconnect and safe to repeat. Restore points are never granted from a claim; only a replay-verified solve earns those. Returns the streak as it stands after the merge.",
+        "operationId" : "syncStreak",
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/StreakSyncRequest"
+              }
+            }
+          }
+        },
+        "responses" : {
+          "200" : {
+            "description" : "OK",
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/StreakResponse"
+                }
+              }
+            }
+          },
+          "400" : {
+            "description" : "BAD_REQUEST for a negative or implausible count",
             "content" : {
               "application/json" : {
                 "schema" : {
@@ -658,6 +697,65 @@
           },
           "204" : {
             "description" : "Not in a match"
+          }
+        }
+      }
+    },
+    "/api/v1/matches/join" : {
+      "post" : {
+        "tags" : [ "Matches" ],
+        "summary" : "Join a match by its code",
+        "description" : "The code is the whole invitation: it resolves to the lobby on its own, so no match id is needed and the creator has one value to pass on rather than two. Answers NOT_FOUND for a code that is mistyped, belongs to a match that has already started, or was cancelled - telling those apart would answer the only question somebody guessing codes is asking. Attempt limited per caller.",
+        "operationId" : "joinMatchByCode",
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/JoinByCodeRequest"
+              }
+            }
+          }
+        },
+        "responses" : {
+          "200" : {
+            "description" : "OK",
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/MatchResponse"
+                }
+              }
+            }
+          },
+          "404" : {
+            "description" : "NOT_FOUND",
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409" : {
+            "description" : "MATCH_FULL or INSUFFICIENT_BALANCE",
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429" : {
+            "description" : "RATE_LIMITED",
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
           }
         }
       }
@@ -1074,6 +1172,35 @@
               "application/json" : {
                 "schema" : {
                   "$ref" : "#/components/schemas/ServerInfoResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/stats/games" : {
+      "post" : {
+        "tags" : [ "Stats" ],
+        "summary" : "Upload finished single-player games",
+        "description" : "Called as games are played, and on reconnection for whatever the client queued while offline. Safe to repeat: a game already recorded is skipped, not counted twice.",
+        "operationId" : "recordGames",
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/GameResultsRequest"
+              }
+            }
+          }
+        },
+        "responses" : {
+          "200" : {
+            "description" : "OK",
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/GameResultsResponse"
                 }
               }
             }
@@ -1635,6 +1762,64 @@
           }
         }
       },
+      "GameResultsRequest" : {
+        "type" : "object",
+        "properties" : {
+          "parseGames" : {
+            "type" : "array",
+            "items" : {
+              "$ref" : "#/components/schemas/PlayedGame"
+            }
+          },
+          "games" : {
+            "type" : "array",
+            "items" : {
+              "$ref" : "#/components/schemas/PlayedGameBody"
+            }
+          }
+        }
+      },
+      "PlayedGameBody" : {
+        "type" : "object",
+        "properties" : {
+          "toPlayedGame" : {
+            "$ref" : "#/components/schemas/PlayedGame"
+          },
+          "gameId" : {
+            "type" : "string"
+          },
+          "size" : {
+            "type" : "integer",
+            "format" : "int32"
+          },
+          "variant" : {
+            "type" : "string"
+          },
+          "difficulty" : {
+            "type" : "integer",
+            "format" : "int32"
+          },
+          "solved" : {
+            "type" : "boolean"
+          },
+          "elapsedMs" : {
+            "type" : "integer",
+            "format" : "int64"
+          },
+          "hintsUsed" : {
+            "type" : "integer",
+            "format" : "int32"
+          }
+        }
+      },
+      "JoinByCodeRequest" : {
+        "type" : "object",
+        "properties" : {
+          "code" : {
+            "type" : "string"
+          }
+        }
+      },
       "JoinMatchRequest" : {
         "type" : "object",
         "properties" : {
@@ -1832,6 +2017,27 @@
           }
         }
       },
+      "StreakSyncRequest" : {
+        "type" : "object",
+        "properties" : {
+          "requireCurrent" : {
+            "type" : "integer",
+            "format" : "int32"
+          },
+          "parseLastCompletedDate" : {
+            "type" : "string",
+            "format" : "date"
+          },
+          "current" : {
+            "type" : "integer",
+            "format" : "int32"
+          },
+          "lastCompletedDate" : {
+            "type" : "string"
+          }
+        },
+        "required" : [ "requireCurrent" ]
+      },
       "VerifyRequest" : {
         "type" : "object",
         "properties" : {
@@ -1998,6 +2204,16 @@
             }
           }
         }
+      },
+      "GameResultsResponse" : {
+        "type" : "object",
+        "properties" : {
+          "recorded" : {
+            "type" : "integer",
+            "format" : "int32"
+          }
+        },
+        "required" : [ "recorded" ]
       },
       "HealthResponse" : {
         "type" : "object",
@@ -2352,6 +2568,41 @@
       "Role" : {
         "type" : "string",
         "enum" : [ "NEW", "MEMBER", "ADMIN" ]
+      },
+      "PlayedGame" : {
+        "type" : "object",
+        "properties" : {
+          "validate" : {
+            "type" : "object"
+          },
+          "gameId" : {
+            "type" : "string",
+            "format" : "uuid"
+          },
+          "size" : {
+            "type" : "integer",
+            "format" : "int32"
+          },
+          "variant" : {
+            "type" : "string"
+          },
+          "difficulty" : {
+            "type" : "integer",
+            "format" : "int32"
+          },
+          "solved" : {
+            "type" : "boolean"
+          },
+          "elapsedMs" : {
+            "type" : "integer",
+            "format" : "int64"
+          },
+          "hintsUsed" : {
+            "type" : "integer",
+            "format" : "int32"
+          }
+        },
+        "required" : [ "size", "difficulty", "solved", "elapsedMs", "hintsUsed" ]
       },
       "SyncEntry" : {
         "type" : "object",

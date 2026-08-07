@@ -5,8 +5,10 @@ import io.javalin.openapi.*;
 import net.luis.sudoku.auth.Authentication;
 import net.luis.sudoku.daily.DailyService;
 import net.luis.sudoku.domain.Principal;
+import net.luis.sudoku.domain.Streak;
 import net.luis.sudoku.dto.request.DailyResultRequest;
 import net.luis.sudoku.dto.request.PreferencesRequest;
+import net.luis.sudoku.dto.request.StreakSyncRequest;
 import net.luis.sudoku.dto.response.*;
 import net.luis.sudoku.error.ApiException;
 import net.luis.sudoku.permission.Permission;
@@ -76,7 +78,15 @@ public class DailyHandler {
 	@OpenApi(
 		summary = "Submit a daily result",
 		description = "Verified by replaying the solve order against the regenerated puzzle. A SOLVED result locks the "
-			+ "date; FAILED results may be retried all day.",
+			+ "date; FAILED results may be retried all day. A result may be submitted for any date that is not in the "
+			+ "future, so a client that finished a daily offline can drain its queue whenever it reconnects; "
+			+ "credit is pinned to the date in the body, never the date it arrives. Difficulty is 1-6: Lisa is a "
+			+ "valid daily tier, unlike in a match. solveOrder is an array of "
+			+ "[cell, digit] PAIRS - "
+			+ "[[12,4],[13,9],...] - one per non-given cell, and the replay only passes once every one of them is "
+			+ "accounted for, hint-filled cells included. The generated schema below flattens the nested array to "
+			+ "\"array of integer\", which is wrong: a client that sends bare cell indices is rejected with 400 and "
+			+ "its daily never counts.",
 		operationId = "submitDailyResult",
 		path = "/api/v1/daily/result",
 		methods = HttpMethod.POST,
@@ -104,6 +114,31 @@ public class DailyHandler {
 		ctx.json(DailyResultResponse.of(this.daily.submit(actor, submit)));
 	}
 	
+	@OpenApi(
+		summary = "Publish the streak this device counted",
+		description = "For a streak the server never saw earned: a daily solved while it was unreachable advances "
+			+ "the device's count, and if that queued submission is later lost the server has no other way to hear "
+			+ "about the day. Strictly one-way - a count lower than the stored one is ignored - so it is safe to "
+			+ "send on every reconnect and safe to repeat. Restore points are never granted from a claim; only a "
+			+ "replay-verified solve earns those. Returns the streak as it stands after the merge.",
+		operationId = "syncStreak",
+		path = "/api/v1/daily/streak/sync",
+		methods = HttpMethod.POST,
+		tags = "Daily",
+		requestBody = @OpenApiRequestBody(content = @OpenApiContent(from = StreakSyncRequest.class)),
+		responses = {
+			@OpenApiResponse(status = "200", content = @OpenApiContent(from = DailyResultResponse.StreakResponse.class)),
+			@OpenApiResponse(status = "400", description = "BAD_REQUEST for a negative or implausible count", content = @OpenApiContent(from = ErrorResponse.class))
+		}
+	)
+	public void syncStreak(@NonNull Context ctx) {
+		Principal actor = this.authentication.require(ctx, Permission.CAN_PLAY);
+		StreakSyncRequest request = ctx.bodyAsClass(StreakSyncRequest.class);
+
+		Streak merged = this.daily.syncStreak(actor, request.requireCurrent(), request.parseLastCompletedDate());
+		ctx.json(DailyResultResponse.StreakResponse.of(merged));
+	}
+
 	@OpenApi(
 		summary = "Get your daily streak",
 		description = "Current and longest run, and banked restore points.",

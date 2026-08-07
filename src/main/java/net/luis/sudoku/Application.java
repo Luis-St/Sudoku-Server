@@ -97,7 +97,7 @@ public class Application {
 		var dailyHandler = new DailyHandler(services.authentication(), services.dailyService());
 		var statsHandler = new StatsHandler(services.authentication(), services.statsService(), services.presenceService());
 		var currencyHandler = new CurrencyHandler(services.authentication(), services.currencyService());
-		var matchHandler = new MatchHandler(services.authentication(), services.matchService(), services.presenceService());
+		var matchHandler = new MatchHandler(services.authentication(), services.matchService(), services.presenceService(), services.rateLimiter());
 		var presenceHandler = new PresenceHandler(services.authentication(), services.presenceService(), services.config().presence());
 		var matchSocketHandler = new MatchSocketHandler(services.authentication(), services.sessionService(), services.matchService(), services.rateLimiter(), services.clock());
 		
@@ -141,6 +141,7 @@ public class Application {
 		javalin.routes.get("/api/v1/daily/leaderboard", dailyHandler::leaderboard);
 		javalin.routes.post("/api/v1/daily/result", dailyHandler::submitResult);
 		javalin.routes.get("/api/v1/daily/streak", dailyHandler::streak);
+		javalin.routes.post("/api/v1/daily/streak/sync", dailyHandler::syncStreak);
 		javalin.routes.post("/api/v1/daily/streak/restore", dailyHandler::restoreStreak);
 		javalin.routes.get("/api/v1/preferences", dailyHandler::preferences);
 		javalin.routes.put("/api/v1/preferences", dailyHandler::setPreferences);
@@ -149,6 +150,7 @@ public class Application {
 		javalin.routes.get("/api/v1/players", statsHandler::players);
 		javalin.routes.get("/api/v1/players/{id}/stats", statsHandler::playerStats);
 		javalin.routes.post("/api/v1/stats/sync", statsHandler::sync);
+		javalin.routes.post("/api/v1/stats/games", statsHandler::recordGames);
 		
 		// Currency
 		javalin.routes.get("/api/v1/currency", currencyHandler::balance);
@@ -156,6 +158,10 @@ public class Application {
 		
 		// Matches
 		javalin.routes.post("/api/v1/matches", matchHandler::create);
+		// Joining needs only the code, which is why this hangs off /matches rather than /matches/{id}/join -
+		// there is no id to put there until the code has been resolved. The older two-value route below stays
+		// registered for clients already in the wild.
+		javalin.routes.post("/api/v1/matches/join", matchHandler::joinByCode);
 		// Before the {id} route: "active" is a name, not a match id, and a path parameter would swallow it.
 		javalin.routes.get("/api/v1/matches/active", matchHandler::active);
 		javalin.routes.get("/api/v1/matches/{id}", matchHandler::get);

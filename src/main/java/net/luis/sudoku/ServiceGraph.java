@@ -58,6 +58,7 @@ public final class ServiceGraph implements AutoCloseable {
 	private final StreakRepository streaks = new StreakRepository();
 	private final DailyLeaderboardRepository dailyLeaderboard = new DailyLeaderboardRepository();
 	private final StatsRepository stats = new StatsRepository();
+	private final RecordedGameRepository recordedGames = new RecordedGameRepository();
 	private final CurrencyLedgerRepository ledger = new CurrencyLedgerRepository();
 	private final MatchRepository matchRepository = new MatchRepository();
 	private final PresenceRepository presenceRepository = new PresenceRepository();
@@ -115,7 +116,7 @@ public final class ServiceGraph implements AutoCloseable {
 		this.mailService = new MailService(config.mail());
 		this.recoveryService = new RecoveryService(this.database, this.emailVerifications, this.recoveryCodes, this.users, this.devices, this.sessionService, this.signatureVerifier, this.codes, this.mailService, clock);
 		
-		this.statsService = new StatsService(this.database, this.stats, this.users, this.streaks, this.dailyResults, this.dailyLeaderboard, config, clock);
+		this.statsService = new StatsService(this.database, this.stats, this.users, this.streaks, this.dailyResults, this.dailyLeaderboard, this.recordedGames, config, clock);
 		this.currencyService = new CurrencyService(this.database, this.ledger, this.stats, config, clock);
 		this.dailyService = new DailyService(this.database, config, this.serverId, this.preferences, this.dailyResults, this.streaks, this.dailyLeaderboard, this.currencyService, this.statsService, clock);
 		this.puzzleQueue = new PuzzleQueue(this::activePlayerCount);

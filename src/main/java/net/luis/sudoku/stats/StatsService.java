@@ -33,19 +33,38 @@ public final class StatsService {
 	
 	/** Guards against a client uploading an implausible history in one call. */
 	private static final int MAX_SYNC_ENTRIES = 200;
-	
+
+	/**
+	 * How many finished games one {@code POST /stats/games} may carry.
+	 * <p>
+	 * A client normally sends one, the game it just finished; a batch this size only turns up after a long
+	 * offline stretch, and a queue longer than that is flushed over several calls rather than in one.
+	 */
+	private static final int MAX_GAMES_PER_CALL = 50;
+
+	/**
+	 * How long a game's id is remembered for the sake of turning away a retry.
+	 * <p>
+	 * A client retries a queued upload until it succeeds, so the window has to cover an offline stretch
+	 * rather than a network timeout - but it is a window all the same, because remembering every id for
+	 * ever would grow a table the size of every game ever played to guard against a retry nobody is still
+	 * making.
+	 */
+	private static final Duration RECORDED_GAME_RETENTION = Duration.ofDays(30);
+
 	private final Database database;
 	private final StatsRepository stats;
 	private final UserRepository users;
 	private final StreakRepository streaks;
 	private final DailyResultRepository dailyResults;
 	private final DailyLeaderboardRepository leaderboard;
+	private final RecordedGameRepository recordedGames;
 	private final ServerConfig config;
 	private final Clock clock;
-	
+
 	public StatsService(
 		@NonNull Database database, @NonNull StatsRepository stats, @NonNull UserRepository users, @NonNull StreakRepository streaks, @NonNull DailyResultRepository dailyResults,
-		@NonNull DailyLeaderboardRepository leaderboard, @NonNull ServerConfig config, @NonNull Clock clock
+		@NonNull DailyLeaderboardRepository leaderboard, @NonNull RecordedGameRepository recordedGames, @NonNull ServerConfig config, @NonNull Clock clock
 	) {
 		this.database = database;
 		this.stats = stats;
@@ -53,6 +72,7 @@ public final class StatsService {
 		this.streaks = streaks;
 		this.dailyResults = dailyResults;
 		this.leaderboard = leaderboard;
+		this.recordedGames = recordedGames;
 		this.config = config;
 		this.clock = clock;
 	}
@@ -133,6 +153,53 @@ public final class StatsService {
 	public void record(@NonNull SqlTransaction connection, @NonNull UUID userId, @NonNull GridSize size, @NonNull Variant variant, int difficulty, boolean solved, long elapsedMs, int hintsUsed) throws SqlException {
 		this.stats.record(connection, userId, size.n(), variant.name(), difficulty, solved, elapsedMs, hintsUsed);
 	}
+
+	/**
+	 * Folds finished single-player games into the aggregates as they are played (spec 9).
+	 * <p>
+	 * This is what keeps a player's statistics current. {@link #sync} is the one-off import of whatever
+	 * history a device had accumulated before it ever reached a server, and it cannot serve this purpose:
+	 * it uploads the whole local history in one call and every column it writes increments, so calling it
+	 * a second time adds that history again. A game arrives here once, named by an id its client generated
+	 * when the game ended.
+	 * <p>
+	 * <strong>Repeating a call is safe, and has to be.</strong> The client queues a game it could not
+	 * upload and retries on the next successful connection, and a retry is indistinguishable - from the
+	 * client's side - from a request whose response was lost on the way back. So each game is claimed in
+	 * {@code recorded_games} before it is folded, in the same transaction, and an id already claimed is
+	 * skipped rather than added. The whole batch is one transaction for the same reason: a partial failure
+	 * that left some games folded and some not would be re-sent in full, and only the claims make that
+	 * harmless.
+	 *
+	 * @return how many games were folded in, which excludes the ones recognised as retries
+	 */
+	public int recordGames(@NonNull Principal actor, @NonNull List<PlayedGame> games) {
+		if (games.size() > MAX_GAMES_PER_CALL) {
+			throw ApiException.badRequest("stats upload carries more than " + MAX_GAMES_PER_CALL + " games; send the queue in smaller batches");
+		}
+		for (PlayedGame game : games) {
+			game.validate();
+		}
+
+		Instant now = this.clock.instant();
+		int recorded = this.database.transaction(connection -> {
+			int folded = 0;
+			for (PlayedGame game : games) {
+				if (!this.recordedGames.claim(connection, actor.userId(), game.gameId(), now)) {
+					continue;
+				}
+				this.stats.record(connection, actor.userId(), game.size(), game.variant(), game.difficulty(),
+					game.solved(), game.elapsedMs(), game.hintsUsed());
+				folded++;
+			}
+			return folded;
+		});
+
+		if (recorded < games.size()) {
+			log.debug("Dropped {} already-recorded games from user {}'s upload", games.size() - recorded, actor.userId());
+		}
+		return recorded;
+	}
 	
 	/**
 	 * Folds finished days into {@code stats} and prunes them (spec 8.6, 9).
@@ -168,7 +235,10 @@ public final class StatsService {
 			// lose results (spec 8.6).
 			this.dailyResults.pruneBefore(connection, today);
 			this.leaderboard.pruneBefore(connection, today);
-			
+			// Claims are pruned by their own age rather than by `today`: they guard against a client
+			// retrying an upload, which has nothing to do with which day the game was played on.
+			this.recordedGames.deleteBefore(connection, this.clock.instant().minus(RECORDED_GAME_RETENTION));
+
 			if (folded > 0) {
 				log.info("Rollover folded {} daily results into stats and pruned earlier dates", folded);
 			}
@@ -192,6 +262,38 @@ public final class StatsService {
 	public record PlayerSummary(@NonNull UUID id, @NonNull String displayName, @NonNull String role, int streak, @Nullable String lastSeenAt,
 	                            boolean revoked) {}
 	
+	/**
+	 * One finished single-player game, uploaded as it happens.
+	 * <p>
+	 * The counterpart of {@link SyncEntry}, which carries a whole tier's aggregate: this is one game, and
+	 * {@link #gameId} is what lets the same one be sent twice without being counted twice.
+	 *
+	 * @param gameId the client's id for this game, generated once when it ended
+	 * @param size grid edge length
+	 * @param variant {@code CLASSIC} or {@code CHAOS}
+	 * @param difficulty tier index 1-6; Lisa is allowed, as in {@link SyncEntry}
+	 * @param solved whether the player finished the grid, as opposed to running out of lives or giving up
+	 * @param elapsedMs how long it took; only counted towards solve times when {@link #solved}
+	 * @param hintsUsed hints consumed
+	 */
+	public record PlayedGame(@NonNull UUID gameId, int size, @NonNull String variant, int difficulty, boolean solved, long elapsedMs, int hintsUsed) {
+
+		void validate() {
+			try {
+				GridSize.ofEdgeLength(this.size);
+				Variant.valueOf(this.variant);
+			} catch (IllegalArgumentException e) {
+				throw ApiException.badRequest("Unsupported size/variant in stats upload: " + this.size + "/" + this.variant);
+			}
+			if (this.difficulty < 1 || this.difficulty > 6) {
+				throw ApiException.badRequest("difficulty must be between 1 and 6, got: " + this.difficulty);
+			}
+			if (this.elapsedMs < 0 || this.hintsUsed < 0) {
+				throw ApiException.badRequest("stats upload counters must not be negative");
+			}
+		}
+	}
+
 	/**
 	 * One uploaded aggregate from a client's local history.
 	 *

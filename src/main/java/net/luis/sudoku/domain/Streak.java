@@ -58,6 +58,43 @@ public record Streak(@NonNull UUID userId, int current, int longest, @Nullable L
 	}
 	
 	/**
+	 * Merges a streak a client counted locally into this one, taking whichever knows about more days.
+	 * <p>
+	 * <strong>This is the one place the server takes a player's word for a streak.</strong> Everywhere
+	 * else the count is earned through {@link #completedOn} from a replay-verified solve, and that is
+	 * still the only way to <em>start</em> one that the leaderboard respects. This exists because the two
+	 * numbers can legitimately diverge with no fault on the player's side: a daily solved while the server
+	 * was unreachable advances the device's count, and if the queued submission is later lost - dropped as
+	 * unsalvageable, or discarded by an app upgrade - the server never hears about that day and no
+	 * mechanism existed to tell it afterwards.
+	 * <p>
+	 * Strictly one-way: a claim lower than what is already stored is ignored, so this can raise a count
+	 * but never lower one, and repeating the same call changes nothing. That makes it safe to send on
+	 * every reconnect without the client tracking what it has already published.
+	 * <p>
+	 * {@code restorePoints} are deliberately untouched. They are a spendable resource earned every
+	 * {@link #POINT_THRESHOLD_DAYS} days through verified solves, and minting them from an unverified
+	 * claim would turn a self-reported number into currency.
+	 *
+	 * @param claimedCurrent the client's own consecutive-day count
+	 * @param claimedLastCompleted the day that count ends on, which becomes the anchor the next verified
+	 *   solve continues from
+	 * @return the merged streak, or {@code this} when the claim adds nothing
+	 */
+	public @NonNull Streak mergedWith(int claimedCurrent, @NonNull LocalDate claimedLastCompleted) {
+		if (claimedCurrent <= this.current) {
+			return this;
+		}
+		// Keep the later anchor: a bigger count ending earlier than what is stored would move the streak
+		// backwards in time, and the next verified solve would then read as a broken run rather than a
+		// continuation.
+		LocalDate anchor = this.lastCompletedDate == null || claimedLastCompleted.isAfter(this.lastCompletedDate)
+			? claimedLastCompleted
+			: this.lastCompletedDate;
+		return new Streak(this.userId, claimedCurrent, Math.max(claimedCurrent, this.longest), anchor, this.restorePoints);
+	}
+
+	/**
 	 * Spends {@code days} restore points to repair a gap through {@code through} (typically yesterday),
 	 * so a normal submission today sees a consecutive continuation.
 	 * <p>

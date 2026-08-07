@@ -90,7 +90,14 @@ public final class RateLimiter {
 		 *  to spam, so it is limited by client IP. */
 		RECOVERY_REQUEST(5, Duration.ofMinutes(15)),
 		/** A recovery code hands over the whole account, so this is the tightest budget of all. */
-		RECOVERY_REDEEM(10, Duration.ofMinutes(10));
+		RECOVERY_REDEEM(10, Duration.ofMinutes(10)),
+		/**
+		 * Match codes are eight symbols, so this is the only thing standing between a guesser and somebody
+		 * else's lobby. Looser than the link-code budget because a wrong code here is also an ordinary
+		 * mistype - a player reading one off a chat message - and because the prize is a seat in a friends'
+		 * game rather than an account.
+		 */
+		MATCH_JOIN_CODE(20, Duration.ofMinutes(10));
 		
 		private final int limit;
 		private final Duration window;

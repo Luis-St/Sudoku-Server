@@ -32,31 +32,46 @@ public final class PuzzleFactory {
 	}
 	
 	/**
-	 * Builds a key, rejecting configurations the server must never issue.
+	 * Builds a key for content two players share, rejecting configurations the server must never issue.
 	 *
 	 * @throws ApiException {@code LISA_NOT_ALLOWED} if Lisa is requested, or {@code BAD_REQUEST} if the
 	 *   variant is unsupported at that size
 	 */
 	public static @NonNull PuzzleKey key(@NonNull GridSize size, @NonNull Variant variant, @NonNull Difficulty difficulty, long seed) {
 		requireMultiplayerSafe(difficulty);
+		return singlePlayerKey(size, variant, difficulty, seed);
+	}
+
+	/**
+	 * Builds a key for content only one player ever solves, where Lisa is an ordinary tier.
+	 * <p>
+	 * The daily is exactly that: one grid per player per day, scored against nobody. {@link #key} refuses
+	 * Lisa because a match is a shared board and Lisa's gameplay modifiers have no agreed meaning across
+	 * two clients - a constraint about multiplayer, which the daily was only ever caught by because it
+	 * happened to reuse the same builder. It is selectable as a daily tier on the client, {@code stats}
+	 * has always accepted it, and rejecting it here left those players unable to score a daily at all.
+	 *
+	 * @throws ApiException {@code BAD_REQUEST} if the variant is unsupported at that size
+	 */
+	public static @NonNull PuzzleKey singlePlayerKey(@NonNull GridSize size, @NonNull Variant variant, @NonNull Difficulty difficulty, long seed) {
 		if (!variant.isSupportedAt(size)) {
 			throw ApiException.badRequest(variant + " is not supported at " + size.n() + "x" + size.n());
 		}
 		return PuzzleKey.of(size, variant, difficulty, seed);
 	}
-	
+
 	/**
-	 * Rejects Lisa, which carries single-player gameplay modifiers and never has a server-side meaning
-	 * (server-spec 10.1, 16).
+	 * Rejects Lisa, which carries single-player gameplay modifiers and so has no agreed meaning on a board
+	 * two clients share (server-spec 10.1, 16).
 	 */
 	public static void requireMultiplayerSafe(@NonNull Difficulty difficulty) {
 		if (difficulty.isLisa()) {
 			throw new ApiException(ErrorCode.LISA_NOT_ALLOWED, "Lisa is a single-player difficulty");
 		}
 	}
-	
+
 	/**
-	 * Parses a 1-5 difficulty index from a request.
+	 * Parses a 1-5 difficulty index from a request for shared content.
 	 *
 	 * @throws ApiException {@code LISA_NOT_ALLOWED} for index 6, {@code BAD_REQUEST} otherwise
 	 */
@@ -69,5 +84,18 @@ public final class PuzzleFactory {
 		}
 		requireMultiplayerSafe(difficulty);
 		return difficulty;
+	}
+
+	/**
+	 * Parses a 1-6 difficulty index from a request for single-player content - see {@link #singlePlayerKey}.
+	 *
+	 * @throws ApiException {@code BAD_REQUEST} if the index names no tier
+	 */
+	public static @NonNull Difficulty singlePlayerDifficultyOfIndex(int index) {
+		try {
+			return Difficulty.ofIndex(index);
+		} catch (IllegalArgumentException e) {
+			throw ApiException.badRequest("difficulty must be between 1 and 6, got: " + index);
+		}
 	}
 }

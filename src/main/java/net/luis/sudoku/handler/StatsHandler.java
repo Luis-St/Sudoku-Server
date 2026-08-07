@@ -4,6 +4,7 @@ import io.javalin.http.Context;
 import io.javalin.openapi.*;
 import net.luis.sudoku.auth.Authentication;
 import net.luis.sudoku.domain.Principal;
+import net.luis.sudoku.dto.request.GameResultsRequest;
 import net.luis.sudoku.dto.request.StatsSyncRequest;
 import net.luis.sudoku.dto.response.*;
 import net.luis.sudoku.permission.Permission;
@@ -69,6 +70,25 @@ public class StatsHandler {
 		ctx.json(entries);
 	}
 	
+	@OpenApi(
+		summary = "Upload finished single-player games",
+		description = "Called as games are played, and on reconnection for whatever the client queued while offline. "
+			+ "Safe to repeat: a game already recorded is skipped, not counted twice.",
+		operationId = "recordGames",
+		path = "/api/v1/stats/games",
+		methods = HttpMethod.POST,
+		tags = "Stats",
+		requestBody = @OpenApiRequestBody(content = @OpenApiContent(from = GameResultsRequest.class)),
+		responses = @OpenApiResponse(status = "200", content = @OpenApiContent(from = GameResultsResponse.class))
+	)
+	public void recordGames(@NonNull Context ctx) {
+		Principal actor = this.authentication.require(ctx);
+		GameResultsRequest request = ctx.bodyAsClass(GameResultsRequest.class);
+
+		int recorded = this.stats.recordGames(actor, request.parseGames());
+		ctx.json(new GameResultsResponse(recorded));
+	}
+
 	@OpenApi(
 		summary = "Upload local single-player history",
 		description = "Called once on the offline-to-online transition. Local daily streaks are NOT merged; server "
