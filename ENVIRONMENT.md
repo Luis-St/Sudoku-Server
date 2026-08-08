@@ -84,7 +84,7 @@ Time-bank tuning; all bank values are in seconds. Every integer here must be at 
 
 | Variable | Required | Default | Meaning |
 | --- | --- | --- | --- |
-| `SUDOKU_PRESENCE_ONLINE_TTL` | no | `30` | Seconds a heartbeat keeps a player online. Must be at least 1. |
+| `SUDOKU_PRESENCE_ONLINE_TTL` | no | `15` | Seconds a heartbeat keeps a player online. Must be at least 1. Clients beat every 5 seconds, so anything below 15 costs the slack that keeps a present player from flickering offline. |
 | `SUDOKU_PRESENCE_REQUEST_TTL` | no | `60` | Seconds an undelivered match request stays worth delivering. Must be at least 1. |
 
 Clients heartbeat every 10 seconds, so the online TTL has to leave room for at least two beats to go
