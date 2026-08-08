@@ -37,7 +37,7 @@ import java.util.UUID;
 public final class MatchService {
 	
 	private static final Logger log = LoggerFactory.getLogger(MatchService.class);
-
+	
 	/** How many codes to draw before giving up on finding a free one. See {@code freeMatchCode}. */
 	private static final int CODE_ATTEMPTS = 10;
 	
@@ -84,7 +84,7 @@ public final class MatchService {
 		// queue at 2x the active-player count).
 		GeneratedPuzzle puzzle = this.puzzles.take(size, variant, difficulty);
 		Instant now = this.clock.instant();
-
+		
 		Match match = this.database.transaction(connection -> {
 			Match created = this.matches.create(connection, mode, actor.userId(), size, variant, difficulty, puzzle.key().seed(), livesEnabled, hintsEnabled, stake, this.freeMatchCode(connection), now);
 			this.matches.addParticipant(connection, created.id(), actor.userId(), now);
@@ -144,7 +144,7 @@ public final class MatchService {
 		log.info("User {} joined match {}", actor.userId(), matchId);
 		return joined;
 	}
-
+	
 	/**
 	 * Joins a match from its code alone (server-spec 10.1).
 	 * <p>
@@ -163,7 +163,7 @@ public final class MatchService {
 		if (canonical == null) {
 			throw ApiException.notFound("No match is waiting behind that code");
 		}
-
+		
 		UUID matchId = this.database.transaction(connection -> {
 			Match match = this.matches.findJoinableByCode(connection, canonical);
 			if (match == null) {
@@ -175,7 +175,7 @@ public final class MatchService {
 		// rather than bypassed, so there is exactly one place that decides whether a join is allowed.
 		return this.join(actor, matchId, canonical);
 	}
-
+	
 	/**
 	 * Picks a match code no joinable lobby is already using.
 	 * <p>
@@ -193,7 +193,7 @@ public final class MatchService {
 		}
 		throw new ApiException(ErrorCode.INTERNAL, "Could not allocate a free match code");
 	}
-
+	
 	/**
 	 * Calls off a match nobody has joined yet, at its creator's request.
 	 * <p>
@@ -214,7 +214,7 @@ public final class MatchService {
 	 */
 	public void cancel(@NonNull Principal actor, @NonNull UUID matchId) {
 		Instant now = this.clock.instant();
-
+		
 		boolean cancelled = this.database.transaction(connection -> {
 			Match match = this.matches.findForUpdate(connection, matchId);
 			if (match == null) {
@@ -229,11 +229,11 @@ public final class MatchService {
 			if (match.state() == MatchState.RUNNING) {
 				throw new ApiException(ErrorCode.CONFLICT, "That match has already started");
 			}
-
+			
 			this.matches.markEnded(connection, matchId, MatchState.ABANDONED, null, EndReason.CANCELLED, now);
 			return true;
 		});
-
+		
 		if (cancelled) {
 			// Outside the transaction: shutting the live object down is not something a rollback could undo,
 			// and a match whose row is still WAITING but whose executor is gone would accept a join it could
@@ -242,7 +242,7 @@ public final class MatchService {
 			log.info("Match {} cancelled by its creator {}", matchId, actor.userId());
 		}
 	}
-
+	
 	public @NonNull Match get(@NonNull UUID matchId) {
 		Match match = this.database.read(connection -> this.matches.find(connection, matchId));
 		if (match == null) {
@@ -254,7 +254,7 @@ public final class MatchService {
 	public @NonNull List<MatchParticipant> participants(@NonNull UUID matchId) {
 		return this.database.read(connection -> this.matches.participants(connection, matchId));
 	}
-
+	
 	/**
 	 * The match this user is currently playing, if any.
 	 *
@@ -268,7 +268,7 @@ public final class MatchService {
 	public @Nullable Match activeMatch(@NonNull Principal actor) {
 		return this.database.read(connection -> this.matches.findRunningFor(connection, actor.userId()));
 	}
-
+	
 	/**
 	 * Leaves a running match for good, now rather than when the grace window expires.
 	 *
@@ -288,7 +288,7 @@ public final class MatchService {
 		if (match.state().isTerminal()) {
 			return;
 		}
-
+		
 		LiveMatch live = this.registry.find(matchId);
 		if (live == null) {
 			// No live object, so there is nobody to tell and nothing to settle through the match: the row is
@@ -377,6 +377,41 @@ public final class MatchService {
 	}
 	
 	/**
+	 * Writes an ended match's outcome, settles its stakes and records a result per participant, all in one
+	 * transaction. Split out of {@link PersistenceCallbacks#onEnd} only so the failure of the whole write
+	 * can be caught in one place.
+	 */
+	private void persistEnd(@NonNull Match match, @NonNull MatchState state, @Nullable UUID winnerId, @NonNull List<UUID> participants, @NonNull EndReason reason) {
+		this.database.execute(connection -> {
+			this.matches.markEnded(connection, match.id(), state, winnerId, reason, this.clock.instant());
+			
+			boolean decided = state == MatchState.ENDED && winnerId != null;
+			if (match.stake() > 0) {
+				if (decided) {
+					// A single payout row credits the winner with the whole pot (spec 9a.3).
+					this.currency.payout(connection, winnerId, match.stake() * participants.size(), match.id());
+				} else {
+					for (UUID userId : participants) {
+						this.currency.refund(connection, userId, match.stake(), match.id());
+					}
+				}
+			}
+			
+			for (UUID userId : participants) {
+				MatchResult result;
+				if (state == MatchState.ABANDONED) {
+					result = MatchResult.ABANDONED;
+				} else if (winnerId == null) {
+					result = MatchResult.DRAW;
+				} else {
+					result = userId.equals(winnerId) ? MatchResult.WON : MatchResult.LOST;
+				}
+				this.matches.setResult(connection, match.id(), userId, result);
+			}
+		});
+	}
+	
+	/**
 	 * @param match the created match
 	 * @param inviteToken the match code another player needs to join. Still named {@code inviteToken} because
 	 *   that is what the field is called on the wire and clients already in the wild read it by that name;
@@ -412,43 +447,8 @@ public final class MatchService {
 				// leaving a finished match in the registry forever is strictly worse than losing the row.
 				log.error("Match {} ended ({}) but the outcome could not be persisted; stakes stay escrowed until a restart", match.id(), reason, e);
 			}
-
+			
 			MatchService.this.registry.remove(match.id());
 		}
-	}
-
-	/**
-	 * Writes an ended match's outcome, settles its stakes and records a result per participant, all in one
-	 * transaction. Split out of {@link PersistenceCallbacks#onEnd} only so the failure of the whole write
-	 * can be caught in one place.
-	 */
-	private void persistEnd(@NonNull Match match, @NonNull MatchState state, @Nullable UUID winnerId, @NonNull List<UUID> participants, @NonNull EndReason reason) {
-		this.database.execute(connection -> {
-			this.matches.markEnded(connection, match.id(), state, winnerId, reason, this.clock.instant());
-
-			boolean decided = state == MatchState.ENDED && winnerId != null;
-			if (match.stake() > 0) {
-				if (decided) {
-					// A single payout row credits the winner with the whole pot (spec 9a.3).
-					this.currency.payout(connection, winnerId, match.stake() * participants.size(), match.id());
-				} else {
-					for (UUID userId : participants) {
-						this.currency.refund(connection, userId, match.stake(), match.id());
-					}
-				}
-			}
-
-			for (UUID userId : participants) {
-				MatchResult result;
-				if (state == MatchState.ABANDONED) {
-					result = MatchResult.ABANDONED;
-				} else if (winnerId == null) {
-					result = MatchResult.DRAW;
-				} else {
-					result = userId.equals(winnerId) ? MatchResult.WON : MatchResult.LOST;
-				}
-				this.matches.setResult(connection, match.id(), userId, result);
-			}
-		});
 	}
 }

@@ -56,6 +56,37 @@ public final class CodeGenerator {
 	}
 	
 	/**
+	 * Brings a typed match code to the exact form {@link #matchCode()} stores, so a lookup is an equality
+	 * check rather than a fuzzy match: uppercase, regrouped, and rejected outright if it is not eight symbols
+	 * of the alphabet.
+	 * <p>
+	 * Rejecting here rather than at the database is what keeps a mistyped code from being answered any
+	 * differently than a code for a match that has already filled up - both are simply "no such match".
+	 *
+	 * @return the canonical {@code XXXX-XXXX} form, or null if this cannot be a match code at all
+	 */
+	public static @Nullable String canonicalMatchCode(@NonNull String code) {
+		String raw = normalize(code);
+		if (raw.length() != MATCH_CODE_LENGTH) {
+			return null;
+		}
+		for (char c : raw.toCharArray()) {
+			if (new String(ALPHABET).indexOf(c) < 0) {
+				return null;
+			}
+		}
+		return group(raw);
+	}
+	
+	/**
+	 * Splits an 8-symbol code down the middle. Every code this length is shown grouped, so the grouping lives
+	 * in one place rather than in each generator - {@link #normalize(String)} takes the hyphen back out again.
+	 */
+	private static @NonNull String group(@NonNull String raw) {
+		return raw.substring(0, 4) + "-" + raw.substring(4, 8);
+	}
+	
+	/**
 	 * @return a 12-symbol invite code, formatted in groups of four for legibility
 	 */
 	public @NonNull String inviteCode() {
@@ -87,30 +118,7 @@ public final class CodeGenerator {
 	public @NonNull String matchCode() {
 		return group(this.symbols(MATCH_CODE_LENGTH));
 	}
-
-	/**
-	 * Brings a typed match code to the exact form {@link #matchCode()} stores, so a lookup is an equality
-	 * check rather than a fuzzy match: uppercase, regrouped, and rejected outright if it is not eight symbols
-	 * of the alphabet.
-	 * <p>
-	 * Rejecting here rather than at the database is what keeps a mistyped code from being answered any
-	 * differently than a code for a match that has already filled up - both are simply "no such match".
-	 *
-	 * @return the canonical {@code XXXX-XXXX} form, or null if this cannot be a match code at all
-	 */
-	public static @Nullable String canonicalMatchCode(@NonNull String code) {
-		String raw = normalize(code);
-		if (raw.length() != MATCH_CODE_LENGTH) {
-			return null;
-		}
-		for (char c : raw.toCharArray()) {
-			if (new String(ALPHABET).indexOf(c) < 0) {
-				return null;
-			}
-		}
-		return group(raw);
-	}
-
+	
 	/**
 	 * @return an 8-symbol account-recovery code, the same shape as a link code since it is redeemed the
 	 *   same way - by hand, on a fresh device with no session
@@ -145,14 +153,6 @@ public final class CodeGenerator {
 		return bytes;
 	}
 	
-	/**
-	 * Splits an 8-symbol code down the middle. Every code this length is shown grouped, so the grouping lives
-	 * in one place rather than in each generator - {@link #normalize(String)} takes the hyphen back out again.
-	 */
-	private static @NonNull String group(@NonNull String raw) {
-		return raw.substring(0, 4) + "-" + raw.substring(4, 8);
-	}
-
 	private @NonNull String symbols(int length) {
 		StringBuilder builder = new StringBuilder(length);
 		for (int i = 0; i < length; i++) {

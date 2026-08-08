@@ -9,9 +9,7 @@ import net.luis.utils.io.database.transaction.SqlTransaction;
 import org.jspecify.annotations.NonNull;
 
 import java.time.Instant;
-import java.util.List;
-import java.util.Set;
-import java.util.UUID;
+import java.util.*;
 
 import static net.luis.sudoku.db.schema.Schema.*;
 
@@ -23,7 +21,7 @@ import static net.luis.sudoku.db.schema.Schema.*;
  * being re-derived by each query.
  */
 public final class PresenceRepository {
-
+	
 	/**
 	 * Records that this user's client is running right now.
 	 * <p>
@@ -35,7 +33,7 @@ public final class PresenceRepository {
 		SqlInsertQuery.upsert(PRESENCE, transaction.getDialect(), SqlConnectionSource.fixed(transaction.getConnection()),
 			transaction.getQueryTimeout(), resultSet -> null, List.of(draft), PRESENCE_USER_ID).execute();
 	}
-
+	
 	/**
 	 * Drops the user's heartbeat, making them offline immediately rather than once it goes stale.
 	 * <p>
@@ -46,7 +44,7 @@ public final class PresenceRepository {
 	public void clear(@NonNull SqlTransaction transaction, @NonNull UUID userId) throws SqlException {
 		transaction.from(PRESENCE).delete().where(Sql.equalTo(PRESENCE_USER_ID, userId)).execute();
 	}
-
+	
 	/**
 	 * @param since the oldest heartbeat that still counts as online
 	 * @return every user whose last heartbeat is at or after {@code since}
@@ -56,14 +54,14 @@ public final class PresenceRepository {
 			.where(Sql.greaterThanOrEqualTo(PRESENCE_LAST_SEEN_AT, since))
 			.fetch());
 	}
-
+	
 	public boolean isOnlineSince(@NonNull SqlTransaction transaction, @NonNull UUID userId, @NonNull Instant since) throws SqlException {
 		Instant lastSeen = transaction.from(PRESENCE).select(PRESENCE_LAST_SEEN_AT)
 			.where(Sql.equalTo(PRESENCE_USER_ID, userId))
 			.fetchOneOrNull();
 		return lastSeen != null && !lastSeen.isBefore(since);
 	}
-
+	
 	/**
 	 * Removes heartbeats old enough that they will never be online again, so the table stays the size of
 	 * the recently-active population rather than of everyone who ever signed in.

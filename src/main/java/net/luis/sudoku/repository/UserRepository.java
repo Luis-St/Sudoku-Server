@@ -66,7 +66,7 @@ public final class UserRepository {
 	public void revoke(@NonNull SqlTransaction transaction, @NonNull UUID id) throws SqlException {
 		transaction.from(USERS).update().set(USER_REVOKED, true).where(Sql.equalTo(USER_ID, id)).execute();
 	}
-
+	
 	/**
 	 * Undoes {@link #revoke}, bringing a kicked account back with its history intact (server-spec 7.2).
 	 * <p>

@@ -19,7 +19,7 @@ import org.jspecify.annotations.Nullable;
  */
 public record PlayerResponse(@NonNull String id, @NonNull String displayName, @NonNull String role, int streak,
                              @Nullable String lastSeenAt, boolean online, boolean revoked) {
-
+	
 	public static @NonNull PlayerResponse of(@NonNull PlayerSummary summary, boolean online) {
 		return new PlayerResponse(summary.id().toString(), summary.displayName(), summary.role(), summary.streak(), summary.lastSeenAt(), online,
 			summary.revoked());

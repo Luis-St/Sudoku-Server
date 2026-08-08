@@ -33,7 +33,7 @@ public final class StatsService {
 	
 	/** Guards against a client uploading an implausible history in one call. */
 	private static final int MAX_SYNC_ENTRIES = 200;
-
+	
 	/**
 	 * How many finished games one {@code POST /stats/games} may carry.
 	 * <p>
@@ -41,7 +41,7 @@ public final class StatsService {
 	 * offline stretch, and a queue longer than that is flushed over several calls rather than in one.
 	 */
 	private static final int MAX_GAMES_PER_CALL = 50;
-
+	
 	/**
 	 * How long a game's id is remembered for the sake of turning away a retry.
 	 * <p>
@@ -51,7 +51,7 @@ public final class StatsService {
 	 * making.
 	 */
 	private static final Duration RECORDED_GAME_RETENTION = Duration.ofDays(30);
-
+	
 	private final Database database;
 	private final StatsRepository stats;
 	private final UserRepository users;
@@ -61,7 +61,7 @@ public final class StatsService {
 	private final RecordedGameRepository recordedGames;
 	private final ServerConfig config;
 	private final Clock clock;
-
+	
 	public StatsService(
 		@NonNull Database database, @NonNull StatsRepository stats, @NonNull UserRepository users, @NonNull StreakRepository streaks, @NonNull DailyResultRepository dailyResults,
 		@NonNull DailyLeaderboardRepository leaderboard, @NonNull RecordedGameRepository recordedGames, @NonNull ServerConfig config, @NonNull Clock clock
@@ -106,7 +106,7 @@ public final class StatsService {
 				if (user.revoked() && !includeRevoked) {
 					continue;
 				}
-
+				
 				summaries.add(new PlayerSummary(
 					user.id(),
 					user.displayName(),
@@ -153,7 +153,7 @@ public final class StatsService {
 	public void record(@NonNull SqlTransaction connection, @NonNull UUID userId, @NonNull GridSize size, @NonNull Variant variant, int difficulty, boolean solved, long elapsedMs, int hintsUsed) throws SqlException {
 		this.stats.record(connection, userId, size.n(), variant.name(), difficulty, solved, elapsedMs, hintsUsed);
 	}
-
+	
 	/**
 	 * Folds finished single-player games into the aggregates as they are played (spec 9).
 	 * <p>
@@ -180,7 +180,7 @@ public final class StatsService {
 		for (PlayedGame game : games) {
 			game.validate();
 		}
-
+		
 		Instant now = this.clock.instant();
 		int recorded = this.database.transaction(connection -> {
 			int folded = 0;
@@ -194,7 +194,7 @@ public final class StatsService {
 			}
 			return folded;
 		});
-
+		
 		if (recorded < games.size()) {
 			log.debug("Dropped {} already-recorded games from user {}'s upload", games.size() - recorded, actor.userId());
 		}
@@ -238,7 +238,7 @@ public final class StatsService {
 			// Claims are pruned by their own age rather than by `today`: they guard against a client
 			// retrying an upload, which has nothing to do with which day the game was played on.
 			this.recordedGames.deleteBefore(connection, this.clock.instant().minus(RECORDED_GAME_RETENTION));
-
+			
 			if (folded > 0) {
 				log.info("Rollover folded {} daily results into stats and pruned earlier dates", folded);
 			}
@@ -277,7 +277,7 @@ public final class StatsService {
 	 * @param hintsUsed hints consumed
 	 */
 	public record PlayedGame(@NonNull UUID gameId, int size, @NonNull String variant, int difficulty, boolean solved, long elapsedMs, int hintsUsed) {
-
+		
 		void validate() {
 			try {
 				GridSize.ofEdgeLength(this.size);
@@ -293,7 +293,7 @@ public final class StatsService {
 			}
 		}
 	}
-
+	
 	/**
 	 * One uploaded aggregate from a client's local history.
 	 *

@@ -41,7 +41,7 @@ public final class PuzzleFactory {
 		requireMultiplayerSafe(difficulty);
 		return singlePlayerKey(size, variant, difficulty, seed);
 	}
-
+	
 	/**
 	 * Builds a key for content only one player ever solves, where Lisa is an ordinary tier.
 	 * <p>
@@ -59,7 +59,7 @@ public final class PuzzleFactory {
 		}
 		return PuzzleKey.of(size, variant, difficulty, seed);
 	}
-
+	
 	/**
 	 * Rejects Lisa, which carries single-player gameplay modifiers and so has no agreed meaning on a board
 	 * two clients share (server-spec 10.1, 16).
@@ -69,7 +69,7 @@ public final class PuzzleFactory {
 			throw new ApiException(ErrorCode.LISA_NOT_ALLOWED, "Lisa is a single-player difficulty");
 		}
 	}
-
+	
 	/**
 	 * Parses a 1-5 difficulty index from a request for shared content.
 	 *
@@ -85,7 +85,7 @@ public final class PuzzleFactory {
 		requireMultiplayerSafe(difficulty);
 		return difficulty;
 	}
-
+	
 	/**
 	 * Parses a 1-6 difficulty index from a request for single-player content - see {@link #singlePlayerKey}.
 	 *

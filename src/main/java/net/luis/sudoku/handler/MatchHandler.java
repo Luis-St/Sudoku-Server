@@ -24,7 +24,7 @@ public class MatchHandler {
 	private final MatchService matches;
 	private final PresenceService presence;
 	private final RateLimiter rateLimiter;
-
+	
 	public MatchHandler(@NonNull Authentication authentication, @NonNull MatchService matches, @NonNull PresenceService presence, @NonNull RateLimiter rateLimiter) {
 		this.authentication = authentication;
 		this.matches = matches;
@@ -115,15 +115,15 @@ public class MatchHandler {
 		Principal actor = this.authentication.require(ctx);
 		JoinByCodeRequest request = ctx.bodyAsClass(JoinByCodeRequest.class);
 		String code = Requests.require(request.code(), "code");
-
+		
 		// Keyed by caller rather than by IP: the route needs a session, so there is a better identity to
 		// spend the budget against than an address several players may share.
 		this.rateLimiter.check(RateLimiter.Bucket.MATCH_JOIN_CODE, actor.userId().toString());
-
+		
 		Match match = this.matches.joinByCode(actor, code);
 		ctx.json(MatchResponse.of(match, this.matches.participants(match.id())));
 	}
-
+	
 	@OpenApi(
 		summary = "Get a match",
 		operationId = "getMatch",
@@ -162,7 +162,7 @@ public class MatchHandler {
 		}
 		ctx.json(MatchResponse.of(match, this.matches.participants(match.id())));
 	}
-
+	
 	@OpenApi(
 		summary = "Leave a running match",
 		description = "Answering \"no\" to rejoining. Ends the match immediately rather than holding the other players "
@@ -183,7 +183,7 @@ public class MatchHandler {
 		this.matches.resign(actor, Handlers.pathUuid(ctx, "id"));
 		ctx.status(204);
 	}
-
+	
 	@OpenApi(
 		summary = "Cancel a match",
 		description = "The creator calls off a match nobody joined - the lobby's cancel button. Refused with CONFLICT "
@@ -205,7 +205,7 @@ public class MatchHandler {
 		this.matches.cancel(actor, Handlers.pathUuid(ctx, "id"));
 		ctx.status(204);
 	}
-
+	
 	@OpenApi(
 		summary = "Invite a player to a match",
 		description = "Returns the invite token to pass on. Only a participant may invite.",

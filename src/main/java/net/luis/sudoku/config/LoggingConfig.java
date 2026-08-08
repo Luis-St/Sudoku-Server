@@ -1,8 +1,6 @@
 package net.luis.sudoku.config;
 
-import net.luis.utils.logging.LoggerConfiguration;
-import net.luis.utils.logging.LoggingType;
-import net.luis.utils.logging.LoggingUtils;
+import net.luis.utils.logging.*;
 import org.apache.logging.log4j.Level;
 import org.apache.logging.log4j.LogManager;
 import org.jspecify.annotations.NonNull;
@@ -27,19 +25,18 @@ import java.util.Locale;
  * place before the first logger is created, which is before anything else is parsed.
  */
 public final class LoggingConfig {
-
-	/**
-	 * The level used when {@link EnvKeys#LOG_LEVEL} is unset, which is every run outside the container.
-	 */
-	public static final Level DEFAULT_LEVEL = Level.INFO;
-
+	
 	/**
 	 * Every level a console appender exists for, coarsest first. Mirrors {@link LoggingType#CONSOLE}.
 	 */
 	private static final List<Level> CONSOLE_LEVELS = List.of(Level.FATAL, Level.ERROR, Level.WARN, Level.INFO, Level.DEBUG, Level.TRACE);
-
+	/**
+	 * The level used when {@link EnvKeys#LOG_LEVEL} is unset, which is every run outside the container.
+	 */
+	public static final Level DEFAULT_LEVEL = Level.INFO;
+	
 	private LoggingConfig() {}
-
+	
 	/**
 	 * Reads the threshold and installs the logging configuration.
 	 * <p>
@@ -60,15 +57,15 @@ public final class LoggingConfig {
 		} catch (ConfigException e) {
 			problem = e.getMessage();
 		}
-
+		
 		LoggingUtils.initializeOrReconfigure(configuration(level));
-
+		
 		if (problem != null) {
 			LogManager.getLogger(LoggingConfig.class).warn("{}, falling back to {}", problem, level);
 		}
 		return level;
 	}
-
+	
 	/**
 	 * Parses a level name, case insensitively. A blank or absent value means {@link #DEFAULT_LEVEL}.
 	 *
@@ -78,14 +75,14 @@ public final class LoggingConfig {
 		if (value == null || value.isBlank()) {
 			return DEFAULT_LEVEL;
 		}
-
+		
 		Level level = Level.getLevel(value.trim().toUpperCase(Locale.ROOT));
 		if (level == null) {
 			throw new ConfigException(EnvKeys.LOG_LEVEL + " must be one of OFF, FATAL, ERROR, WARN, INFO, DEBUG, TRACE, ALL, got: " + value);
 		}
 		return level;
 	}
-
+	
 	/**
 	 * Builds the console-only configuration for a threshold.
 	 * <p>
@@ -100,7 +97,7 @@ public final class LoggingConfig {
 		LoggerConfiguration configuration = new LoggerConfiguration("*")
 			.setStatusLevel(Level.ERROR)
 			.disableLogging(LoggingType.FILE);
-
+		
 		for (Level level : CONSOLE_LEVELS) {
 			configuration.overrideConsolePattern(level, pattern(level));
 			// Remove first either way: the defaults already contain INFO through FATAL, and adding one
@@ -113,7 +110,7 @@ public final class LoggingConfig {
 		}
 		return configuration;
 	}
-
+	
 	/**
 	 * The pattern for a level, matching what the server printed before logging moved into code.
 	 * <p>

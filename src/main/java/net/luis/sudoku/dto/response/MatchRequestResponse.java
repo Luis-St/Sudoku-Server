@@ -16,7 +16,7 @@ import org.jspecify.annotations.NonNull;
  */
 public record MatchRequestResponse(@NonNull String id, @NonNull String matchId, @NonNull String inviteToken, @NonNull String mode, int stake,
                                    @NonNull String fromUserId, @NonNull String fromDisplayName) {
-
+	
 	public static @NonNull MatchRequestResponse of(@NonNull PendingMatchRequest request) {
 		return new MatchRequestResponse(
 			request.id().toString(),

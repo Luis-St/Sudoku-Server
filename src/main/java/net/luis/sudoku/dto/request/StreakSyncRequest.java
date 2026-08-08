@@ -19,17 +19,17 @@ import java.time.format.DateTimeParseException;
  * @param lastCompletedDate {@code yyyy-MM-dd}, the most recent day that count includes
  */
 public record StreakSyncRequest(@Nullable Integer current, @Nullable String lastCompletedDate) {
-
+	
 	public int requireCurrent() {
 		if (this.current == null) {
 			throw ApiException.badRequest("Missing required field: current");
 		}
 		return this.current;
 	}
-
+	
 	public @NonNull LocalDate parseLastCompletedDate() {
 		String value = Requests.require(this.lastCompletedDate, "lastCompletedDate");
-
+		
 		try {
 			return LocalDate.parse(value);
 		} catch (DateTimeParseException e) {

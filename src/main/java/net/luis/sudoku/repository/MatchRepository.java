@@ -62,7 +62,7 @@ public final class MatchRepository {
 			.where(Sql.equalTo(MATCH_INVITE_TOKEN, code))
 			.where(SqlCondition.anyOf(Sql.equalTo(MATCH_STATE, MatchState.CREATED), Sql.equalTo(MATCH_STATE, MatchState.WAITING)))
 			.fetch();
-
+		
 		Match newest = null;
 		for (Match match : found) {
 			if (newest == null || match.createdAt().isAfter(newest.createdAt())) {
@@ -71,7 +71,7 @@ public final class MatchRepository {
 		}
 		return newest;
 	}
-
+	
 	/**
 	 * @return matches left in a non-terminal state, which after a restart can only be wreckage
 	 *   (spec 9a.3)
@@ -101,7 +101,7 @@ public final class MatchRepository {
 			.where(Sql.equalTo(PARTICIPANT_USER_ID, userId))
 			.where(Sql.equalTo(MATCH_STATE, MatchState.RUNNING))
 			.fetch();
-
+		
 		Match newest = null;
 		for (UUID id : ids) {
 			Match match = this.find(transaction, id);
@@ -111,7 +111,7 @@ public final class MatchRepository {
 		}
 		return newest;
 	}
-
+	
 	public void markRunning(@NonNull SqlTransaction transaction, @NonNull UUID id, @NonNull Instant at) throws SqlException {
 		transaction.from(MATCHES).update().set(MATCH_STATE, MatchState.RUNNING).set(MATCH_STARTED_AT, at)
 			.where(Sql.equalTo(MATCH_ID, id)).execute();

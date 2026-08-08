@@ -28,8 +28,8 @@ package net.luis.sudoku;
  * guard so an older server binary still starts against a newer database.
  */
 public final class ApiVersion {
-
+	
 	public static final int CURRENT = 1;
-
+	
 	private ApiVersion() {}
 }

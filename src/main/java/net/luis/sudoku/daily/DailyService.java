@@ -33,10 +33,6 @@ import java.util.concurrent.atomic.AtomicReference;
 public final class DailyService {
 	
 	private static final Logger log = LoggerFactory.getLogger(DailyService.class);
-	
-	/** Rhubarb per missed day repaired by spending a restore point. */
-	public static final int RESTORE_COST_PER_DAY = 10;
-
 	/**
 	 * The longest run {@link #syncStreak} will adopt from a client's own count.
 	 * <p>
@@ -45,7 +41,8 @@ public final class DailyService {
 	 * rather than stored as somebody's record.
 	 */
 	private static final int MAX_SYNCED_STREAK = 3650;
-
+	/** Rhubarb per missed day repaired by spending a restore point. */
+	public static final int RESTORE_COST_PER_DAY = 10;
 	private final Database database;
 	private final ServerConfig config;
 	private final String serverId;
@@ -202,7 +199,7 @@ public final class DailyService {
 	public @NonNull Streak streak(@NonNull UUID userId) {
 		return this.database.read(connection -> this.streaks.find(connection, userId));
 	}
-
+	
 	/**
 	 * Adopts a streak a client counted locally, when it knows about more days than the server does
 	 * (spec 8.3).
@@ -230,7 +227,7 @@ public final class DailyService {
 		if (claimedLastCompleted.isAfter(this.today())) {
 			throw new ApiException(ErrorCode.DAILY_DATE_INVALID, "That streak ends in the future");
 		}
-
+		
 		return this.database.transaction(connection -> {
 			Streak stored = this.streaks.findForUpdate(connection, actor.userId());
 			Streak merged = stored.mergedWith(claimedCurrent, claimedLastCompleted);

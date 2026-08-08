@@ -6,9 +6,7 @@ import net.luis.sudoku.auth.Authentication;
 import net.luis.sudoku.daily.DailyService;
 import net.luis.sudoku.domain.Principal;
 import net.luis.sudoku.domain.Streak;
-import net.luis.sudoku.dto.request.DailyResultRequest;
-import net.luis.sudoku.dto.request.PreferencesRequest;
-import net.luis.sudoku.dto.request.StreakSyncRequest;
+import net.luis.sudoku.dto.request.*;
 import net.luis.sudoku.dto.response.*;
 import net.luis.sudoku.error.ApiException;
 import net.luis.sudoku.permission.Permission;
@@ -134,11 +132,11 @@ public class DailyHandler {
 	public void syncStreak(@NonNull Context ctx) {
 		Principal actor = this.authentication.require(ctx, Permission.CAN_PLAY);
 		StreakSyncRequest request = ctx.bodyAsClass(StreakSyncRequest.class);
-
+		
 		Streak merged = this.daily.syncStreak(actor, request.requireCurrent(), request.parseLastCompletedDate());
 		ctx.json(DailyResultResponse.StreakResponse.of(merged));
 	}
-
+	
 	@OpenApi(
 		summary = "Get your daily streak",
 		description = "Current and longest run, and banked restore points.",

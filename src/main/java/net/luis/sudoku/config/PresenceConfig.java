@@ -16,7 +16,7 @@ import org.jspecify.annotations.NonNull;
  *   because it names a specific match that somebody is waiting in
  */
 public record PresenceConfig(int onlineTtlSeconds, int matchRequestTtlSeconds) {
-
+	
 	public PresenceConfig {
 		if (onlineTtlSeconds < 1) {
 			throw new ConfigException(EnvKeys.PRESENCE_ONLINE_TTL + " must be at least 1, got: " + onlineTtlSeconds);
@@ -25,7 +25,7 @@ public record PresenceConfig(int onlineTtlSeconds, int matchRequestTtlSeconds) {
 			throw new ConfigException(EnvKeys.PRESENCE_REQUEST_TTL + " must be at least 1, got: " + matchRequestTtlSeconds);
 		}
 	}
-
+	
 	static @NonNull PresenceConfig from(@NonNull Env env) {
 		return new PresenceConfig(
 			env.integer(EnvKeys.PRESENCE_ONLINE_TTL, 15),

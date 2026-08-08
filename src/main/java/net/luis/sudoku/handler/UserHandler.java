@@ -5,9 +5,7 @@ import io.javalin.openapi.*;
 import net.luis.sudoku.auth.Authentication;
 import net.luis.sudoku.domain.Principal;
 import net.luis.sudoku.dto.request.ChangeRoleRequest;
-import net.luis.sudoku.dto.response.AccountResponse;
-import net.luis.sudoku.dto.response.ErrorResponse;
-import net.luis.sudoku.dto.response.UserResponse;
+import net.luis.sudoku.dto.response.*;
 import net.luis.sudoku.permission.UserAdminService;
 import org.jspecify.annotations.NonNull;
 
@@ -57,7 +55,7 @@ public class UserHandler {
 		Principal actor = this.authentication.require(ctx);
 		ctx.json(AccountResponse.of(actor.user()));
 	}
-
+	
 	@OpenApi(
 		summary = "Change a user's role",
 		description = "Requires CAN_CHANGE_ROLE. Rejected with LAST_ADMIN if it would leave zero administrators.",
@@ -100,7 +98,7 @@ public class UserHandler {
 		this.admin.kick(actor, Handlers.pathUuid(ctx, "id"));
 		ctx.status(204);
 	}
-
+	
 	@OpenApi(
 		summary = "Reinstate a kicked user",
 		description = "Requires CAN_KICK. Undoes a kick: clears the revocation and restores the device keys the kick "

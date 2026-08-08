@@ -4,10 +4,7 @@ import io.javalin.Javalin;
 import io.javalin.config.JavalinConfig;
 import io.javalin.openapi.plugin.OpenApiPlugin;
 import io.javalin.openapi.plugin.swagger.SwaggerPlugin;
-import net.luis.sudoku.config.ConfigException;
-import net.luis.sudoku.config.Env;
-import net.luis.sudoku.config.LoggingConfig;
-import net.luis.sudoku.config.ServerConfig;
+import net.luis.sudoku.config.*;
 import net.luis.sudoku.error.ErrorHandlerConfig;
 import net.luis.sudoku.handler.*;
 import net.luis.sudoku.security.ClientIp;
@@ -22,28 +19,20 @@ import java.time.Duration;
 import java.util.UUID;
 
 public class Application {
-
+	
 	/**
 	 * Log4j2's own logger rather than SLF4J, because this is the only class that needs {@code FATAL}:
 	 * everything it logs at that level is a failure to start, which SLF4J cannot express. Every other
 	 * class logs through SLF4J as before - both ends up in the same log4j2 configuration.
 	 */
 	private static final Logger log;
-
-	static {
-		// Before the first logger exists anywhere, including the static fields of everything the graph
-		// constructs. Reading one variable here rather than in ServerConfig is deliberate: a configuration
-		// error has to be loggable, so logging cannot wait for configuration to parse.
-		LoggingConfig.apply(Env.ofSystem());
-		log = LogManager.getLogger(Application.class);
-	}
-
+	
 	static void main() {
 		// Housekeeping, match queues, the puzzle refill pool and both shutdown hooks all run on threads
 		// nobody catches for. Without this, a thread dying takes its stack trace to stderr, which in a
 		// warn-only production log is the one place nobody is looking.
 		Thread.setDefaultUncaughtExceptionHandler(new LoggingExceptionHandler());
-
+		
 		ServerConfig config;
 		try {
 			config = ServerConfig.fromEnvironment();
@@ -53,7 +42,7 @@ public class Application {
 			System.exit(1);
 			return;
 		}
-
+		
 		ServiceGraph services;
 		try {
 			services = new ServiceGraph(config);
@@ -66,13 +55,13 @@ public class Application {
 			return;
 		}
 		Runtime.getRuntime().addShutdownHook(new Thread(services::close, "services-shutdown"));
-
+		
 		log.info("Server id {} (daily {}x{} {}, rollover zone {})", services.serverId(), config.dailySize().n(), config.dailySize().n(), config.dailyVariant(), config.timezone().getId());
 		log.info("shared-core genVersion {}, API version {}", GenVersion.CURRENT, ApiVersion.CURRENT);
-
+		
 		Javalin app = Javalin.create(javalin -> configure(javalin, services));
 		Runtime.getRuntime().addShutdownHook(new Thread(app::stop, "javalin-shutdown"));
-
+		
 		try {
 			app.start(config.port());
 		} catch (RuntimeException e) {
@@ -92,7 +81,7 @@ public class Application {
 	static void configure(@NonNull JavalinConfig javalin, @NonNull ServiceGraph services) {
 		javalin.startup.showJavalinBanner = false;
 		javalin.http.defaultContentType = "application/json";
-
+		
 		// Jetty closes an idle WebSocket after 30 seconds by default, which is *shorter than a player
 		// thinking about a cell*: a co-op or race match sends nothing at all while nobody is typing, so a
 		// perfectly healthy connection was being dropped mid-match and reported to the other side as a
@@ -103,7 +92,7 @@ public class Application {
 			factory.setIdleTimeout(Duration.ofSeconds(MatchSocketHandler.SOCKET_IDLE_TIMEOUT_SECONDS));
 			factory.setMaxTextMessageSize(MatchSocketHandler.MAX_FRAME_BYTES);
 		});
-
+		
 		javalin.registerPlugin(new OpenApiPlugin(pluginConfig ->
 			pluginConfig.withDefinitionConfiguration((_, definition) ->
 				definition.info(info ->
@@ -212,12 +201,20 @@ public class Application {
 		javalin.routes.post("/api/v1/matches/{id}/request", matchHandler::request);
 		javalin.routes.post("/api/v1/matches/{id}/resign", matchHandler::resign);
 		javalin.routes.ws("/ws/v1/matches/{id}", matchSocketHandler);
-
+		
 		// Presence: the heartbeat every signed-in client sends, and the match requests it collects. There is no
 		// presence WebSocket - an open socket is a worse answer to "is this player there" than a recent
 		// timestamp; see PresenceService.
 		javalin.routes.post("/api/v1/presence/heartbeat", presenceHandler::heartbeat);
 		javalin.routes.post("/api/v1/presence/offline", presenceHandler::offline);
 		javalin.routes.delete("/api/v1/match-requests/{id}", presenceHandler::dismissRequest);
+	}
+	
+	static {
+		// Before the first logger exists anywhere, including the static fields of everything the graph
+		// constructs. Reading one variable here rather than in ServerConfig is deliberate: a configuration
+		// error has to be loggable, so logging cannot wait for configuration to parse.
+		LoggingConfig.apply(Env.ofSystem());
+		log = LogManager.getLogger(Application.class);
 	}
 }

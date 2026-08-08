@@ -23,9 +23,9 @@ import java.util.concurrent.atomic.AtomicInteger;
  * of a timestamp list.
  */
 public final class RateLimiter {
-
+	
 	private static final Logger log = LoggerFactory.getLogger(RateLimiter.class);
-
+	
 	private final Clock clock;
 	private final Map<String, Window> windows = new ConcurrentHashMap<>();
 	

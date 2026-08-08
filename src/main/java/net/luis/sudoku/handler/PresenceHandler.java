@@ -5,9 +5,7 @@ import io.javalin.openapi.*;
 import net.luis.sudoku.auth.Authentication;
 import net.luis.sudoku.config.PresenceConfig;
 import net.luis.sudoku.domain.Principal;
-import net.luis.sudoku.dto.response.ErrorResponse;
-import net.luis.sudoku.dto.response.HeartbeatResponse;
-import net.luis.sudoku.dto.response.MatchRequestResponse;
+import net.luis.sudoku.dto.response.*;
 import net.luis.sudoku.presence.PresenceService;
 import org.jspecify.annotations.NonNull;
 
@@ -21,17 +19,17 @@ import java.util.List;
  * open socket could - see {@link PresenceService} for why that mattered enough to change.
  */
 public class PresenceHandler {
-
+	
 	private final Authentication authentication;
 	private final PresenceService presence;
 	private final PresenceConfig config;
-
+	
 	public PresenceHandler(@NonNull Authentication authentication, @NonNull PresenceService presence, @NonNull PresenceConfig config) {
 		this.authentication = authentication;
 		this.presence = presence;
 		this.config = config;
 	}
-
+	
 	@OpenApi(
 		summary = "Report this client as running",
 		description = "Called on a timer for as long as the app is in the foreground and signed in; that repetition is "
@@ -46,13 +44,13 @@ public class PresenceHandler {
 	)
 	public void heartbeat(@NonNull Context ctx) {
 		Principal actor = this.authentication.require(ctx);
-
+		
 		List<MatchRequestResponse> requests = this.presence.heartbeat(actor.userId()).stream()
 			.map(MatchRequestResponse::of)
 			.toList();
 		ctx.json(new HeartbeatResponse(this.config.onlineTtlSeconds(), requests));
 	}
-
+	
 	@OpenApi(
 		summary = "Go offline now",
 		description = "Sign-out and backgrounding call this so the caller stops showing as online immediately rather "
@@ -69,7 +67,7 @@ public class PresenceHandler {
 		this.presence.goOffline(actor.userId());
 		ctx.status(204);
 	}
-
+	
 	@OpenApi(
 		summary = "Dismiss a match request",
 		description = "Called by the invited player once they have accepted or declined. Idempotent: an id that is "

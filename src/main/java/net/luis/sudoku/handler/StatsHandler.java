@@ -12,9 +12,7 @@ import net.luis.sudoku.presence.PresenceService;
 import net.luis.sudoku.stats.StatsService;
 import org.jspecify.annotations.NonNull;
 
-import java.util.List;
-import java.util.Set;
-import java.util.UUID;
+import java.util.*;
 
 /**
  * Player browsing and statistics (server-spec 9).
@@ -84,11 +82,11 @@ public class StatsHandler {
 	public void recordGames(@NonNull Context ctx) {
 		Principal actor = this.authentication.require(ctx);
 		GameResultsRequest request = ctx.bodyAsClass(GameResultsRequest.class);
-
+		
 		int recorded = this.stats.recordGames(actor, request.parseGames());
 		ctx.json(new GameResultsResponse(recorded));
 	}
-
+	
 	@OpenApi(
 		summary = "Upload local single-player history",
 		description = "Called once on the offline-to-online transition. Local daily streaks are NOT merged; server "

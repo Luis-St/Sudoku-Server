@@ -18,7 +18,7 @@ import org.jspecify.annotations.Nullable;
  * @param emailVerified whether {@code email} has completed the verification round-trip
  */
 public record AccountResponse(@NonNull String id, @NonNull String displayName, @NonNull String role, @Nullable String email, boolean emailVerified) {
-
+	
 	public static @NonNull AccountResponse of(@NonNull User user) {
 		return new AccountResponse(user.id().toString(), user.displayName(), user.role().name(), user.email(), user.emailVerified());
 	}

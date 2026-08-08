@@ -11,12 +11,8 @@ import org.jspecify.annotations.NonNull;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.time.Clock;
-import java.time.Duration;
-import java.time.Instant;
-import java.util.List;
-import java.util.Set;
-import java.util.UUID;
+import java.time.*;
+import java.util.*;
 
 /**
  * Who is online, and the match requests waiting for them (feature-spec 9.7).
@@ -37,21 +33,21 @@ import java.util.UUID;
  * would not be.
  */
 public final class PresenceService {
-
+	
 	private static final Logger log = LoggerFactory.getLogger(PresenceService.class);
-
+	
 	/**
 	 * How long a heartbeat that can never be online again is kept before housekeeping drops it. Generous
 	 * on purpose - the row is one primary key and one timestamp, and pruning it early buys nothing.
 	 */
 	private static final Duration STALE_RETENTION = Duration.ofHours(1);
-
+	
 	private final Database database;
 	private final PresenceRepository presence;
 	private final MatchRequestRepository requests;
 	private final PresenceConfig config;
 	private final Clock clock;
-
+	
 	public PresenceService(
 		@NonNull Database database, @NonNull PresenceRepository presence, @NonNull MatchRequestRepository requests, @NonNull PresenceConfig config, @NonNull Clock clock
 	) {
@@ -61,7 +57,7 @@ public final class PresenceService {
 		this.config = config;
 		this.clock = clock;
 	}
-
+	
 	/**
 	 * Records that this player's client is running, and hands back whatever is waiting for them.
 	 * <p>
@@ -83,7 +79,7 @@ public final class PresenceService {
 			return this.requests.findPending(transaction, userId, now);
 		});
 	}
-
+	
 	/**
 	 * Takes this player offline now, rather than when their last heartbeat goes stale.
 	 * <p>
@@ -93,15 +89,15 @@ public final class PresenceService {
 	public void goOffline(@NonNull UUID userId) {
 		this.database.execute(transaction -> this.presence.clear(transaction, userId));
 	}
-
+	
 	public @NonNull Set<UUID> onlineUsers() {
 		return this.database.read(transaction -> this.presence.onlineSince(transaction, this.onlineSince()));
 	}
-
+	
 	public boolean isOnline(@NonNull UUID userId) {
 		return this.database.read(transaction -> this.presence.isOnlineSince(transaction, userId, this.onlineSince()));
 	}
-
+	
 	/**
 	 * Stores a request for {@code target} to join {@code match}.
 	 * <p>
@@ -114,7 +110,7 @@ public final class PresenceService {
 	public void requestMatch(@NonNull UUID targetUserId, @NonNull Match match, @NonNull UUID fromUserId) {
 		Instant now = this.clock.instant();
 		Instant expiresAt = now.plusSeconds(this.config.matchRequestTtlSeconds());
-
+		
 		this.database.execute(transaction -> {
 			if (!this.presence.isOnlineSince(transaction, targetUserId, now.minusSeconds(this.config.onlineTtlSeconds()))) {
 				throw new ApiException(ErrorCode.PLAYER_OFFLINE, "That player is not online");
@@ -123,7 +119,7 @@ public final class PresenceService {
 			this.requests.create(transaction, targetUserId, match.id(), fromUserId, expiresAt, now);
 		});
 	}
-
+	
 	/**
 	 * Removes a request the invited player has answered - by accepting it or by declining.
 	 * <p>
@@ -144,7 +140,7 @@ public final class PresenceService {
 			this.requests.delete(transaction, requestId);
 		});
 	}
-
+	
 	/**
 	 * Drops expired requests and long-stale heartbeats. Called from the housekeeping pass; neither is
 	 * visible to a client before this runs, so it is purely about table size.
@@ -159,7 +155,7 @@ public final class PresenceService {
 			}
 		});
 	}
-
+	
 	/** The oldest heartbeat that still counts as online. */
 	private @NonNull Instant onlineSince() {
 		return this.clock.instant().minusSeconds(this.config.onlineTtlSeconds());

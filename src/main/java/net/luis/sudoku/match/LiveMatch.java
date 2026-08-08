@@ -109,12 +109,12 @@ public abstract class LiveMatch {
 	public void onConnect(@NonNull Connection connection) {
 		UUID userId = connection.userId();
 		ParticipantState participant = this.participants.computeIfAbsent(userId, id -> new ParticipantState(id, connection.displayName()));
-
+		
 		// Returning from a drop: the grace timer stops and the match resumes.
 		boolean resumed = participant.reconnects > 0 && this.cancelGrace();
 		this.connections.put(userId, connection);
 		participant.connected = true;
-
+		
 		// MATCH_STATE on every connect and reconnect makes the protocol resynchronising by
 		// construction: the client replaces its state wholesale rather than trying to patch (spec 10.3).
 		if (resumed) {
@@ -140,7 +140,7 @@ public abstract class LiveMatch {
 	public void onDisconnect(@NonNull UUID userId, boolean explicit) {
 		this.onDisconnect(userId, null, explicit);
 	}
-
+	
 	/**
 	 * Detaches a specific connection. Called on the queue.
 	 *
@@ -152,7 +152,7 @@ public abstract class LiveMatch {
 		if (participant == null || this.ended) {
 			return;
 		}
-
+		
 		Connection current = this.connections.get(userId);
 		if (connection != null && current != null && current != connection) {
 			// A close for a socket this participant has already replaced. Acting on it would drop the live
@@ -160,7 +160,7 @@ public abstract class LiveMatch {
 			log.debug("Match {}: ignoring a stale close for user {}", this.match.id(), userId);
 			return;
 		}
-
+		
 		this.connections.remove(userId);
 		participant.connected = false;
 		
@@ -202,7 +202,7 @@ public abstract class LiveMatch {
 	private void startGrace(@NonNull ParticipantState dropped) {
 		this.cancelGrace();
 		int seconds = this.config.reconnectGraceSeconds();
-
+		
 		// Who dropped, by name. The waiting players are being asked to sit still for up to a minute, and
 		// "a participant" is not enough to decide whether that is worth doing - in a four-player co-op it does
 		// not even say how much of the group is missing. The id travels too, so a client can tell the pause is
@@ -213,7 +213,7 @@ public abstract class LiveMatch {
 			"disconnectedUserId", dropped.userId().toString(),
 			"disconnectedName", dropped.displayName()
 		)));
-
+		
 		this.graceTimer = this.schedule(() -> {
 			log.info("Match {}: reconnect grace expired", this.match.id());
 			this.endMatch(null, EndReason.DISCONNECTED);

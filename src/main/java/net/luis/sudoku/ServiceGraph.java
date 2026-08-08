@@ -284,11 +284,11 @@ public final class ServiceGraph implements AutoCloseable {
 	public @NonNull MatchRepository matchRepository() {
 		return this.matchRepository;
 	}
-
+	
 	public @NonNull PresenceRepository presenceRepository() {
 		return this.presenceRepository;
 	}
-
+	
 	public @NonNull MatchRequestRepository matchRequests() {
 		return this.matchRequests;
 	}

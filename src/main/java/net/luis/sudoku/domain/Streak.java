@@ -93,7 +93,7 @@ public record Streak(@NonNull UUID userId, int current, int longest, @Nullable L
 			: this.lastCompletedDate;
 		return new Streak(this.userId, claimedCurrent, Math.max(claimedCurrent, this.longest), anchor, this.restorePoints);
 	}
-
+	
 	/**
 	 * Spends {@code days} restore points to repair a gap through {@code through} (typically yesterday),
 	 * so a normal submission today sees a consecutive continuation.

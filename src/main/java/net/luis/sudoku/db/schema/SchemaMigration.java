@@ -45,7 +45,7 @@ public final class SchemaMigration {
 	
 	/** Every migration, in version order. */
 	public static final List<SqlMigration> ALL = List.of(new InitialSchema(), new PresencePolling(), new ReinstatableKicks(), new MatchHintSetting(), new RecordedGames());
-
+	
 	/** The version the schema is at once {@link #ALL} has been applied, reported by {@code /health}. */
 	public static final int CURRENT_VERSION = 5;
 	
@@ -113,7 +113,7 @@ public final class SchemaMigration {
 			// CURRENT_VERSION moves with every one appended after it.
 			return Version.of(1, 0);
 		}
-
+		
 		@Override
 		public @NonNull String description() {
 			return "initial schema";
@@ -187,7 +187,7 @@ public final class SchemaMigration {
 			}
 		}
 	}
-
+	
 	/**
 	 * Presence as a heartbeat table plus stored match requests, replacing the presence WebSocket.
 	 * <p>
@@ -197,36 +197,36 @@ public final class SchemaMigration {
 	 * there is no longer a connection to push it down.
 	 */
 	private static final class PresencePolling implements SqlMigration {
-
+		
 		@Override
 		public @NonNull Version version() {
 			return Version.of(2, 0);
 		}
-
+		
 		@Override
 		public @NonNull String description() {
 			return "presence heartbeats and stored match requests";
 		}
-
+		
 		@Override
 		public void up(@NonNull SqlMigrationBuilder builder, @NonNull SqlMigrationSchema schema) throws SqlException {
 			table(builder, PRESENCE, PRESENCE_USER_ID);
 			table(builder, MATCH_REQUESTS, REQUEST_ID);
-
+			
 			// Read on every heartbeat - the one query on this table that is not by primary key.
 			builder.createIndex(MATCH_REQUESTS, "match_requests_target_idx", index -> index.columns(REQUEST_TARGET_USER_ID));
 			// Deliberately no index on presence.last_seen_at, the column every heartbeat rewrites: indexing it
 			// would rule out Postgres' heap-only tuple updates on the server's most frequently written row, to
 			// speed up a scan of at most one row per registered player. The primary key is the only index here.
 		}
-
+		
 		@Override
 		public void down(@NonNull SqlMigrationBuilder builder, @NonNull SqlMigrationSchema schema) throws SqlException {
 			builder.dropTable(MATCH_REQUESTS);
 			builder.dropTable(PRESENCE);
 		}
 	}
-
+	
 	/**
 	 * Records which device revocations came from a kick, so a kick can be undone (spec 7.2).
 	 * <p>
@@ -269,24 +269,24 @@ public final class SchemaMigration {
 	 * before does not.
 	 */
 	private static final class MatchHintSetting implements SqlMigration {
-
+		
 		@Override
 		public @NonNull Version version() {
 			return Version.of(4, 0);
 		}
-
+		
 		@Override
 		public @NonNull String description() {
 			return "make hints a per-match setting";
 		}
-
+		
 		@Override
 		public void up(@NonNull SqlMigrationBuilder builder, @NonNull SqlMigrationSchema schema) throws SqlException {
 			if (!schema.hasColumn(MATCHES.name(), MATCH_HINTS_ENABLED.name())) {
 				builder.addColumn(MATCH_HINTS_ENABLED, MATCH_HINTS_ENABLED.type(), options -> options.notNull().defaultValue(true));
 			}
 		}
-
+		
 		@Override
 		public void down(@NonNull SqlMigrationBuilder builder, @NonNull SqlMigrationSchema schema) throws SqlException {
 			if (schema.hasColumn(MATCHES.name(), MATCH_HINTS_ENABLED.name())) {
@@ -296,24 +296,24 @@ public final class SchemaMigration {
 	}
 	
 	private static final class ReinstatableKicks implements SqlMigration {
-
+		
 		@Override
 		public @NonNull Version version() {
 			return Version.of(3, 0);
 		}
-
+		
 		@Override
 		public @NonNull String description() {
 			return "record kick-revoked devices so a kick can be reversed";
 		}
-
+		
 		@Override
 		public void up(@NonNull SqlMigrationBuilder builder, @NonNull SqlMigrationSchema schema) throws SqlException {
 			if (!schema.hasColumn(DEVICES.name(), DEVICE_REVOKED_BY_KICK.name())) {
 				builder.addColumn(DEVICE_REVOKED_BY_KICK, DEVICE_REVOKED_BY_KICK.type(), options -> options.notNull().defaultValue(false));
 			}
 		}
-
+		
 		@Override
 		public void down(@NonNull SqlMigrationBuilder builder, @NonNull SqlMigrationSchema schema) throws SqlException {
 			if (schema.hasColumn(DEVICES.name(), DEVICE_REVOKED_BY_KICK.name())) {
@@ -321,7 +321,7 @@ public final class SchemaMigration {
 			}
 		}
 	}
-
+	
 	/**
 	 * Remembers which finished games have already been folded into {@code stats}, so that uploading one
 	 * can be retried (spec 9).
@@ -340,25 +340,25 @@ public final class SchemaMigration {
 	 * and no others, and this one is not among them.
 	 */
 	private static final class RecordedGames implements SqlMigration {
-
+		
 		@Override
 		public @NonNull Version version() {
 			return Version.of(5, 0);
 		}
-
+		
 		@Override
 		public @NonNull String description() {
 			return "remember folded games so a stats upload can be retried";
 		}
-
+		
 		@Override
 		public void up(@NonNull SqlMigrationBuilder builder, @NonNull SqlMigrationSchema schema) throws SqlException {
 			table(builder, RECORDED_GAMES, RECORDED_USER_ID, RECORDED_GAME_ID);
-
+			
 			// The rollover prunes this table by age, which is the one query on it that is not by primary key.
 			builder.createIndex(RECORDED_GAMES, "recorded_games_recorded_at_idx", index -> index.columns(RECORDED_AT));
 		}
-
+		
 		@Override
 		public void down(@NonNull SqlMigrationBuilder builder, @NonNull SqlMigrationSchema schema) throws SqlException {
 			builder.dropTable(RECORDED_GAMES);

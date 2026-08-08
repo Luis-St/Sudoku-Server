@@ -51,7 +51,7 @@ public final class DeviceRepository {
 	public void revoke(@NonNull SqlTransaction transaction, @NonNull UUID id) throws SqlException {
 		transaction.from(DEVICES).update().set(DEVICE_REVOKED, true).where(Sql.equalTo(DEVICE_ID, id)).execute();
 	}
-
+	
 	/**
 	 * Revokes every key belonging to a user. This is what makes a kick stick: merely dropping the
 	 * connection would let the client reconnect with the same key (server-spec 7.2).
@@ -66,7 +66,7 @@ public final class DeviceRepository {
 		return transaction.from(DEVICES).update().set(DEVICE_REVOKED, true).set(DEVICE_REVOKED_BY_KICK, true)
 			.where(Sql.equalTo(DEVICE_USER_ID, userId)).where(Sql.equalTo(DEVICE_REVOKED, false)).execute();
 	}
-
+	
 	/**
 	 * Gives back exactly the keys a kick took, undoing {@link #revokeAllForUser} (server-spec 7.2).
 	 *
@@ -76,7 +76,7 @@ public final class DeviceRepository {
 		return transaction.from(DEVICES).update().set(DEVICE_REVOKED, false).set(DEVICE_REVOKED_BY_KICK, false)
 			.where(Sql.equalTo(DEVICE_USER_ID, userId)).where(Sql.equalTo(DEVICE_REVOKED_BY_KICK, true)).execute();
 	}
-
+	
 	public int countActiveForUser(@NonNull SqlTransaction transaction, @NonNull UUID userId) throws SqlException {
 		return transaction.from(DEVICES).select(Sql.count(DEVICE_ID, false))
 			.where(Sql.equalTo(DEVICE_USER_ID, userId)).where(Sql.equalTo(DEVICE_REVOKED, false))

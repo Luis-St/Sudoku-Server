@@ -19,7 +19,7 @@ import static net.luis.sudoku.db.schema.Schema.*;
  * what the game <em>was</em> lives in the aggregate it was added to.
  */
 public final class RecordedGameRepository {
-
+	
 	/**
 	 * Claims {@code gameId} for this user.
 	 * <p>
@@ -37,14 +37,14 @@ public final class RecordedGameRepository {
 		transaction.from(RECORDED_GAMES).insert(new Schema.RecordedGameRow(userId, gameId, now)).execute();
 		return true;
 	}
-
+	
 	public boolean isRecorded(@NonNull SqlTransaction transaction, @NonNull UUID userId, @NonNull UUID gameId) throws SqlException {
 		return transaction.from(RECORDED_GAMES).select(RECORDED_GAME_ID)
 			.where(Sql.equalTo(RECORDED_USER_ID, userId))
 			.where(Sql.equalTo(RECORDED_GAME_ID, gameId))
 			.fetchOneOrNull() != null;
 	}
-
+	
 	/**
 	 * Drops claims old enough that no client is still retrying them, so the table stays the size of the
 	 * recent upload traffic rather than of every game ever played on this server.

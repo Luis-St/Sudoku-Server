@@ -5,9 +5,7 @@ import net.luis.sudoku.stats.StatsService.PlayedGame;
 import org.jspecify.annotations.NonNull;
 import org.jspecify.annotations.Nullable;
 
-import java.util.ArrayList;
-import java.util.List;
-import java.util.UUID;
+import java.util.*;
 
 /**
  * Body of {@code POST /api/v1/stats/games} (server-spec 9): finished single-player games, uploaded as
@@ -19,12 +17,12 @@ import java.util.UUID;
  * @param games the finished games
  */
 public record GameResultsRequest(@Nullable List<PlayedGameBody> games) {
-
+	
 	public @NonNull List<PlayedGame> parseGames() {
 		if (this.games == null || this.games.isEmpty()) {
 			return List.of();
 		}
-
+		
 		List<PlayedGame> parsed = new ArrayList<>(this.games.size());
 		for (PlayedGameBody game : this.games) {
 			if (game == null) {
@@ -34,7 +32,7 @@ public record GameResultsRequest(@Nullable List<PlayedGameBody> games) {
 		}
 		return parsed;
 	}
-
+	
 	/**
 	 * One finished game.
 	 *
@@ -55,14 +53,14 @@ public record GameResultsRequest(@Nullable List<PlayedGameBody> games) {
 		@Nullable Long elapsedMs,
 		@Nullable Integer hintsUsed
 	) {
-
+		
 		private static int require(@Nullable Integer value, @NonNull String field) {
 			if (value == null) {
 				throw ApiException.badRequest("Missing required field in stats upload: " + field);
 			}
 			return value;
 		}
-
+		
 		private @NonNull PlayedGame toPlayedGame() {
 			UUID id;
 			try {

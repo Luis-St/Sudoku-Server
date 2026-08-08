@@ -29,7 +29,7 @@ public final class CoopMatch extends LiveMatch {
 	private final int holes;
 	/** cell index -&gt; bitmask of noted digits, bit {@code d} for digit {@code d}. Shared by the whole group. */
 	private final Map<Integer, Integer> notes = new LinkedHashMap<>();
-
+	
 	private int sharedLivesLeft = SHARED_LIVES;
 	/**
 	 * The one hint currently on offer, or null. One per match, not one per player: everybody is looking at
@@ -110,7 +110,7 @@ public final class CoopMatch extends LiveMatch {
 			// The notes on a solved cell annotate nothing. Dropped here rather than left for the clients to
 			// forget individually, so a reconnecting player is not handed candidates for a filled cell.
 			this.notes.remove(cell);
-			if (Integer.valueOf(cell).equals(this.hintCell)) {
+			if (cell.equals(this.hintCell)) {
 				// The offer has been taken - by its owner spending it, or by anybody simply solving the cell
 				// first, which is just as good an answer to "look here".
 				this.clearHint();
@@ -225,12 +225,12 @@ public final class CoopMatch extends LiveMatch {
 		if (this.state() != MatchState.RUNNING || this.hasEnded() || !this.match.hintsEnabled()) {
 			return;
 		}
-
+		
 		if (payload.get("clear") instanceof Boolean clear && clear) {
 			this.clearHint();
 			return;
 		}
-
+		
 		Integer cell = MatchPayloads.cell(payload, this.size());
 		if (cell == null || this.filled.get(cell) || this.puzzle.puzzle().cell(cell).isGiven()) {
 			return;
@@ -241,12 +241,12 @@ public final class CoopMatch extends LiveMatch {
 			this.sendTo(userId, this.hintMessage());
 			return;
 		}
-
+		
 		this.hintCell = cell;
 		this.hintOwner = userId;
 		this.broadcast(this.hintMessage());
 	}
-
+	
 	/** Drops the pending offer, if there is one, and tells everybody. */
 	private void clearHint() {
 		if (this.hintCell == null) {
@@ -256,14 +256,14 @@ public final class CoopMatch extends LiveMatch {
 		this.hintOwner = null;
 		this.broadcast(this.hintMessage());
 	}
-
+	
 	private @NonNull MessageEnvelope hintMessage() {
 		Map<String, Object> payload = new HashMap<>();
 		payload.put("cell", this.hintCell);
 		payload.put("byUser", this.hintOwner == null ? null : this.hintOwner.toString());
 		return new MessageEnvelope(MessageType.HINT.name(), 0, System.currentTimeMillis(), payload);
 	}
-
+	
 	private void onResign(@NonNull UUID userId) {
 		this.participants().remove(userId);
 		if (userId.equals(this.hintOwner)) {
@@ -315,7 +315,7 @@ public final class CoopMatch extends LiveMatch {
 			this.clearHint();
 		}
 	}
-
+	
 	int sharedLivesLeft() {
 		return this.sharedLivesLeft;
 	}

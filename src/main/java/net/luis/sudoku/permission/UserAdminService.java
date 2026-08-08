@@ -168,7 +168,7 @@ public final class UserAdminService {
 	 */
 	public @NonNull User reinstate(@NonNull Principal actor, @NonNull UUID targetId) {
 		actor.require(Permission.CAN_KICK);
-
+		
 		User reinstated = this.database.transaction(connection -> {
 			User user = this.users.findForUpdate(connection, targetId);
 			if (user == null) {
@@ -177,13 +177,13 @@ public final class UserAdminService {
 			if (!user.revoked()) {
 				return user;
 			}
-
+			
 			this.users.reinstate(connection, targetId);
 			int restoredDevices = this.devices.restoreKickRevokedForUser(connection, targetId);
 			log.info("Reinstate restored {} device keys for user {}", restoredDevices, targetId);
 			return new User(user.id(), user.displayName(), user.role(), user.createdAt(), false, user.email(), user.emailVerified());
 		});
-
+		
 		// No session is issued here. The account can authenticate again, but it is the returning client that
 		// has to do it - it still holds the private key, and the challenge/response handshake is the only
 		// thing that proves it.
@@ -191,7 +191,7 @@ public final class UserAdminService {
 			reinstated.displayName(), reinstated.id());
 		return reinstated;
 	}
-
+	
 	/**
 	 * Revokes one device, guarding the case where it is the last key of the last admin.
 	 *

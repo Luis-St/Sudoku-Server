@@ -29,10 +29,11 @@ import java.util.function.Consumer;
 public class MatchSocketHandler implements Consumer<WsConfig> {
 	
 	private static final Logger log = LoggerFactory.getLogger(MatchSocketHandler.class);
-	
+	/** Spec 12: the message rate per connection is limited. */
+	private static final int MAX_MESSAGES_PER_WINDOW = 120;
+	private static final long RATE_WINDOW_MS = 10_000;
 	/** Spec 12: WebSocket frames are size-capped. A PLACE payload is tens of bytes. */
 	public static final int MAX_FRAME_BYTES = 8 * 1024;
-
 	/**
 	 * How long a match socket may be silent before Jetty closes it (set in {@code Application}).
 	 * <p>
@@ -43,14 +44,8 @@ public class MatchSocketHandler implements Consumer<WsConfig> {
 	 * gone is noticed rather than held open until the match ends.
 	 */
 	public static final long SOCKET_IDLE_TIMEOUT_SECONDS = 90;
-
 	/** The ping interval the clients are configured with; documented here because the timeout above derives from it. */
 	public static final long CLIENT_PING_SECONDS = 20;
-
-	/** Spec 12: the message rate per connection is limited. */
-	private static final int MAX_MESSAGES_PER_WINDOW = 120;
-	private static final long RATE_WINDOW_MS = 10_000;
-	
 	private final Authentication authentication;
 	private final SessionService sessions;
 	private final MatchService matches;
@@ -98,7 +93,7 @@ public class MatchSocketHandler implements Consumer<WsConfig> {
 			}
 			
 			Match match = this.matches.get(matchId);
-
+			
 			// A match that is already over must never be rebuilt. `liveFor` reconstructs a LiveMatch from the
 			// row when the registry has lost it, and for a finished row that produced a *zombie*: a fresh
 			// board, an empty grid and no memory of having ended, which it then served to the returning
@@ -118,14 +113,14 @@ public class MatchSocketHandler implements Consumer<WsConfig> {
 				context.closeSession(4000, "MATCH_OVER");
 				return;
 			}
-
+			
 			LiveMatch live = this.matches.liveFor(match);
 			SocketConnection connection = new SocketConnection(context, principal);
 			
 			this.states.put(context.sessionId(), new SocketState(matchId, principal.userId(), live, connection));
 			log.info("Match {}: user {} opened a socket", matchId, principal.userId());
 			live.submit(() -> live.onConnect(connection));
-
+			
 		} catch (ApiException e) {
 			context.closeSession(4401, e.code().name());
 		} catch (RuntimeException e) {

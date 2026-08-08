@@ -12,7 +12,7 @@ public final class EnvKeys {
 	public static final String SERVER_NAME = "SUDOKU_SERVER_NAME";
 	public static final String TIMEZONE = "SUDOKU_TIMEZONE";
 	public static final String BOOTSTRAP_INVITE = "SUDOKU_BOOTSTRAP_INVITE";
-
+	
 	/**
 	 * The coarsest level that reaches the console; everything more severe comes with it.
 	 * <p>
@@ -55,7 +55,7 @@ public final class EnvKeys {
 	// Presence (online status and match requests)
 	public static final String PRESENCE_ONLINE_TTL = "SUDOKU_PRESENCE_ONLINE_TTL";
 	public static final String PRESENCE_REQUEST_TTL = "SUDOKU_PRESENCE_REQUEST_TTL";
-
+	
 	// Currency
 	public static final String CURRENCY_DAILY_GAME_CAP = "SUDOKU_CURRENCY_DAILY_GAME_CAP";
 	

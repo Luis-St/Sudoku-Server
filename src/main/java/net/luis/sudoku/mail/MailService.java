@@ -22,9 +22,9 @@ import org.slf4j.LoggerFactory;
  * that captures outgoing mail instead of opening a real SMTP connection.
  */
 public class MailService {
-
+	
 	private static final Logger log = LoggerFactory.getLogger(MailService.class);
-
+	
 	private final @Nullable MailConfig config;
 	
 	public MailService(@Nullable MailConfig config) {
