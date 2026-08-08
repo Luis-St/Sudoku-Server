@@ -7,6 +7,7 @@ import org.jspecify.annotations.NonNull;
 
 import javax.sql.DataSource;
 import java.sql.*;
+import java.time.Duration;
 
 /**
  * The server's database access point, backed by LUtils' {@link SqlDatabase}.
@@ -23,6 +24,13 @@ import java.sql.*;
  * table and must commit or roll back together.
  */
 public final class Database implements AutoCloseable {
+	
+	/**
+	 * How long {@link #isReachable} waits for the driver's validation round trip. Well inside the health
+	 * check's own timeout, so a slow database shows up as a {@code DOWN} body rather than as a request
+	 * that never answers.
+	 */
+	private static final Duration PROBE_TIMEOUT = Duration.ofSeconds(2);
 	
 	private final SqlDatabase database;
 	
@@ -134,6 +142,24 @@ public final class Database implements AutoCloseable {
 			return work.apply(connection);
 		} catch (SQLException e) {
 			throw new DatabaseException("Connection work failed", e);
+		}
+	}
+	
+	/**
+	 * Asks the pool for a usable connection, for {@code /health}.
+	 * <p>
+	 * Deliberately {@link Connection#isValid} rather than a query: it is the cheapest thing that proves
+	 * the whole path - pool, socket, server - is alive, and it needs no table, so it cannot start failing
+	 * because of a migration. Never throws, because the caller's question is "yes or no", and a probe
+	 * that raises is a probe that has to be wrapped at every call site.
+	 *
+	 * @return whether a working connection can be had right now
+	 */
+	public boolean isReachable() {
+		try (Connection connection = this.dataSource().getConnection()) {
+			return connection.isValid((int) PROBE_TIMEOUT.toSeconds());
+		} catch (SQLException | RuntimeException e) {
+			return false;
 		}
 	}
 	

@@ -1508,7 +1508,17 @@
         "operationId" : "healthCheck",
         "responses" : {
           "200" : {
-            "description" : "OK",
+            "description" : "The server is serving and the database answered",
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/HealthResponse"
+                }
+              }
+            }
+          },
+          "503" : {
+            "description" : "The database did not answer; the same body, with status DOWN",
             "content" : {
               "application/json" : {
                 "schema" : {

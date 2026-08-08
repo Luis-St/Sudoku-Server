@@ -2,11 +2,18 @@ package net.luis.sudoku.config;
 
 import net.luis.utils.logging.LoggerConfiguration;
 import org.apache.logging.log4j.Level;
+import org.apache.logging.log4j.core.Appender;
+import org.apache.logging.log4j.core.LogEvent;
 import org.apache.logging.log4j.core.config.Configuration;
 import org.apache.logging.log4j.core.config.LoggerConfig;
+import org.apache.logging.log4j.core.impl.Log4jLogEvent;
+import org.apache.logging.log4j.core.layout.PatternLayout;
+import org.apache.logging.log4j.message.SimpleMessage;
+import org.apache.logging.log4j.util.SortedArrayStringMap;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
 
@@ -25,6 +32,29 @@ class LoggingConfigTest {
 		Configuration configuration = LoggingConfig.configuration(threshold).build();
 		LoggerConfig root = configuration.getRootLogger();
 		return root.getAppenderRefs().stream().map(reference -> reference.getRef()).collect(Collectors.toSet());
+	}
+
+	/**
+	 * Formats one event through the console layout for a level, with {@code context} standing in for the
+	 * MDC the before filter populates.
+	 *
+	 * @return the line as it would reach stdout
+	 */
+	private static String render(Level level, Map<String, String> context) {
+		Configuration configuration = LoggingConfig.configuration(Level.TRACE).build();
+		Appender appender = configuration.getAppenders().values().stream()
+			.filter(candidate -> candidate.getName().toLowerCase().contains(level.name().toLowerCase()))
+			.findFirst()
+			.orElseThrow();
+
+		LogEvent event = Log4jLogEvent.newBuilder()
+			.setLoggerName("net.luis.sudoku.Example")
+			.setLevel(level)
+			.setMessage(new SimpleMessage("something happened"))
+			.setContextData(new SortedArrayStringMap(context))
+			.setThreadName("main")
+			.build();
+		return ((PatternLayout) appender.getLayout()).toSerializable(event);
 	}
 
 	private static boolean logs(Level threshold, Level level) {
@@ -98,6 +128,43 @@ class LoggingConfigTest {
 		Configuration configuration = LoggingConfig.configuration(Level.INFO).build();
 		List<String> references = configuration.getRootLogger().getAppenderRefs().stream().map(reference -> reference.getRef()).toList();
 		assertEquals(references.size(), Set.copyOf(references).size());
+	}
+
+	/**
+	 * The MDC keys {@code Application}'s before filter sets have to actually appear somewhere, or a warning
+	 * arrives with nothing tying it to the request that caused it.
+	 */
+	@Test
+	void configuration_everyPattern_carriesTheRequestContext() {
+		Configuration configuration = LoggingConfig.configuration(Level.TRACE).build();
+		configuration.getAppenders().values().forEach(appender -> {
+			String pattern = ((PatternLayout) appender.getLayout()).getConversionPattern();
+			assertTrue(pattern.contains("%X{trace_id}"), pattern);
+			assertTrue(pattern.contains("%X{source_ip}"), pattern);
+		});
+	}
+
+	/**
+	 * Marker, trace id and source ip are all usually absent at once - a line off a match queue has none of
+	 * the three - and a run of empty {@code []} would be most of the line.
+	 * <p>
+	 * Rendered rather than asserted against the pattern text, because the pattern is not the whole story:
+	 * {@link LoggerConfiguration} wraps every override in a {@code %replace} of its own, so what actually
+	 * runs is nested and only the output says whether the two agree.
+	 */
+	@Test
+	void render_absentContextValues_leaveNoEmptyBrackets() {
+		assertFalse(render(Level.WARN, Map.of()).contains("[]"));
+		assertFalse(render(Level.WARN, Map.of("trace_id", "trace-1")).contains("[]"));
+		assertFalse(render(Level.WARN, Map.of("trace_id", "trace-1", "source_ip", "203.0.113.7")).contains("[]"));
+	}
+
+	@Test
+	void render_presentContextValues_areCarriedIntoTheLine() {
+		String line = render(Level.WARN, Map.of("trace_id", "trace-1", "source_ip", "203.0.113.7"));
+		assertTrue(line.contains("trace-1"), line);
+		assertTrue(line.contains("203.0.113.7"), line);
+		assertTrue(line.contains("something happened"), line);
 	}
 
 	@Test

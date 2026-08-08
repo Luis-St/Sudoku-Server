@@ -112,11 +112,19 @@ public final class LoggingConfig {
 	}
 	
 	/**
-	 * The pattern for a level, matching what the server printed before logging moved into code.
+	 * The pattern for a level.
 	 * <p>
-	 * The {@code %replace} collapses the marker group when there is no marker, which is almost always;
-	 * without it every line would carry an empty {@code []}. The two most verbose levels name the source
-	 * line, because that is what they are for.
+	 * Carries the request's {@code trace_id} and {@code source_ip}, which {@code Application}'s before
+	 * filter puts in the MDC on every request and which no pattern used to read. That mattered little
+	 * while production logged everything: an {@code INFO} line per request gave you the method and path
+	 * anyway. At {@code WARN} that line is gone, so a warning arrives with nothing tying it to the
+	 * request that caused it - and a rate-limit warning or an unverified daily result is close to
+	 * useless without knowing who and from where.
+	 * <p>
+	 * All three of marker, trace id and source ip are usually absent - background threads have no
+	 * request at all - so the {@code %replace} strips their brackets when they are empty, however many
+	 * of them run together. Without it every line off a match queue would carry three empty {@code []}.
+	 * The two most verbose levels name the source line, because that is what they are for.
 	 */
 	private static @NonNull String pattern(@NonNull Level level) {
 		String levelNames = "%level{TRACE=Trace, DEBUG=Debug, INFO=Info, WARN=Warn, ERROR=Error, FATAL=Fatal}";
@@ -125,6 +133,14 @@ public final class LoggingConfig {
 			case "DEBUG" -> "%C{1}:%line";
 			default -> "%C{1}";
 		};
-		return "%replace{[%d{HH:mm:ss}] [%t] [%marker] [" + source + "/" + levelNames + "] %msg%n%throwable}{] \\[]}{]}";
+		String line = "[%d{HH:mm:ss}] [%t] [%marker] [%X{trace_id}] [%X{source_ip}] [" + source + "/" + levelNames + "] %msg%n%throwable";
+		// A closing bracket followed by any run of empty groups collapses back to that one bracket. The
+		// repetition has to sit inside the match, after the ']', rather than wrap the whole "] []": each
+		// repetition of that form would eat the ']' the next one needs to start from, so three empty
+		// groups in a row would come out as one instead of none.
+		// LoggerConfiguration wraps this in a %replace of its own that does the single-group version, so
+		// the rendered pattern is nested - which is why LoggingConfigTest asserts on rendered output
+		// rather than on the pattern text.
+		return "%replace{" + line + "}{\\]( \\[\\])+}{]}";
 	}
 }

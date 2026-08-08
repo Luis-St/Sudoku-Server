@@ -116,7 +116,7 @@ public class Application {
 			MDC.clear();
 		});
 		
-		var healthHandler = new HealthHandler(services.schemaVersion(), services.matchRegistry()::activeCount);
+		var healthHandler = new HealthHandler(services.schemaVersion(), services.matchRegistry()::activeCount, services.database()::isReachable);
 		var serverInfoHandler = new ServerInfoHandler(services.config(), services.serverId());
 		var registerHandler = new RegisterHandler(services.registrationService(), services.rateLimiter(), services.config().trustProxy());
 		var authHandler = new AuthHandler(services.challengeService(), services.rateLimiter(), services.config().trustProxy());
