@@ -242,7 +242,7 @@ class DailyServiceTest extends PostgresTest {
 		this.daily.setPreference(player, 6);
 		assertEquals(6, this.daily.preference(player));
 	}
-
+	
 	@Test
 	void setPreference_toATierThatDoesNotExist_isRejected() {
 		Principal player = this.player("Owner");
@@ -337,9 +337,9 @@ class DailyServiceTest extends PostgresTest {
 		// connection, which is by definition after its own day. Refusing it made the queue pointless.
 		Principal player = this.player("Owner");
 		LocalDate yesterday = this.daily.today().minusDays(1);
-
+		
 		DailyService.Submission submission = this.daily.submit(player, this.solvedSubmission(yesterday, 3));
-
+		
 		assertAll(
 			() -> assertTrue(submission.verified(), "the puzzle is regenerated for the submitted date, not for today"),
 			() -> assertEquals(1, submission.streak().current()),
@@ -347,40 +347,40 @@ class DailyServiceTest extends PostgresTest {
 			() -> assertEquals(yesterday, submission.streak().lastCompletedDate())
 		);
 	}
-
+	
 	@Test
 	void submit_aQueueDrainingInDateOrder_buildsTheStreakItEarned() {
 		// What the flush actually does: the rows go out oldest first, and each one lands on its own day.
 		Principal player = this.player("Owner");
 		LocalDate today = this.daily.today();
-
+		
 		this.daily.submit(player, this.solvedSubmission(today.minusDays(2), 3));
 		this.daily.submit(player, this.solvedSubmission(today.minusDays(1), 3));
 		DailyService.Submission last = this.daily.submit(player, this.solvedSubmission(today, 3));
-
+		
 		assertAll(
 			() -> assertEquals(3, last.streak().current()),
 			() -> assertEquals(today, last.streak().lastCompletedDate())
 		);
 	}
-
+	
 	@Test
 	void submit_aLongPastDate_isAccepted() {
 		Principal player = this.player("Owner");
 		LocalDate longAgo = this.daily.today().minusDays(400);
-
+		
 		DailyService.Submission submission = this.daily.submit(player, this.solvedSubmission(longAgo, 3));
-
+		
 		assertTrue(submission.verified());
 	}
-
+	
 	@Test
 	void submit_aPastDate_creditsTheStreakToThatDate() {
 		Principal player = this.player("Owner");
 		LocalDate longAgo = this.daily.today().minusDays(30);
-
+		
 		DailyService.Submission submission = this.daily.submit(player, this.solvedSubmission(longAgo, 3));
-
+		
 		assertEquals(longAgo, submission.streak().lastCompletedDate());
 	}
 	
@@ -388,21 +388,21 @@ class DailyServiceTest extends PostgresTest {
 	void submit_aSolveWithLisa_isVerifiedAndCreditsTheStreak() {
 		Principal player = this.player("Owner");
 		LocalDate date = this.daily.today();
-
+		
 		DailyService.Submission submission = this.daily.submit(player, this.solvedSubmission(date, 6));
-
+		
 		assertAll(
 			() -> assertTrue(submission.verified()),
 			() -> assertEquals(1, submission.streak().current())
 		);
 	}
-
+	
 	@Test
 	void submit_aTierThatDoesNotExist_isRejected() {
 		Principal player = this.player("Owner");
 		LocalDate date = this.daily.today();
 		DailyService.Submit submit = new DailyService.Submit(date, 7, DailyOutcome.SOLVED, 60_000, 0, 0, List.of());
-
+		
 		ApiException e = assertThrows(ApiException.class, () -> this.daily.submit(player, submit));
 		assertEquals(ErrorCode.BAD_REQUEST, e.code());
 	}
@@ -723,14 +723,14 @@ class DailyServiceTest extends PostgresTest {
 	}
 	
 	// --- streak sync (spec 8.3) ---
-
+	
 	@Test
 	void syncStreak_whenTheServerHasNone_adoptsTheClaim() {
 		Principal player = this.player("Owner");
 		LocalDate yesterday = this.daily.today().minusDays(1);
-
+		
 		Streak merged = this.daily.syncStreak(player, 2, yesterday);
-
+		
 		assertAll(
 			() -> assertEquals(2, merged.current()),
 			() -> assertEquals(2, merged.longest()),
@@ -738,54 +738,54 @@ class DailyServiceTest extends PostgresTest {
 			() -> assertEquals(2, this.daily.streak(player.userId()).current(), "persisted")
 		);
 	}
-
+	
 	@Test
 	void syncStreak_thenAVerifiedSolveToday_continuesTheRunRatherThanRestartingIt() {
 		// The whole point of the anchor date: an adopted streak has to be a run today can extend.
 		Principal player = this.player("Owner");
 		LocalDate today = this.daily.today();
 		this.daily.syncStreak(player, 2, today.minusDays(1));
-
+		
 		DailyService.Submission submission = this.daily.submit(player, this.solvedSubmission(today, 3));
-
+		
 		assertEquals(3, submission.streak().current());
 	}
-
+	
 	@Test
 	void syncStreak_aClaimLowerThanTheStoredStreak_isIgnored() {
 		Principal player = this.player("Owner");
 		LocalDate today = this.daily.today();
 		this.daily.submit(player, this.solvedSubmission(today, 3));
-
+		
 		Streak merged = this.daily.syncStreak(player, 1, today.minusDays(30));
-
+		
 		assertAll(
 			() -> assertEquals(1, merged.current()),
 			() -> assertEquals(today, merged.lastCompletedDate(), "the stored anchor is kept")
 		);
 	}
-
+	
 	@Test
 	void syncStreak_repeated_changesNothingTheSecondTime() {
 		Principal player = this.player("Owner");
 		LocalDate yesterday = this.daily.today().minusDays(1);
-
+		
 		Streak first = this.daily.syncStreak(player, 4, yesterday);
 		Streak second = this.daily.syncStreak(player, 4, yesterday);
-
+		
 		assertEquals(first, second);
 	}
-
+	
 	@Test
 	void syncStreak_neverGrantsRestorePoints() {
 		// 14 days would be two banked points had they been earned through verified solves.
 		Principal player = this.player("Owner");
-
+		
 		Streak merged = this.daily.syncStreak(player, 14, this.daily.today().minusDays(1));
-
+		
 		assertEquals(0, merged.restorePoints());
 	}
-
+	
 	@Test
 	void syncStreak_aNegativeCount_isRejected() {
 		Principal player = this.player("Owner");
@@ -793,7 +793,7 @@ class DailyServiceTest extends PostgresTest {
 			() -> this.daily.syncStreak(player, -1, this.daily.today()));
 		assertEquals(ErrorCode.BAD_REQUEST, e.code());
 	}
-
+	
 	@Test
 	void syncStreak_anImplausiblyLongRun_isRejected() {
 		Principal player = this.player("Owner");
@@ -801,7 +801,7 @@ class DailyServiceTest extends PostgresTest {
 			() -> this.daily.syncStreak(player, 3651, this.daily.today()));
 		assertEquals(ErrorCode.BAD_REQUEST, e.code());
 	}
-
+	
 	@Test
 	void syncStreak_aRunEndingInTheFuture_isRejected() {
 		Principal player = this.player("Owner");
@@ -809,29 +809,29 @@ class DailyServiceTest extends PostgresTest {
 			() -> this.daily.syncStreak(player, 2, this.daily.today().plusDays(1)));
 		assertEquals(ErrorCode.DAILY_DATE_INVALID, e.code());
 	}
-
+	
 	@Test
 	void syncStreak_aBiggerCountEndingEarlier_keepsTheLaterAnchor() {
 		Principal player = this.player("Owner");
 		LocalDate today = this.daily.today();
 		this.daily.submit(player, this.solvedSubmission(today, 3));
-
+		
 		Streak merged = this.daily.syncStreak(player, 5, today.minusDays(10));
-
+		
 		assertAll(
 			() -> assertEquals(5, merged.current()),
 			() -> assertEquals(today, merged.lastCompletedDate())
 		);
 	}
-
+	
 	@Test
 	void leaderboard_forLisa_isAllowed() {
 		Principal player = this.player("Owner");
 		this.daily.submit(player, this.solvedSubmission(this.daily.today(), 6));
-
+		
 		assertEquals(1, this.daily.leaderboard(6).size());
 	}
-
+	
 	@Test
 	void leaderboard_forATierThatDoesNotExist_isRejected() {
 		ApiException e = assertThrows(ApiException.class, () -> this.daily.leaderboard(7));

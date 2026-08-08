@@ -254,9 +254,9 @@ class CoopMatchTest {
 		int cell = MatchFixture.holes(this.puzzle).getFirst();
 		this.bob.clear();
 		this.carol.clear();
-
+		
 		send(this.coop, this.alice, MessageType.HINT, Map.of("cell", cell));
-
+		
 		// The point of the shared offer: everybody marks the same cell, and everybody knows whose it is.
 		assertAll(
 			() -> assertEquals(cell, this.bob.lastOf(MessageType.HINT).payloadOrEmpty().get("cell")),
@@ -265,16 +265,16 @@ class CoopMatchTest {
 				this.carol.lastOf(MessageType.HINT).payloadOrEmpty().get("byUser"))
 		);
 	}
-
+	
 	@Test
 	void hint_whileAnotherIsPending_doesNotReplaceIt() {
 		this.start(false, this.alice, this.bob);
 		List<Integer> holes = MatchFixture.holes(this.puzzle);
 		send(this.coop, this.alice, MessageType.HINT, Map.of("cell", holes.get(0)));
 		this.bob.clear();
-
+		
 		send(this.coop, this.bob, MessageType.HINT, Map.of("cell", holes.get(1)));
-
+		
 		// Bob is told what the offer is instead, so his own board still agrees with everybody else's - one
 		// player must not move the cell another is deciding about.
 		assertAll(
@@ -283,34 +283,34 @@ class CoopMatchTest {
 				this.bob.lastOf(MessageType.HINT).payloadOrEmpty().get("byUser"))
 		);
 	}
-
+	
 	@Test
 	void hint_clearedByAnotherPlayer_isWithdrawn() {
 		this.start(false, this.alice, this.bob);
 		int cell = MatchFixture.holes(this.puzzle).getFirst();
 		send(this.coop, this.alice, MessageType.HINT, Map.of("cell", cell));
 		this.alice.clear();
-
+		
 		send(this.coop, this.bob, MessageType.HINT, Map.of("clear", true));
-
+		
 		// The offer belongs to the group, not to whoever asked: anybody may take it back, and the asker's own
 		// board has to follow, since the mark is on every board.
 		assertNull(this.alice.lastOf(MessageType.HINT).payloadOrEmpty().get("cell"));
 	}
-
+	
 	@Test
 	void hint_whenTheCellIsFilled_isCleared() {
 		this.start(false, this.alice, this.bob);
 		int cell = MatchFixture.holes(this.puzzle).getFirst();
 		send(this.coop, this.alice, MessageType.HINT, Map.of("cell", cell));
 		this.bob.clear();
-
+		
 		place(this.coop, this.alice, cell, this.puzzle.solutionAt(cell));
-
+		
 		// Whether it was spent or somebody simply solved it first, a filled cell has nothing left to offer.
 		assertNull(this.bob.lastOf(MessageType.HINT).payloadOrEmpty().get("cell"));
 	}
-
+	
 	@Test
 	void matchState_carriesTheSharedBoardHintAndLives() {
 		this.start(true, this.alice, this.bob);
@@ -318,9 +318,9 @@ class CoopMatchTest {
 		place(this.coop, this.alice, holes.get(0), this.puzzle.solutionAt(holes.get(0)));
 		send(this.coop, this.alice, MessageType.HINT, Map.of("cell", holes.get(1)));
 		this.carol.clear();
-
+		
 		connect(this.coop, this.carol);
-
+		
 		// A player who arrives mid-decision has to see the cell the others are looking at.
 		MessageEnvelope state = this.carol.lastOf(MessageType.MATCH_STATE);
 		assertAll(
@@ -332,17 +332,17 @@ class CoopMatchTest {
 			() -> assertEquals(CoopMatch.SHARED_LIVES, state.payloadOrEmpty().get("livesLeft"))
 		);
 	}
-
+	
 	@Test
 	void hint_whenItsOwnerDisconnects_isCleared() {
 		this.start(false, this.alice, this.bob);
 		int cell = MatchFixture.holes(this.puzzle).getFirst();
 		send(this.coop, this.alice, MessageType.HINT, Map.of("cell", cell));
 		this.bob.clear();
-
+		
 		this.coop.submit(() -> this.coop.onDisconnect(this.alice.userId(), false));
 		MatchFixture.drain(this.coop);
-
+		
 		// Nobody left can spend or withdraw it, so it would hold the single slot for the rest of the match.
 		assertNull(this.bob.lastOf(MessageType.HINT).payloadOrEmpty().get("cell"));
 	}

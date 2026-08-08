@@ -45,7 +45,7 @@ class StatsServiceTest extends PostgresTest {
 	                                            int failed, Long best, long total, int hints) {
 		return new StatsService.SyncEntry(size, variant, difficulty, played, solved, failed, best, total, hints);
 	}
-
+	
 	/** A fresh game id per call, which is what a client does: one per game, generated when it ends. */
 	private static StatsService.PlayedGame game(int size, String variant, int difficulty, boolean solved, long elapsedMs, int hints) {
 		return new StatsService.PlayedGame(UUID.randomUUID(), size, variant, difficulty, solved, elapsedMs, hints);
@@ -118,31 +118,31 @@ class StatsServiceTest extends PostgresTest {
 		this.player("Second");
 		
 		List<StatsService.PlayerSummary> players = this.stats.players(false);
-
+		
 		assertAll(
 			() -> assertEquals(2, players.size()),
 			() -> assertTrue(players.stream().anyMatch(p -> "Owner".equals(p.displayName()))),
 			() -> assertTrue(players.stream().anyMatch(p -> "Second".equals(p.displayName())))
 		);
 	}
-
+	
 	@Test
 	void players_excludesKickedPlayers() {
 		this.player("Owner");
 		Principal kicked = this.player("Gone");
 		database.execute(connection -> new UserRepository().revoke(connection, kicked.userId()));
-
+		
 		assertEquals(1, this.stats.players(false).size());
 	}
-
+	
 	@Test
 	void players_includesKickedPlayersWhenAsked() {
 		this.player("Owner");
 		Principal kicked = this.player("Gone");
 		database.execute(connection -> new UserRepository().revoke(connection, kicked.userId()));
-
+		
 		List<StatsService.PlayerSummary> players = this.stats.players(true);
-
+		
 		assertAll(
 			() -> assertEquals(2, players.size()),
 			// The flag is the whole point of including them: without it the row is indistinguishable from an
@@ -151,7 +151,7 @@ class StatsServiceTest extends PostgresTest {
 			() -> assertTrue(players.stream().anyMatch(p -> "Owner".equals(p.displayName()) && !p.revoked()))
 		);
 	}
-
+	
 	@Test
 	void players_reportsLastSeen() {
 		Principal player = this.player("Owner");
@@ -258,13 +258,13 @@ class StatsServiceTest extends PostgresTest {
 	}
 	
 	// --- recordGames (spec 9) ---
-
+	
 	@Test
 	void recordGames_foldsAFinishedGameIntoTheAggregates() {
 		Principal player = this.player("Owner");
-
+		
 		assertEquals(1, this.stats.recordGames(player, List.of(game(9, "CLASSIC", 3, true, 42_000, 1))));
-
+		
 		StatsEntry entry = this.stats.forUser(player.userId()).getFirst();
 		assertAll(
 			() -> assertEquals(1, entry.gamesPlayed()),
@@ -274,13 +274,13 @@ class StatsServiceTest extends PostgresTest {
 			() -> assertEquals(1, entry.hintsUsed())
 		);
 	}
-
+	
 	@Test
 	void recordGames_aFailedGame_countsWithoutATime() {
 		Principal player = this.player("Owner");
-
+		
 		this.stats.recordGames(player, List.of(game(9, "CLASSIC", 3, false, 42_000, 0)));
-
+		
 		StatsEntry entry = this.stats.forUser(player.userId()).getFirst();
 		assertAll(
 			() -> assertEquals(1, entry.gamesPlayed()),
@@ -288,17 +288,17 @@ class StatsServiceTest extends PostgresTest {
 			() -> assertNull(entry.bestTimeMs(), "a game that was not solved has no solve time to rank")
 		);
 	}
-
+	
 	@Test
 	void recordGames_severalGamesInOneCall_areAllFolded() {
 		Principal player = this.player("Owner");
-
+		
 		assertEquals(3, this.stats.recordGames(player, List.of(
 			game(9, "CLASSIC", 3, true, 40_000, 0),
 			game(9, "CLASSIC", 3, false, 10_000, 0),
 			game(16, "CHAOS", 5, true, 900_000, 2)
 		)));
-
+		
 		List<StatsEntry> entries = this.stats.forUser(player.userId());
 		assertAll(
 			() -> assertEquals(2, entries.size(), "one row per (size, variant, tier)"),
@@ -307,31 +307,31 @@ class StatsServiceTest extends PostgresTest {
 			() -> assertEquals(1, entries.getFirst().failed())
 		);
 	}
-
+	
 	@Test
 	void recordGames_theSameGameTwice_isCountedOnce() {
 		// The whole reason recorded_games exists: the client retries a queued upload, and cannot tell a
 		// request that never arrived from one whose response was lost.
 		Principal player = this.player("Owner");
 		StatsService.PlayedGame played = game(9, "CLASSIC", 3, true, 42_000, 0);
-
+		
 		assertEquals(1, this.stats.recordGames(player, List.of(played)));
 		assertEquals(0, this.stats.recordGames(player, List.of(played)), "the retry folds nothing");
-
+		
 		assertEquals(1, this.stats.forUser(player.userId()).getFirst().gamesPlayed());
 	}
-
+	
 	@Test
 	void recordGames_aRetryCarryingANewGameToo_foldsOnlyTheNewOne() {
 		Principal player = this.player("Owner");
 		StatsService.PlayedGame first = game(9, "CLASSIC", 3, true, 42_000, 0);
 		this.stats.recordGames(player, List.of(first));
-
+		
 		assertEquals(1, this.stats.recordGames(player, List.of(first, game(9, "CLASSIC", 3, true, 50_000, 0))));
-
+		
 		assertEquals(2, this.stats.forUser(player.userId()).getFirst().gamesPlayed());
 	}
-
+	
 	@Test
 	void recordGames_theSameGameIdFromTwoPlayers_isNotADuplicate() {
 		// Game ids are generated on devices, so one player's statistics must not depend on another
@@ -339,57 +339,57 @@ class StatsServiceTest extends PostgresTest {
 		Principal owner = this.player("Owner");
 		Principal other = this.player("Other");
 		UUID shared = UUID.randomUUID();
-
+		
 		this.stats.recordGames(owner, List.of(new StatsService.PlayedGame(shared, 9, "CLASSIC", 3, true, 42_000, 0)));
 		assertEquals(1, this.stats.recordGames(other, List.of(new StatsService.PlayedGame(shared, 9, "CLASSIC", 3, true, 42_000, 0))));
-
+		
 		assertEquals(1, this.stats.forUser(other.userId()).getFirst().gamesPlayed());
 	}
-
+	
 	@Test
 	void recordGames_acceptsLisaAsASinglePlayerTier() {
 		Principal player = this.player("Owner");
-
+		
 		assertDoesNotThrow(() -> this.stats.recordGames(player, List.of(game(9, "CLASSIC", 6, true, 1000, 0))));
 		assertEquals(6, this.stats.forUser(player.userId()).getFirst().difficulty());
 	}
-
+	
 	@Test
 	void recordGames_anUnsupportedSize_isRejected() {
 		Principal player = this.player("Owner");
 		assertThrows(ApiException.class, () -> this.stats.recordGames(player, List.of(game(7, "CLASSIC", 3, true, 1000, 0))));
 	}
-
+	
 	@Test
 	void recordGames_anUnknownVariant_isRejected() {
 		Principal player = this.player("Owner");
 		assertThrows(ApiException.class, () -> this.stats.recordGames(player, List.of(game(9, "SPIRAL", 3, true, 1000, 0))));
 	}
-
+	
 	@Test
 	void recordGames_aTierOutsideTheRange_isRejected() {
 		Principal player = this.player("Owner");
 		assertThrows(ApiException.class, () -> this.stats.recordGames(player, List.of(game(9, "CLASSIC", 7, true, 1000, 0))));
 	}
-
+	
 	@Test
 	void recordGames_negativeCounters_areRejected() {
 		Principal player = this.player("Owner");
 		assertThrows(ApiException.class, () -> this.stats.recordGames(player, List.of(game(9, "CLASSIC", 3, true, -1, 0))));
 	}
-
+	
 	@Test
 	void recordGames_aRejectedGame_foldsNothingFromTheSameBatch() {
 		// Validation runs over the whole batch before anything is written, so a bad game cannot leave the
 		// good ones half-applied - which matters because the client re-sends the batch.
 		Principal player = this.player("Owner");
-
+		
 		assertThrows(ApiException.class, () -> this.stats.recordGames(player,
 			List.of(game(9, "CLASSIC", 3, true, 1000, 0), game(7, "CLASSIC", 3, true, 1000, 0))));
-
+		
 		assertTrue(this.stats.forUser(player.userId()).isEmpty());
 	}
-
+	
 	@Test
 	void recordGames_moreThanOneBatchAllows_isRejected() {
 		Principal player = this.player("Owner");
@@ -397,16 +397,16 @@ class StatsServiceTest extends PostgresTest {
 		for (int i = 0; i < 51; i++) {
 			tooMany.add(game(9, "CLASSIC", 3, true, 1000, 0));
 		}
-
+		
 		assertThrows(ApiException.class, () -> this.stats.recordGames(player, tooMany));
 	}
-
+	
 	@Test
 	void recordGames_anEmptyUpload_isAccepted() {
 		Principal player = this.player("Owner");
 		assertEquals(0, this.stats.recordGames(player, List.of()));
 	}
-
+	
 	@Test
 	void recordGames_afterAClaimHasBeenPruned_theGameCanBeFoldedAgain() {
 		// The retention window is what it is: an upload retried a month later is no longer recognisable as
@@ -414,15 +414,15 @@ class StatsServiceTest extends PostgresTest {
 		Principal player = this.player("Owner");
 		StatsService.PlayedGame played = game(9, "CLASSIC", 3, true, 42_000, 0);
 		this.stats.recordGames(player, List.of(played));
-
+		
 		this.now.set(NOW.plus(Duration.ofDays(31)));
 		this.stats.runRollover();
-
+		
 		assertEquals(1, this.stats.recordGames(player, List.of(played)));
 	}
-
+	
 	// --- rollover (spec 8.6) ---
-
+	
 	@Test
 	void runRollover_foldsFinishedDaysIntoStatsAndPrunesThem() {
 		Principal player = this.player("Owner");

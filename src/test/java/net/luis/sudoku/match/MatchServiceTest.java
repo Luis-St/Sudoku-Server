@@ -4,9 +4,9 @@ import net.luis.sudoku.auth.*;
 import net.luis.sudoku.config.*;
 import net.luis.sudoku.currency.CurrencyService;
 import net.luis.sudoku.difficulty.Difficulty;
-import net.luis.sudoku.dto.request.CreateMatchRequest;
 import net.luis.sudoku.domain.Match;
 import net.luis.sudoku.domain.Principal;
+import net.luis.sudoku.dto.request.CreateMatchRequest;
 import net.luis.sudoku.error.ApiException;
 import net.luis.sudoku.error.ErrorCode;
 import net.luis.sudoku.grid.GridSize;
@@ -198,14 +198,14 @@ class MatchServiceTest extends PostgresTest {
 			() -> this.matches.join(guest, created.match().id(), "not-the-token"));
 		assertEquals(ErrorCode.FORBIDDEN, e.code());
 	}
-
+	
 	@Test
 	void create_theInviteToken_isATypableMatchCode() {
 		// The whole reason the token stopped being a session token: a player reads this one out loud.
 		Principal owner = this.player("Owner");
-
+		
 		String code = this.createRace(owner, 0).inviteToken();
-
+		
 		assertAll(
 			() -> assertEquals(9, code.length()),
 			() -> assertEquals('-', code.charAt(4)),
@@ -213,28 +213,28 @@ class MatchServiceTest extends PostgresTest {
 			() -> assertEquals(code, CodeGenerator.canonicalMatchCode(code), "already canonical")
 		);
 	}
-
+	
 	@Test
 	void create_twoMatches_getDifferentCodes() {
 		Principal owner = this.player("Owner");
-
+		
 		assertNotEquals(this.createRace(owner, 0).inviteToken(), this.createRace(owner, 0).inviteToken());
 	}
-
+	
 	@Test
 	void joinByCode_withTheCode_addsTheParticipantWithoutAMatchId() {
 		Principal owner = this.player("Owner");
 		Principal guest = this.player("Guest");
 		MatchService.Created created = this.createRace(owner, 0);
-
+		
 		Match joined = this.matches.joinByCode(guest, created.inviteToken());
-
+		
 		assertAll(
 			() -> assertEquals(created.match().id(), joined.id(), "the id the caller never had comes back"),
 			() -> assertEquals(2, this.matches.participants(created.match().id()).size())
 		);
 	}
-
+	
 	@Test
 	void joinByCode_ignoresCasingAndGrouping() {
 		// A code arrives by whatever means people talk to each other, so it arrives mistyped in these ways.
@@ -242,32 +242,32 @@ class MatchServiceTest extends PostgresTest {
 		Principal guest = this.player("Guest");
 		MatchService.Created created = this.createRace(owner, 0);
 		String typed = created.inviteToken().replace("-", "").toLowerCase(Locale.ROOT);
-
+		
 		assertDoesNotThrow(() -> this.matches.joinByCode(guest, " " + typed + " "));
 		assertEquals(2, this.matches.participants(created.match().id()).size());
 	}
-
+	
 	@Test
 	void joinByCode_withAnUnknownCode_isNotFound() {
 		Principal guest = this.player("Guest");
-
+		
 		ApiException e = assertThrows(ApiException.class, () -> this.matches.joinByCode(guest, "ZZZZ-ZZZZ"));
 		assertEquals(ErrorCode.NOT_FOUND, e.code());
 	}
-
+	
 	@Test
 	void joinByCode_withAMalformedCode_isNotFoundRatherThanBadRequest() {
 		// Same answer as a code that simply does not exist: telling a guesser which of their attempts was
 		// even the right shape is telling them something.
 		Principal guest = this.player("Guest");
-
+		
 		assertAll(
 			() -> assertEquals(ErrorCode.NOT_FOUND, assertThrows(ApiException.class, () -> this.matches.joinByCode(guest, "")).code()),
 			() -> assertEquals(ErrorCode.NOT_FOUND, assertThrows(ApiException.class, () -> this.matches.joinByCode(guest, "TOOSHORT1234")).code()),
 			() -> assertEquals(ErrorCode.NOT_FOUND, assertThrows(ApiException.class, () -> this.matches.joinByCode(guest, "IIII-LLLL")).code())
 		);
 	}
-
+	
 	@Test
 	void joinByCode_afterTheMatchStarted_isNotFound() {
 		// A code only opens a lobby. Once the match is running it stops resolving at all, which is what keeps
@@ -276,22 +276,22 @@ class MatchServiceTest extends PostgresTest {
 		Principal guest = this.player("Guest");
 		MatchService.Created created = this.createRace(owner, 0);
 		database.execute(connection -> this.matchRepository.markRunning(connection, created.match().id(), NOW));
-
+		
 		ApiException e = assertThrows(ApiException.class, () -> this.matches.joinByCode(guest, created.inviteToken()));
 		assertEquals(ErrorCode.NOT_FOUND, e.code());
 	}
-
+	
 	@Test
 	void joinByCode_afterTheMatchWasCancelled_isNotFound() {
 		Principal owner = this.player("Owner");
 		Principal guest = this.player("Guest");
 		MatchService.Created created = this.createRace(owner, 0);
 		this.matches.cancel(owner, created.match().id());
-
+		
 		ApiException e = assertThrows(ApiException.class, () -> this.matches.joinByCode(guest, created.inviteToken()));
 		assertEquals(ErrorCode.NOT_FOUND, e.code());
 	}
-
+	
 	@Test
 	void joinByCode_reusesACodeOnceItsMatchIsOver() {
 		// Codes are unique among lobbies, not across history: a finished match keeps its code on the row and
@@ -299,23 +299,23 @@ class MatchServiceTest extends PostgresTest {
 		Principal owner = this.player("Owner");
 		MatchService.Created first = this.createRace(owner, 0);
 		this.matches.cancel(owner, first.match().id());
-
+		
 		Match stored = this.matches.get(first.match().id());
 		assertEquals(first.inviteToken(), stored.inviteToken(), "the code stays on the row for the record");
 	}
-
+	
 	@Test
 	void joinByCode_whenFull_isRejectedWithMatchFull() {
 		// The code resolves; capacity is still capacity, and the reason must say so rather than "no such match".
 		Principal owner = this.player("Owner");
 		MatchService.Created created = this.createRace(owner, 0);
 		this.matches.joinByCode(this.player("Guest"), created.inviteToken());
-
+		
 		ApiException e = assertThrows(ApiException.class,
 			() -> this.matches.joinByCode(this.player("Third"), created.inviteToken()));
 		assertEquals(ErrorCode.MATCH_FULL, e.code());
 	}
-
+	
 	@Test
 	void join_beyondCapacity_isRejectedWithMatchFull() {
 		Principal owner = this.player("Owner");
@@ -395,9 +395,9 @@ class MatchServiceTest extends PostgresTest {
 	void cancel_byTheCreator_abandonsTheMatchAndDropsItFromTheRegistry() {
 		Principal owner = this.player("Owner");
 		MatchService.Created created = this.createRace(owner, 0);
-
+		
 		this.matches.cancel(owner, created.match().id());
-
+		
 		Match stored = this.matches.get(created.match().id());
 		assertAll(
 			() -> assertEquals(MatchState.ABANDONED, stored.state()),
@@ -406,7 +406,7 @@ class MatchServiceTest extends PostgresTest {
 			() -> assertNull(this.registry.find(created.match().id()), "the live match is gone too")
 		);
 	}
-
+	
 	@Test
 	void cancel_thenJoin_isRejected() {
 		// The whole point of cancelling: a token that was already shared must stop working.
@@ -414,61 +414,61 @@ class MatchServiceTest extends PostgresTest {
 		Principal guest = this.player("Guest");
 		MatchService.Created created = this.createRace(owner, 0);
 		this.matches.cancel(owner, created.match().id());
-
+		
 		ApiException e = assertThrows(ApiException.class,
 			() -> this.matches.join(guest, created.match().id(), created.inviteToken()));
 		assertEquals(ErrorCode.CONFLICT, e.code());
 	}
-
+	
 	@Test
 	void cancel_bySomebodyElse_isForbidden() {
 		Principal owner = this.player("Owner");
 		Principal guest = this.player("Guest");
 		MatchService.Created created = this.createRace(owner, 0);
 		this.matches.join(guest, created.match().id(), created.inviteToken());
-
+		
 		ApiException e = assertThrows(ApiException.class, () -> this.matches.cancel(guest, created.match().id()));
-
+		
 		assertAll(
 			() -> assertEquals(ErrorCode.FORBIDDEN, e.code(), "a participant is not the creator"),
 			() -> assertEquals(MatchState.WAITING, this.matches.get(created.match().id()).state())
 		);
 	}
-
+	
 	@Test
 	void cancel_aRunningMatch_isRejectedWithConflict() {
 		// Leaving a running match is resigning, which the socket handles and which produces a result.
 		Principal owner = this.player("Owner");
 		MatchService.Created created = this.createRace(owner, 0);
 		database.execute(connection -> this.matchRepository.markRunning(connection, created.match().id(), NOW));
-
+		
 		ApiException e = assertThrows(ApiException.class, () -> this.matches.cancel(owner, created.match().id()));
-
+		
 		assertAll(
 			() -> assertEquals(ErrorCode.CONFLICT, e.code()),
 			() -> assertEquals(409, e.status()),
 			() -> assertEquals(MatchState.RUNNING, this.matches.get(created.match().id()).state())
 		);
 	}
-
+	
 	@Test
 	void cancel_twice_isIdempotent() {
 		// A client that is unsure its cancel landed must not be handed a failure for having succeeded.
 		Principal owner = this.player("Owner");
 		MatchService.Created created = this.createRace(owner, 0);
 		this.matches.cancel(owner, created.match().id());
-
+		
 		assertDoesNotThrow(() -> this.matches.cancel(owner, created.match().id()));
 		assertEquals(EndReason.CANCELLED, this.matches.get(created.match().id()).endReason());
 	}
-
+	
 	@Test
 	void cancel_anUnknownMatch_isNotFound() {
 		Principal owner = this.player("Owner");
 		ApiException e = assertThrows(ApiException.class, () -> this.matches.cancel(owner, UUID.randomUUID()));
 		assertEquals(ErrorCode.NOT_FOUND, e.code());
 	}
-
+	
 	@Test
 	void isParticipant_reflectsMembership() {
 		Principal owner = this.player("Owner");
@@ -493,7 +493,7 @@ class MatchServiceTest extends PostgresTest {
 		MatchService.Created created = this.createRace(owner, 0);
 		this.matches.join(guest, created.match().id(), created.inviteToken());
 		database.execute(connection -> this.matchRepository.markRunning(connection, created.match().id(), NOW));
-
+		
 		Match active = this.matches.activeMatch(owner);
 		assertAll(
 			() -> assertNotNull(active),
@@ -502,7 +502,7 @@ class MatchServiceTest extends PostgresTest {
 			() -> assertNull(this.matches.activeMatch(stranger), "and nobody else is")
 		);
 	}
-
+	
 	/**
 	 * A lobby is not something a player has to be asked about: they can walk back into it from the
 	 * multiplayer screen, and nothing is escrowed yet.
@@ -511,10 +511,10 @@ class MatchServiceTest extends PostgresTest {
 	void activeMatch_aWaitingMatch_isNotOne() {
 		Principal owner = this.player("Owner");
 		this.createRace(owner, 0);
-
+		
 		assertNull(this.matches.activeMatch(owner));
 	}
-
+	
 	@Test
 	void activeMatch_afterItEnded_isNothing() {
 		Principal owner = this.player("Owner");
@@ -524,10 +524,10 @@ class MatchServiceTest extends PostgresTest {
 		// the row directly, so the live object is removed and the persisted path is what runs.
 		this.registry.remove(created.match().id());
 		this.matches.resign(owner, created.match().id());
-
+		
 		assertNull(this.matches.activeMatch(owner));
 	}
-
+	
 	/**
 	 * Declining to rejoin ends the match there and then. The point of the whole call: the other players are
 	 * sitting at a paused board waiting out a grace window this player has already decided not to use.
@@ -547,9 +547,9 @@ class MatchServiceTest extends PostgresTest {
 		});
 		// No live object: the registry lost it, which is exactly the state a restart leaves behind.
 		this.registry.remove(created.match().id());
-
+		
 		this.matches.resign(owner, created.match().id());
-
+		
 		Match after = this.matches.get(created.match().id());
 		assertAll(
 			() -> assertEquals(MatchState.ABANDONED, after.state()),
@@ -558,18 +558,18 @@ class MatchServiceTest extends PostgresTest {
 			() -> assertEquals(100, this.currency.balance(guest.userId()))
 		);
 	}
-
+	
 	@Test
 	void resign_byAPlayerWhoIsNotInIt_isForbidden() {
 		Principal owner = this.player("Owner");
 		Principal stranger = this.player("Stranger");
 		MatchService.Created created = this.createRace(owner, 0);
 		database.execute(connection -> this.matchRepository.markRunning(connection, created.match().id(), NOW));
-
+		
 		ApiException thrown = assertThrows(ApiException.class, () -> this.matches.resign(stranger, created.match().id()));
 		assertEquals(ErrorCode.FORBIDDEN, thrown.code());
 	}
-
+	
 	@Test
 	void resign_aMatchThatAlreadyEnded_isAccepted() {
 		Principal owner = this.player("Owner");
@@ -577,12 +577,12 @@ class MatchServiceTest extends PostgresTest {
 		database.execute(connection -> this.matchRepository.markRunning(connection, created.match().id(), NOW));
 		this.registry.remove(created.match().id());
 		this.matches.resign(owner, created.match().id());
-
+		
 		// Idempotent: the answer to a retry after an uncertain failure must not be an error.
 		assertDoesNotThrow(() -> this.matches.resign(owner, created.match().id()));
 		assertEquals(EndReason.RESIGNED, this.matches.get(created.match().id()).endReason());
 	}
-
+	
 	@Test
 	void recoverAfterRestart_abandonsUnfinishedMatchesAndRefundsStakes() {
 		// Live board state is memory-resident, so a restart can only abandon (spec 9a.3).
@@ -654,9 +654,9 @@ class MatchServiceTest extends PostgresTest {
 		Principal owner = this.player("Owner");
 		MatchService.Created created = this.createRace(owner, 0);
 		this.matches.cancel(owner, created.match().id());
-
+		
 		Match ended = this.matches.get(created.match().id());
-
+		
 		// Rebuilding one would hand a returning player an empty board that has forgotten it ever ended, which
 		// is what left a player who closed the app mid-match staring at a match nothing could end.
 		assertAll(
@@ -665,7 +665,7 @@ class MatchServiceTest extends PostgresTest {
 			() -> assertNull(this.registry.find(created.match().id()))
 		);
 	}
-
+	
 	@Test
 	void registry_activeCount_tracksLiveMatches() {
 		Principal owner = this.player("Owner");
