@@ -146,7 +146,10 @@ public final class CurrencyService {
 			
 			this.ledger.append(connection, userId, delta, LedgerReason.SYNC_ADJUST, null, this.clock.instant());
 			if (accepted < reportedBalance) {
-				log.info("Clamped reported balance {} to {} for user {}", reportedBalance, accepted, userId);
+				// Warn, not info: the ceiling is deliberately generous, so exceeding it means the client
+				// reported more than it could have earned even valuing every recorded game at the top rate.
+				// The player is told nothing (see above), which makes this line the only place it shows.
+				log.warn("Clamped reported balance {} to {} for user {}", reportedBalance, accepted, userId);
 			}
 			return current + delta;
 		});

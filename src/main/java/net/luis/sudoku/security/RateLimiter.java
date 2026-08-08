@@ -3,6 +3,8 @@ package net.luis.sudoku.security;
 import net.luis.sudoku.error.ApiException;
 import net.luis.sudoku.error.ErrorCode;
 import org.jspecify.annotations.NonNull;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.time.*;
 import java.util.Map;
@@ -21,7 +23,9 @@ import java.util.concurrent.atomic.AtomicInteger;
  * of a timestamp list.
  */
 public final class RateLimiter {
-	
+
+	private static final Logger log = LoggerFactory.getLogger(RateLimiter.class);
+
 	private final Clock clock;
 	private final Map<String, Window> windows = new ConcurrentHashMap<>();
 	
@@ -50,7 +54,14 @@ public final class RateLimiter {
 			return existing;
 		});
 		
-		if (window.count.incrementAndGet() > bucket.limit()) {
+		int attempts = window.count.incrementAndGet();
+		if (attempts > bucket.limit()) {
+			// The only trace a brute-force attempt leaves. Exhausting one of these budgets is not ordinary
+			// traffic: every one of them guards a short, guessable secret, so somebody sitting on the limit
+			// is either a client in a retry loop or a guesser, and both are worth seeing.
+			// Logged once per attempt past the limit rather than once per window, because how far past the
+			// limit it goes is the part that distinguishes the two.
+			log.warn("Rate limit exceeded: {} attempt {} of {} for {}, blocked until {}", bucket, attempts, bucket.limit(), key, window.expiresAt);
 			throw new ApiException(ErrorCode.RATE_LIMITED, "Too many attempts; try again after " + window.expiresAt, Map.of("retryAfterSeconds", Math.max(1, Duration.between(now, window.expiresAt).toSeconds())));
 		}
 	}

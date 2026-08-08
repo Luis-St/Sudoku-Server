@@ -147,6 +147,12 @@ public final class ServiceGraph implements AutoCloseable {
 			} catch (RuntimeException e) {
 				// A failed sweep must never kill the scheduled task, or the leak it prevents comes back.
 				log.warn("Housekeeping pass failed", e);
+			} catch (Error e) {
+				// Anything else escaping cancels the schedule permanently and silently - the executor keeps
+				// the failure in a Future nobody reads - so every table this sweep prunes would then grow
+				// without bound for the rest of the process's life. Not swallowed, only named on the way out.
+				log.error("Housekeeping stopped permanently; expired sessions, challenges and presence rows will now accumulate", e);
+				throw e;
 			}
 		}, 5, 5, TimeUnit.MINUTES);
 	}

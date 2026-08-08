@@ -5,6 +5,8 @@ RUN apk add --no-cache wget && addgroup -S sudoku && adduser -S -G sudoku sudoku
 WORKDIR /app
 COPY build/libs/Sudoku-Server-1.0.0.jar app.jar
 
+ENV SUDOKU_LOG_LEVEL=WARN
+
 USER sudoku
 EXPOSE 7000
 

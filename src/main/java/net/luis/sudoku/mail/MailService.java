@@ -8,6 +8,8 @@ import net.luis.utils.io.network.mail.*;
 import net.luis.utils.io.network.mail.message.*;
 import org.jspecify.annotations.NonNull;
 import org.jspecify.annotations.Nullable;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * Sends account-recovery email through LUtils' {@link SmtpClient}.
@@ -20,7 +22,9 @@ import org.jspecify.annotations.Nullable;
  * that captures outgoing mail instead of opening a real SMTP connection.
  */
 public class MailService {
-	
+
+	private static final Logger log = LoggerFactory.getLogger(MailService.class);
+
 	private final @Nullable MailConfig config;
 	
 	public MailService(@Nullable MailConfig config) {
@@ -51,6 +55,10 @@ public class MailService {
 			client.connect(config.host(), config.port());
 			client.send(message);
 		} catch (NetworkConnectionException e) {
+			// Named here rather than left to the generic 500 handler: by this point the verification or
+			// recovery code is already committed, so the player is holding a code that was never delivered
+			// and will keep retrying. "SMTP is broken" is the actionable fact, not "unhandled exception".
+			log.error("Failed to send mail through {}:{}, the code minted for this request was never delivered", config.host(), config.port(), e);
 			throw new IllegalStateException("Failed to send email to " + to, e);
 		}
 	}

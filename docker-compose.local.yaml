@@ -21,6 +21,8 @@ services:
         condition: service_healthy
     env_file:
       - .env
+    environment:
+      SUDOKU_LOG_LEVEL: INFO
     ports: !override
       - "7000:7000"
 

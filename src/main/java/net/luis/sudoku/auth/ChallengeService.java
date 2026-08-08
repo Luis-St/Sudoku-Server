@@ -116,6 +116,11 @@ public final class ChallengeService {
 			}
 			
 			if (!this.verifier.verify(device.keyAlgorithm(), publicKey, nonce, signature)) {
+				// Distinct from the other INVALID_SIGNATURE paths above, which an ordinary client hits by
+				// being slow or retrying: a live nonce for a registered device that fails to verify means
+				// whoever asked for the challenge cannot sign for the key they asked with. That is either a
+				// broken client keystore or somebody holding a public key they did not generate.
+				log.warn("Signature did not verify for device {} of user {} ({})", device.id(), user.id(), device.keyAlgorithm());
 				throw new ApiException(ErrorCode.INVALID_SIGNATURE, "Signature does not match the challenge");
 			}
 			

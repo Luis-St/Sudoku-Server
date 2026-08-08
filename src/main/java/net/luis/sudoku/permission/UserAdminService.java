@@ -95,7 +95,11 @@ public final class UserAdminService {
 			return new User(target.id(), target.displayName(), role, target.createdAt(), target.revoked(), target.email(), target.emailVerified());
 		});
 		
-		log.info("Admin action: {} ({}) changed role of {} ({}) to {}", actor.user().displayName(), actor.userId(),
+		// Every "Admin action:" line in this class is a warn rather than an info, and deliberately so: these
+		// are the audit trail. They are rare, they change who may do what, and production keeps only warn
+		// and above - so logging them at info would mean the one category of event you most want to be able
+		// to reconstruct afterwards is the one category that is never written down.
+		log.warn("Admin action: {} ({}) changed role of {} ({}) to {}", actor.user().displayName(), actor.userId(),
 			updated.displayName(), updated.id(), role);
 		return updated;
 	}
@@ -139,7 +143,7 @@ public final class UserAdminService {
 		// After commit: if the transaction had rolled back, we would have disconnected a user who is
 		// still perfectly entitled to be connected.
 		this.closer.closeSocketsFor(targetId, ErrorCode.USER_REVOKED.name());
-		log.info("Admin action: {} ({}) kicked {} ({})", actor.user().displayName(), actor.userId(),
+		log.warn("Admin action: {} ({}) kicked {} ({})", actor.user().displayName(), actor.userId(),
 			target.displayName(), target.id());
 	}
 	
@@ -183,7 +187,7 @@ public final class UserAdminService {
 		// No session is issued here. The account can authenticate again, but it is the returning client that
 		// has to do it - it still holds the private key, and the challenge/response handshake is the only
 		// thing that proves it.
-		log.info("Admin action: {} ({}) reinstated {} ({})", actor.user().displayName(), actor.userId(),
+		log.warn("Admin action: {} ({}) reinstated {} ({})", actor.user().displayName(), actor.userId(),
 			reinstated.displayName(), reinstated.id());
 		return reinstated;
 	}
@@ -223,7 +227,7 @@ public final class UserAdminService {
 		if (revokedOwn) {
 			this.closer.closeSocketsFor(actor.userId(), "DEVICE_REVOKED");
 		}
-		log.info("Admin action: {} ({}) revoked device {}", actor.user().displayName(), actor.userId(), deviceId);
+		log.warn("Admin action: {} ({}) revoked device {}", actor.user().displayName(), actor.userId(), deviceId);
 		return revokedOwn;
 	}
 	

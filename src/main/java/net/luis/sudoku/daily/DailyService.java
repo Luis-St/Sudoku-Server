@@ -142,7 +142,11 @@ public final class DailyService {
 			: new SolveVerifier.Verification(true, "");
 		
 		if (!verification.verified()) {
-			log.info("Unverified daily result from {} on {}: {}", actor.userId(), submit.date(), verification.reason());
+			// Warn, not info: a claimed solve the server cannot replay is either a client that built its
+			// solveOrder wrong - the shape of bug that once stopped every daily from counting - or a
+			// fabricated result. Neither should be invisible in a warn-only log, and it stays rare, because
+			// an honest client never produces one.
+			log.warn("Unverified daily result from {} on {}: {}", actor.userId(), submit.date(), verification.reason());
 		}
 		
 		return this.database.transaction(connection -> {

@@ -12,6 +12,15 @@ public final class EnvKeys {
 	public static final String SERVER_NAME = "SUDOKU_SERVER_NAME";
 	public static final String TIMEZONE = "SUDOKU_TIMEZONE";
 	public static final String BOOTSTRAP_INVITE = "SUDOKU_BOOTSTRAP_INVITE";
+
+	/**
+	 * The coarsest level that reaches the console; everything more severe comes with it.
+	 * <p>
+	 * Read by {@link LoggingConfig} rather than {@link ServerConfig}, because logging has to be up
+	 * before the rest of the configuration is parsed. The image sets {@code WARN}; unset means
+	 * {@code INFO}, which is what a local run wants.
+	 */
+	public static final String LOG_LEVEL = "SUDOKU_LOG_LEVEL";
 	
 	// Database
 	public static final String DB_URL = "SUDOKU_DB_URL";

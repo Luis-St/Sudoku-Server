@@ -5,42 +5,83 @@ import io.javalin.config.JavalinConfig;
 import io.javalin.openapi.plugin.OpenApiPlugin;
 import io.javalin.openapi.plugin.swagger.SwaggerPlugin;
 import net.luis.sudoku.config.ConfigException;
+import net.luis.sudoku.config.Env;
+import net.luis.sudoku.config.LoggingConfig;
 import net.luis.sudoku.config.ServerConfig;
 import net.luis.sudoku.error.ErrorHandlerConfig;
 import net.luis.sudoku.handler.*;
 import net.luis.sudoku.security.ClientIp;
 import net.luis.sudoku.version.GenVersion;
+import net.luis.utils.logging.LoggingExceptionHandler;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
 import org.jspecify.annotations.NonNull;
-import org.slf4j.*;
+import org.slf4j.MDC;
 
 import java.time.Duration;
 import java.util.UUID;
 
 public class Application {
-	
-	private static final Logger log = LoggerFactory.getLogger(Application.class);
-	
+
+	/**
+	 * Log4j2's own logger rather than SLF4J, because this is the only class that needs {@code FATAL}:
+	 * everything it logs at that level is a failure to start, which SLF4J cannot express. Every other
+	 * class logs through SLF4J as before - both ends up in the same log4j2 configuration.
+	 */
+	private static final Logger log;
+
+	static {
+		// Before the first logger exists anywhere, including the static fields of everything the graph
+		// constructs. Reading one variable here rather than in ServerConfig is deliberate: a configuration
+		// error has to be loggable, so logging cannot wait for configuration to parse.
+		LoggingConfig.apply(Env.ofSystem());
+		log = LogManager.getLogger(Application.class);
+	}
+
 	static void main() {
+		// Housekeeping, match queues, the puzzle refill pool and both shutdown hooks all run on threads
+		// nobody catches for. Without this, a thread dying takes its stack trace to stderr, which in a
+		// warn-only production log is the one place nobody is looking.
+		Thread.setDefaultUncaughtExceptionHandler(new LoggingExceptionHandler());
+
 		ServerConfig config;
 		try {
 			config = ServerConfig.fromEnvironment();
 		} catch (ConfigException e) {
-			// Nothing is up yet, so log4j's own startup noise would bury this; make it unmissable.
-			log.error("Configuration error: {}", e.getMessage());
+			// Fatal, not error: the process is about to stop existing, and this is the whole reason why.
+			log.fatal("Configuration error: {}", e.getMessage());
 			System.exit(1);
 			return;
 		}
-		
-		ServiceGraph services = new ServiceGraph(config);
+
+		ServiceGraph services;
+		try {
+			services = new ServiceGraph(config);
+		} catch (RuntimeException e) {
+			// An unreachable database, a failed migration or a rejected bootstrap invite all land here.
+			// Previously they escaped main as a bare stack trace with no log line at all, so a container
+			// that never came up left nothing behind that said why.
+			log.fatal("Failed to start: the service graph could not be built", e);
+			System.exit(1);
+			return;
+		}
 		Runtime.getRuntime().addShutdownHook(new Thread(services::close, "services-shutdown"));
-		
+
 		log.info("Server id {} (daily {}x{} {}, rollover zone {})", services.serverId(), config.dailySize().n(), config.dailySize().n(), config.dailyVariant(), config.timezone().getId());
 		log.info("shared-core genVersion {}, API version {}", GenVersion.CURRENT, ApiVersion.CURRENT);
-		
+
 		Javalin app = Javalin.create(javalin -> configure(javalin, services));
 		Runtime.getRuntime().addShutdownHook(new Thread(app::stop, "javalin-shutdown"));
-		
-		app.start(config.port());
+
+		try {
+			app.start(config.port());
+		} catch (RuntimeException e) {
+			// Almost always the port already being in use, which is worth naming rather than leaving to a
+			// Jetty stack trace.
+			log.fatal("Failed to start: port {} could not be bound", config.port(), e);
+			System.exit(1);
+			return;
+		}
 		log.info("{} started on port {}", config.serverName(), config.port());
 	}
 	

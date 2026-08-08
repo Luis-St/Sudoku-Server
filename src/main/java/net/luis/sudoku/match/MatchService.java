@@ -367,7 +367,10 @@ public final class MatchService {
 				}
 			}
 			if (!unfinished.isEmpty()) {
-				log.info("Recovered {} unfinished matches after restart; stakes refunded", unfinished.size());
+				// Warn: a clean shutdown ends its matches on the way down, so anything found here was cut off
+				// by a crash, a kill or an OOM. The count is the only measure of how much play the last
+				// unclean stop actually destroyed.
+				log.warn("Recovered {} unfinished matches after restart; stakes refunded", unfinished.size());
 			}
 			return unfinished.size();
 		});
@@ -400,35 +403,52 @@ public final class MatchService {
 		
 		@Override
 		public void onEnd(@NonNull Match match, @NonNull MatchState state, @Nullable UUID winnerId, @NonNull EndReason reason, @NonNull List<UUID> participants) {
-			MatchService.this.database.execute(connection -> {
-				MatchService.this.matches.markEnded(connection, match.id(), state, winnerId, reason, MatchService.this.clock.instant());
-				
-				boolean decided = state == MatchState.ENDED && winnerId != null;
-				if (match.stake() > 0) {
-					if (decided) {
-						// A single payout row credits the winner with the whole pot (spec 9a.3).
-						MatchService.this.currency.payout(connection, winnerId, match.stake() * participants.size(), match.id());
-					} else {
-						for (UUID userId : participants) {
-							MatchService.this.currency.refund(connection, userId, match.stake(), match.id());
-						}
-					}
-				}
-				
-				for (UUID userId : participants) {
-					MatchResult result;
-					if (state == MatchState.ABANDONED) {
-						result = MatchResult.ABANDONED;
-					} else if (winnerId == null) {
-						result = MatchResult.DRAW;
-					} else {
-						result = userId.equals(winnerId) ? MatchResult.WON : MatchResult.LOST;
-					}
-					MatchService.this.matches.setResult(connection, match.id(), userId, result);
-				}
-			});
-			
+			try {
+				MatchService.this.persistEnd(match, state, winnerId, participants, reason);
+			} catch (RuntimeException e) {
+				// Everyone has already been sent MATCH_ENDED, so there is no undoing this from here. Say
+				// exactly what it costs - stakes are still escrowed and the match still reads as unfinished,
+				// which is what recoverAfterRestart will pick up - and carry on to the removal below, because
+				// leaving a finished match in the registry forever is strictly worse than losing the row.
+				log.error("Match {} ended ({}) but the outcome could not be persisted; stakes stay escrowed until a restart", match.id(), reason, e);
+			}
+
 			MatchService.this.registry.remove(match.id());
 		}
+	}
+
+	/**
+	 * Writes an ended match's outcome, settles its stakes and records a result per participant, all in one
+	 * transaction. Split out of {@link PersistenceCallbacks#onEnd} only so the failure of the whole write
+	 * can be caught in one place.
+	 */
+	private void persistEnd(@NonNull Match match, @NonNull MatchState state, @Nullable UUID winnerId, @NonNull List<UUID> participants, @NonNull EndReason reason) {
+		this.database.execute(connection -> {
+			this.matches.markEnded(connection, match.id(), state, winnerId, reason, this.clock.instant());
+
+			boolean decided = state == MatchState.ENDED && winnerId != null;
+			if (match.stake() > 0) {
+				if (decided) {
+					// A single payout row credits the winner with the whole pot (spec 9a.3).
+					this.currency.payout(connection, winnerId, match.stake() * participants.size(), match.id());
+				} else {
+					for (UUID userId : participants) {
+						this.currency.refund(connection, userId, match.stake(), match.id());
+					}
+				}
+			}
+
+			for (UUID userId : participants) {
+				MatchResult result;
+				if (state == MatchState.ABANDONED) {
+					result = MatchResult.ABANDONED;
+				} else if (winnerId == null) {
+					result = MatchResult.DRAW;
+				} else {
+					result = userId.equals(winnerId) ? MatchResult.WON : MatchResult.LOST;
+				}
+				this.matches.setResult(connection, match.id(), userId, result);
+			}
+		});
 	}
 }

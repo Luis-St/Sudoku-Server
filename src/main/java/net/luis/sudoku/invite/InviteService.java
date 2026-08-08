@@ -53,7 +53,9 @@ public final class InviteService {
 		Instant now = this.clock.instant();
 		Invite invite = this.database.transaction(connection -> this.invites.create(connection, code, actor.userId(), Role.NEW, expiresAt, now));
 		
-		log.info("Admin action: {} ({}) created invite {}", actor.user().displayName(), actor.userId(), code);
+		// Warn, like every other "Admin action:" line - see UserAdminService. An invite is what lets a new
+		// account exist at all on a closed server, so who minted one has to survive an info-free log.
+		log.warn("Admin action: {} ({}) created invite {}", actor.user().displayName(), actor.userId(), code);
 		return invite;
 	}
 	
@@ -86,6 +88,6 @@ public final class InviteService {
 			this.invites.revoke(connection, code);
 		});
 		
-		log.info("Admin action: {} ({}) revoked invite {}", actor.user().displayName(), actor.userId(), code);
+		log.warn("Admin action: {} ({}) revoked invite {}", actor.user().displayName(), actor.userId(), code);
 	}
 }

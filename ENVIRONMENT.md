@@ -35,9 +35,25 @@ present but blank still fails at boot, and an optional one falls back to its def
 | `SUDOKU_TIMEZONE` | no | `UTC` | IANA zone id (for example `Europe/Berlin`) driving daily rollover and streak evaluation. Anything `ZoneId.of` rejects fails at boot. |
 | `SUDOKU_BOOTSTRAP_INVITE` | **yes** | | Invite code that grants the very first admin. Restarting with a fresh value is the break-glass path when no admin exists. |
 | `SUDOKU_TRUST_PROXY` | no | `true` | Whether `X-Real-IP` and `X-Forwarded-For` may be believed. True is correct for the documented deployment, where a reverse proxy terminates TLS in front of the server. Set it false only if the server is directly reachable, because those headers are client controlled then. |
+| `SUDOKU_LOG_LEVEL` | no | `INFO` | Coarsest level written to stdout; everything more severe comes with it. One of `OFF`, `FATAL`, `ERROR`, `WARN`, `INFO`, `DEBUG`, `TRACE`, `ALL`, case insensitive. |
 
 There is no TLS configuration. The server always speaks plain HTTP and a reverse proxy terminates TLS
 in front of it.
+
+### Logging
+
+`SUDOKU_LOG_LEVEL` is the one variable not read by `ServerConfig`. Logging has to be up before anything
+else is parsed, so `net.luis.sudoku.config.LoggingConfig` reads it in a static initializer of
+`Application` and hands it to LUtils' `LoggingUtils`, which builds the log4j2 configuration at runtime.
+There is deliberately no `log4j2.xml`; a level should be changeable without rebuilding the image.
+
+It is also the one variable that does not fail fast. An unusable value falls back to `INFO` and says so
+at `WARN`, because a configuration error that cannot be logged is worse than a configuration error.
+
+The `Dockerfile` sets `WARN`, so production keeps only the levels that mean something went wrong.
+Unset, which is every local run, means `INFO`; `docker-compose.local.yaml` sets it back to `INFO`
+explicitly, since the local stack builds from the same image. Output is console only, on stdout, where
+the container runtime collects it.
 
 ## Database
 
