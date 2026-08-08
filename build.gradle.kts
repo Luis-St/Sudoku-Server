@@ -112,8 +112,11 @@ tasks.compileJava {
 
 tasks.shadowJar {
 	group = "api"
-	
+
+	// The Dockerfile copies build/libs/Sudoku-Server.jar, so the fat jar carries no version in its
+	// file name and the image build never has to be touched when the version is bumped.
 	archiveClassifier.set("")
+	archiveVersion.set("")
 	mergeServiceFiles()
 	manifest {
 		attributes("Main-Class" to "net.luis.sudoku.Application")
