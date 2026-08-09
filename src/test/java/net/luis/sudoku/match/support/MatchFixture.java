@@ -50,6 +50,7 @@ public final class MatchFixture {
 			Variant.CLASSIC,
 			Difficulty.TWO,
 			puzzle.key().seed(),
+			PuzzleFactory.encodeGivens(puzzle),
 			livesEnabled,
 			hintsEnabled,
 			stake,

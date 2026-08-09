@@ -159,7 +159,7 @@ public final class RaceMatch extends LiveMatch {
 		payload.put("matchId", this.id().toString());
 		payload.put("mode", this.mode().name());
 		payload.put("state", this.state().name());
-		payload.put("puzzleKey", MatchPayloads.key(this.match.key()));
+		payload.put("puzzleKey", this.puzzlePayload());
 		payload.put("livesEnabled", this.match.livesEnabled());
 		payload.put("livesLeft", own == null || !this.match.livesEnabled() ? null : own.livesLeft);
 		// Only the cells this player has solved - never the opponent's.

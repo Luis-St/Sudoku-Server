@@ -8,6 +8,7 @@ import net.luis.sudoku.generation.PuzzleGenerator;
 import net.luis.sudoku.grid.GridSize;
 import net.luis.sudoku.grid.Variant;
 import net.luis.sudoku.key.PuzzleKey;
+import net.luis.sudoku.sharecode.GivensCodec;
 import org.jspecify.annotations.NonNull;
 
 /**
@@ -29,6 +30,39 @@ public final class PuzzleFactory {
 	 */
 	public static @NonNull GeneratedPuzzle generate(@NonNull PuzzleKey key) {
 		return PuzzleGenerator.generate(key);
+	}
+	
+	/**
+	 * Rebuilds the puzzle a set of encoded givens describes, instead of generating it again.
+	 * <p>
+	 * The givens are what the server already shipped to the clients, so rebuilding from them is both
+	 * cheaper - a backtracking solve rather than a full generate-dig-rate search, which at the hard bands
+	 * is the difference between milliseconds and a second - and safer, because it cannot disagree with the
+	 * grid the players are looking at.
+	 *
+	 * @param key The key the givens belong to, which supplies the size, the variant and any chaos layout
+	 * @param encodedGivens The {@code GivensCodec} string the givens were stored as
+	 * @return The rebuilt puzzle and its derived solution
+	 * @throws ApiException {@code INTERNAL} if the stored string is not givens for this key
+	 */
+	public static @NonNull GeneratedPuzzle fromGivens(@NonNull PuzzleKey key, @NonNull String encodedGivens) {
+		try {
+			return PuzzleGenerator.fromGivens(key, GivensCodec.decode(encodedGivens));
+		} catch (IllegalArgumentException e) {
+			// Only ever reachable if a row was written by something other than this server, so it is a bug
+			// rather than a bad request; the caller falls back to regenerating from the key.
+			throw new ApiException(ErrorCode.INTERNAL, "Stored givens do not match the puzzle key");
+		}
+	}
+	
+	/**
+	 * Encodes a generated puzzle's givens for the wire and for storage.
+	 *
+	 * @param puzzle The puzzle to encode
+	 * @return The compact, URL-safe Base64 string
+	 */
+	public static @NonNull String encodeGivens(@NonNull GeneratedPuzzle puzzle) {
+		return GivensCodec.encode(puzzle.puzzle());
 	}
 	
 	/**
@@ -71,31 +105,53 @@ public final class PuzzleFactory {
 	}
 	
 	/**
-	 * Parses a 1-5 difficulty index from a request for shared content.
+	 * Parses a {@code 1}-{@link Difficulty#LISA} difficulty index from a request for shared content.
+	 * <p>
+	 * The whole range is a real tier, Lisa included, but Lisa is then refused for shared content by
+	 * {@link #requireMultiplayerSafe} - so index {@link Difficulty#LISA} is a recognised tier that is not
+	 * allowed here, which is why it answers {@code LISA_NOT_ALLOWED} rather than {@code BAD_REQUEST}.
 	 *
-	 * @throws ApiException {@code LISA_NOT_ALLOWED} for index 6, {@code BAD_REQUEST} otherwise
+	 * @param index The tier index from the request
+	 * @return The matching tier, never Lisa
+	 * @throws ApiException {@code LISA_NOT_ALLOWED} for Lisa's index, {@code BAD_REQUEST} for anything
+	 *   outside the range
 	 */
 	public static @NonNull Difficulty difficultyOfIndex(int index) {
 		Difficulty difficulty;
 		try {
 			difficulty = Difficulty.ofIndex(index);
 		} catch (IllegalArgumentException e) {
-			throw ApiException.badRequest("difficulty must be between 1 and 5, got: " + index);
+			throw ApiException.badRequest(outOfRange(index));
 		}
 		requireMultiplayerSafe(difficulty);
 		return difficulty;
 	}
 	
 	/**
-	 * Parses a 1-6 difficulty index from a request for single-player content - see {@link #singlePlayerKey}.
+	 * Parses a {@code 1}-{@link Difficulty#LISA} difficulty index from a request for single-player content -
+	 * see {@link #singlePlayerKey}.
 	 *
+	 * @param index The tier index from the request
+	 * @return The matching tier, Lisa included
 	 * @throws ApiException {@code BAD_REQUEST} if the index names no tier
 	 */
 	public static @NonNull Difficulty singlePlayerDifficultyOfIndex(int index) {
 		try {
 			return Difficulty.ofIndex(index);
 		} catch (IllegalArgumentException e) {
-			throw ApiException.badRequest("difficulty must be between 1 and 6, got: " + index);
+			throw ApiException.badRequest(outOfRange(index));
 		}
+	}
+	
+	/**
+	 * The one place the accepted range is worded, derived from {@link Difficulty#LISA} rather than written
+	 * out - the scale went from six tiers to fifteen, and a hard-coded bound is exactly what left the old
+	 * message telling clients "1 and 5" while the code accepted more.
+	 *
+	 * @param index The rejected index
+	 * @return The message to answer with
+	 */
+	private static @NonNull String outOfRange(int index) {
+		return "difficulty must be between 1 and " + Difficulty.LISA.index() + ", got: " + index;
 	}
 }

@@ -170,7 +170,7 @@ class DailyServiceTest extends PostgresTest {
 			() -> assertEquals(LocalDate.of(2026, 7, 25), issued.date()),
 			() -> assertEquals(GridSize.NINE, issued.key().size()),
 			() -> assertEquals(Variant.CLASSIC, issued.key().variant()),
-			() -> assertEquals(Difficulty.THREE, issued.key().difficulty(), "default tier is 3"),
+			() -> assertEquals(Difficulty.FIVE, issued.key().difficulty(), "default tier is 5 of fifteen"),
 			() -> assertTrue(issued.key().isCurrentGenVersion())
 		);
 	}
@@ -214,17 +214,17 @@ class DailyServiceTest extends PostgresTest {
 		// Locks today's tier at the default.
 		PuzzleKey todaysKey = this.daily.today(player).key();
 		
-		this.daily.setPreference(player, 5);
+		this.daily.setPreference(player, 11);
 		
 		PuzzleKey stillTodays = this.daily.today(player).key();
 		assertAll(
-			() -> assertEquals(Difficulty.THREE, stillTodays.difficulty(), "today's tier must not change"),
+			() -> assertEquals(Difficulty.FIVE, stillTodays.difficulty(), "today's tier must not change"),
 			() -> assertEquals(todaysKey, stillTodays),
-			() -> assertEquals(5, this.daily.preference(player), "but the standing preference is updated")
+			() -> assertEquals(11, this.daily.preference(player), "but the standing preference is updated")
 		);
 		
 		this.now.set(NOW.plus(java.time.Duration.ofDays(1)));
-		assertEquals(Difficulty.FIVE, this.daily.today(player).key().difficulty(), "tomorrow uses the new tier");
+		assertEquals(Difficulty.ELEVEN, this.daily.today(player).key().difficulty(), "tomorrow uses the new tier");
 	}
 	
 	@Test
@@ -239,14 +239,14 @@ class DailyServiceTest extends PostgresTest {
 	@Test
 	void setPreference_toLisa_isAccepted() {
 		Principal player = this.player("Owner");
-		this.daily.setPreference(player, 6);
-		assertEquals(6, this.daily.preference(player));
+		this.daily.setPreference(player, Difficulty.LISA.index());
+		assertEquals(Difficulty.LISA.index(), this.daily.preference(player));
 	}
 	
 	@Test
 	void setPreference_toATierThatDoesNotExist_isRejected() {
 		Principal player = this.player("Owner");
-		ApiException e = assertThrows(ApiException.class, () -> this.daily.setPreference(player, 7));
+		ApiException e = assertThrows(ApiException.class, () -> this.daily.setPreference(player, 16));
 		assertEquals(ErrorCode.BAD_REQUEST, e.code());
 	}
 	
@@ -255,7 +255,10 @@ class DailyServiceTest extends PostgresTest {
 		Principal player = this.player("Owner");
 		assertAll(
 			() -> assertThrows(ApiException.class, () -> this.daily.setPreference(player, 0)),
-			() -> assertThrows(ApiException.class, () -> this.daily.setPreference(player, 7))
+			() -> assertDoesNotThrow(() -> this.daily.setPreference(player, 1)),
+			() -> assertDoesNotThrow(() -> this.daily.setPreference(player, 14)),
+			() -> assertDoesNotThrow(() -> this.daily.setPreference(player, 15)),
+			() -> assertThrows(ApiException.class, () -> this.daily.setPreference(player, 16))
 		);
 	}
 	
@@ -401,7 +404,7 @@ class DailyServiceTest extends PostgresTest {
 	void submit_aTierThatDoesNotExist_isRejected() {
 		Principal player = this.player("Owner");
 		LocalDate date = this.daily.today();
-		DailyService.Submit submit = new DailyService.Submit(date, 7, DailyOutcome.SOLVED, 60_000, 0, 0, List.of());
+		DailyService.Submit submit = new DailyService.Submit(date, 16, DailyOutcome.SOLVED, 60_000, 0, 0, List.of());
 		
 		ApiException e = assertThrows(ApiException.class, () -> this.daily.submit(player, submit));
 		assertEquals(ErrorCode.BAD_REQUEST, e.code());
@@ -834,7 +837,7 @@ class DailyServiceTest extends PostgresTest {
 	
 	@Test
 	void leaderboard_forATierThatDoesNotExist_isRejected() {
-		ApiException e = assertThrows(ApiException.class, () -> this.daily.leaderboard(7));
+		ApiException e = assertThrows(ApiException.class, () -> this.daily.leaderboard(16));
 		assertEquals(ErrorCode.BAD_REQUEST, e.code());
 	}
 }

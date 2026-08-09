@@ -29,7 +29,15 @@ package net.luis.sudoku;
  */
 public final class ApiVersion {
 	
-	public static final int CURRENT = 1;
+	/**
+	 * <b>2, since the fifteen-tier rework (2026-08-09).</b> The difficulty integer changed meaning rather
+	 * than gaining values - {@code 6} was Lisa to a v1 client and is an ordinary mid tier now - so every
+	 * route whose request or response carries a difficulty integer or a puzzle key is registered again
+	 * under {@code /api/v2} while its {@code v1} path keeps working, translating through
+	 * {@link net.luis.sudoku.compat.LegacyDifficulty}. Everything else - auth, presence, friends, devices,
+	 * currency - is untouched and stays {@code v1} only.
+	 */
+	public static final int CURRENT = 2;
 	
 	private ApiVersion() {}
 }

@@ -22,6 +22,20 @@ public interface Connection {
 	 */
 	@NonNull String displayName();
 	
+	/**
+	 * The API version of the path this socket attached on: {@code 1} for {@code /ws/v1/matches/{id}},
+	 * {@code 2} for {@code /ws/v2/matches/{id}}.
+	 * <p>
+	 * A match can legitimately have both attached at once - one player on an old build, one on a new - so
+	 * the version belongs to the connection rather than to the match, and {@code MATCH_STATE} is reduced to
+	 * the v1 shape for exactly the sockets that asked for it.
+	 *
+	 * @return The API version this connection speaks, defaulting to the newest
+	 */
+	default int apiVersion() {
+		return net.luis.sudoku.ApiVersion.CURRENT;
+	}
+	
 	void send(@NonNull MessageEnvelope message);
 	
 	/**

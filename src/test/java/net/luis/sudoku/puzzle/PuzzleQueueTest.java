@@ -1,13 +1,12 @@
 package net.luis.sudoku.puzzle;
 
 import net.luis.sudoku.difficulty.Difficulty;
-import net.luis.sudoku.error.ApiException;
-import net.luis.sudoku.error.ErrorCode;
 import net.luis.sudoku.generation.GeneratedPuzzle;
 import net.luis.sudoku.grid.GridSize;
 import net.luis.sudoku.grid.Variant;
 import org.junit.jupiter.api.Test;
 
+import java.time.*;
 import java.util.HashSet;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -18,6 +17,16 @@ import static org.junit.jupiter.api.Assertions.*;
  * Test class for {@link PuzzleQueue}.
  */
 class PuzzleQueueTest {
+	
+	/** Waits for the single asynchronous thing this class does, rather than sleeping a fixed amount. */
+	private static int awaitDepth(PuzzleQueue queue, GridSize size, Variant variant, Difficulty difficulty) throws Exception {
+		int depth = 0;
+		for (int attempt = 0; attempt < 100 && depth == 0; attempt++) {
+			Thread.sleep(50);
+			depth = queue.depth(size, variant, difficulty);
+		}
+		return depth;
+	}
 	
 	@Test
 	void take_fromAColdQueue_stillReturnsAPuzzle() {
@@ -30,6 +39,44 @@ class PuzzleQueueTest {
 				() -> assertEquals(Variant.CLASSIC, puzzle.puzzle().variant()),
 				() -> assertEquals(Difficulty.THREE, puzzle.key().difficulty())
 			);
+		}
+	}
+	
+	@Test
+	void refill_aBucketNobodyHasTakenFromInAnHour_isDropped() throws Exception {
+		// The bucket space is the product of three axes and grew two and a half times when the difficulty
+		// scale did. Without ageing, every combination a single curious player ever opened stayed pooled at
+		// full depth for the life of the process, and the pool's memory was decided by what had been asked
+		// for once rather than by what is in use.
+		MovableClock clock = new MovableClock();
+		try (PuzzleQueue queue = new PuzzleQueue(() -> 2, clock)) {
+			queue.take(GridSize.FOUR, Variant.CLASSIC, Difficulty.ONE);
+			assertTrue(awaitDepth(queue, GridSize.FOUR, Variant.CLASSIC, Difficulty.ONE) > 0, "the bucket should have filled");
+			
+			clock.advance(Duration.ofHours(2));
+			// Any refill sweeps; this take is on a different bucket precisely so the drop cannot be
+			// mistaken for the taken-from bucket simply being drained.
+			queue.take(GridSize.NINE, Variant.CLASSIC, Difficulty.ONE);
+			awaitDepth(queue, GridSize.NINE, Variant.CLASSIC, Difficulty.ONE);
+			
+			assertEquals(0, queue.depth(GridSize.FOUR, Variant.CLASSIC, Difficulty.ONE));
+		}
+	}
+	
+	@Test
+	void refill_aBucketStillInUse_isKept() throws Exception {
+		// The other half, and the one that matters more: taking from a bucket stamps it, so the busiest
+		// bucket on the server is never the one the sweep decides is idle.
+		MovableClock clock = new MovableClock();
+		try (PuzzleQueue queue = new PuzzleQueue(() -> 2, clock)) {
+			queue.take(GridSize.FOUR, Variant.CLASSIC, Difficulty.ONE);
+			assertTrue(awaitDepth(queue, GridSize.FOUR, Variant.CLASSIC, Difficulty.ONE) > 0, "the bucket should have filled");
+			
+			clock.advance(Duration.ofHours(2));
+			queue.take(GridSize.FOUR, Variant.CLASSIC, Difficulty.ONE); // Still wanted, so still stamped.
+			awaitDepth(queue, GridSize.FOUR, Variant.CLASSIC, Difficulty.ONE);
+			
+			assertTrue(queue.depth(GridSize.FOUR, Variant.CLASSIC, Difficulty.ONE) > 0, "a bucket in use must survive the sweep");
 		}
 	}
 	
@@ -76,12 +123,27 @@ class PuzzleQueueTest {
 	}
 	
 	@Test
-	void take_withLisa_isRejected() {
-		// The queue only serves normal and match play, and Lisa is single-player only.
+	void take_withLisa_isServed() {
+		// The queue pools every band now that it also serves POST /api/v2/puzzles: Lisa is the most expensive
+		// tier to generate and therefore the one that most needs pooling. Refusing it is a rule about
+		// matches, and it still runs in MatchService.create.
 		try (PuzzleQueue queue = new PuzzleQueue(() -> 0)) {
-			ApiException e = assertThrows(ApiException.class,
-				() -> queue.take(GridSize.NINE, Variant.CLASSIC, Difficulty.LISA));
-			assertEquals(ErrorCode.LISA_NOT_ALLOWED, e.code());
+			GeneratedPuzzle puzzle = queue.take(GridSize.NINE, Variant.CLASSIC, Difficulty.LISA);
+			assertEquals(Difficulty.LISA, puzzle.key().difficulty());
+		}
+	}
+	
+	@Test
+	void take_poolsTheWholePuzzle_notJustItsKey() {
+		// The givens have to be computed by the time a request arrives, which is only true if the pool holds
+		// the generated puzzle rather than the key it came from.
+		try (PuzzleQueue queue = new PuzzleQueue(() -> 0)) {
+			GeneratedPuzzle puzzle = queue.take(GridSize.NINE, Variant.CLASSIC, Difficulty.THREE);
+			
+			assertAll(
+				() -> assertEquals(GridSize.NINE.cellCount(), puzzle.solution().length),
+				() -> assertNotNull(PuzzleFactory.encodeGivens(puzzle))
+			);
 		}
 	}
 	
@@ -90,6 +152,33 @@ class PuzzleQueueTest {
 		try (PuzzleQueue queue = new PuzzleQueue(() -> 0)) {
 			GeneratedPuzzle puzzle = queue.take(GridSize.NINE, Variant.CHAOS, Difficulty.THREE);
 			assertEquals(Variant.CHAOS, puzzle.puzzle().variant());
+		}
+	}
+	
+	/**
+	 * A clock the test moves by hand, so bucket ageing is exercised without a test that sleeps for an hour.
+	 */
+	private static final class MovableClock extends Clock {
+		
+		private Instant now = Instant.parse("2026-08-09T10:00:00Z");
+		
+		void advance(Duration amount) {
+			this.now = this.now.plus(amount);
+		}
+		
+		@Override
+		public ZoneId getZone() {
+			return ZoneOffset.UTC;
+		}
+		
+		@Override
+		public Clock withZone(ZoneId zone) {
+			return this;
+		}
+		
+		@Override
+		public Instant instant() {
+			return this.now;
 		}
 	}
 }

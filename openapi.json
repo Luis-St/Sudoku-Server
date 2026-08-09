@@ -215,8 +215,8 @@
     "/api/v1/daily" : {
       "get" : {
         "tags" : [ "Daily" ],
-        "summary" : "Get today's daily puzzle key",
-        "description" : "Returns the key only; the client generates the grid locally. The first request of a date locks in that day's difficulty tier.",
+        "summary" : "Get today's daily puzzle key (v1)",
+        "description" : "Returns the key only; the client generates the grid locally. The first request of a date locks in that day's difficulty tier. The difficulty in the key is the frozen six-tier integer, where 6 is Lisa - use /api/v2/daily for the real 1-15 tier and for the givens.",
         "operationId" : "getDaily",
         "responses" : {
           "200" : {
@@ -235,13 +235,13 @@
     "/api/v1/daily/leaderboard" : {
       "get" : {
         "tags" : [ "Daily" ],
-        "summary" : "Today's daily leaderboard for one tier",
-        "description" : "Ranked within a single difficulty tier. Hints used are not exposed.",
+        "summary" : "Today's daily leaderboard for one tier (v1)",
+        "description" : "Ranked within a single difficulty tier, on the frozen six-tier scale. Hints used are not exposed.",
         "operationId" : "dailyLeaderboard",
         "parameters" : [ {
           "name" : "difficulty",
           "in" : "query",
-          "description" : "Tier index 1-5",
+          "description" : "Legacy tier index 1-6, where 6 is Lisa",
           "required" : true,
           "schema" : {
             "type" : "string"
@@ -267,8 +267,8 @@
     "/api/v1/daily/result" : {
       "post" : {
         "tags" : [ "Daily" ],
-        "summary" : "Submit a daily result",
-        "description" : "Verified by replaying the solve order against the regenerated puzzle. A SOLVED result locks the date; FAILED results may be retried all day. A result may be submitted for any date that is not in the future, so a client that finished a daily offline can drain its queue whenever it reconnects; credit is pinned to the date in the body, never the date it arrives. Difficulty is 1-6: Lisa is a valid daily tier, unlike in a match. solveOrder is an array of [cell, digit] PAIRS - [[12,4],[13,9],...] - one per non-given cell, and the replay only passes once every one of them is accounted for, hint-filled cells included. The generated schema below flattens the nested array to \"array of integer\", which is wrong: a client that sends bare cell indices is rejected with 400 and its daily never counts.",
+        "summary" : "Submit a daily result (v1)",
+        "description" : "Verified by replaying the solve order against the regenerated puzzle. A SOLVED result locks the date; FAILED results may be retried all day. A result may be submitted for any date that is not in the future, so a client that finished a daily offline can drain its queue whenever it reconnects; credit is pinned to the date in the body, never the date it arrives. Difficulty is the frozen six-tier integer 1-6, where 6 is Lisa, which is a valid daily tier unlike in a match. solveOrder is an array of [cell, digit] PAIRS - [[12,4],[13,9],...] - one per non-given cell, and the replay only passes once every one of them is accounted for, hint-filled cells included. The generated schema below flattens the nested array to \"array of integer\", which is wrong: a client that sends bare cell indices is rejected with 400 and its daily never counts.",
         "operationId" : "submitDailyResult",
         "requestBody" : {
           "content" : {
@@ -642,8 +642,8 @@
     "/api/v1/matches" : {
       "post" : {
         "tags" : [ "Matches" ],
-        "summary" : "Create a match",
-        "description" : "The creator chooses the configuration and settings. Difficulty LISA is rejected for every mode.",
+        "summary" : "Create a match (v1)",
+        "description" : "The creator chooses the configuration and settings. config.difficulty is the frozen six-tier integer 1-6; 6 is Lisa and is rejected for every mode.",
         "operationId" : "createMatch",
         "requestBody" : {
           "content" : {
@@ -1002,8 +1002,8 @@
     "/api/v1/players/{id}/stats" : {
       "get" : {
         "tags" : [ "Stats" ],
-        "summary" : "A player's aggregate statistics",
-        "description" : "Grouped by difficulty tier, because solve times are only comparable within a tier.",
+        "summary" : "A player's aggregate statistics (v1)",
+        "description" : "Grouped by difficulty tier, because solve times are only comparable within a tier. Difficulty is the frozen six-tier integer 1-6; two real tiers can therefore share one row here.",
         "operationId" : "playerStats",
         "parameters" : [ {
           "name" : "id",
@@ -1034,7 +1034,8 @@
     "/api/v1/preferences" : {
       "get" : {
         "tags" : [ "Daily" ],
-        "summary" : "Get your daily preferences",
+        "summary" : "Get your daily preferences (v1)",
+        "description" : "dailyDifficulty is the frozen six-tier integer 1-6, where 6 is Lisa.",
         "operationId" : "getPreferences",
         "responses" : {
           "200" : {
@@ -1051,8 +1052,8 @@
       },
       "put" : {
         "tags" : [ "Daily" ],
-        "summary" : "Set your daily difficulty",
-        "description" : "Takes effect from the next day only; today's tier was fixed when the day began.",
+        "summary" : "Set your daily difficulty (v1)",
+        "description" : "Takes effect from the next day only; today's tier was fixed when the day began. dailyDifficulty is the frozen six-tier integer 1-6, where 6 is Lisa.",
         "operationId" : "setPreferences",
         "requestBody" : {
           "content" : {
@@ -1182,8 +1183,8 @@
     "/api/v1/stats/games" : {
       "post" : {
         "tags" : [ "Stats" ],
-        "summary" : "Upload finished single-player games",
-        "description" : "Called as games are played, and on reconnection for whatever the client queued while offline. Safe to repeat: a game already recorded is skipped, not counted twice.",
+        "summary" : "Upload finished single-player games (v1)",
+        "description" : "Called as games are played, and on reconnection for whatever the client queued while offline. Safe to repeat: a game already recorded is skipped, not counted twice. Difficulty is the frozen six-tier integer 1-6.",
         "operationId" : "recordGames",
         "requestBody" : {
           "content" : {
@@ -1211,8 +1212,8 @@
     "/api/v1/stats/sync" : {
       "post" : {
         "tags" : [ "Stats" ],
-        "summary" : "Upload local single-player history",
-        "description" : "Called once on the offline-to-online transition. Local daily streaks are NOT merged; server streaks start fresh.",
+        "summary" : "Upload local single-player history (v1)",
+        "description" : "Called once on the offline-to-online transition. Local daily streaks are NOT merged; server streaks start fresh. Difficulty is the frozen six-tier integer 1-6.",
         "operationId" : "syncStats",
         "requestBody" : {
           "content" : {
@@ -1501,6 +1502,469 @@
         }
       }
     },
+    "/api/v2/daily" : {
+      "get" : {
+        "tags" : [ "Daily" ],
+        "summary" : "Get today's daily puzzle",
+        "description" : "Returns the grid itself as bit-packed Base64 givens, alongside the key it was generated from, so the client decodes instead of generating. The first request of a date locks in that day's tier. Difficulty is the real tier index 1-15, where 15 is Lisa.",
+        "operationId" : "getDailyV2",
+        "responses" : {
+          "200" : {
+            "description" : "OK",
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/DailyV2Response"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v2/daily/leaderboard" : {
+      "get" : {
+        "tags" : [ "Daily" ],
+        "summary" : "Today's daily leaderboard for one tier",
+        "description" : "Ranked within a single difficulty tier. Hints used are not exposed.",
+        "operationId" : "dailyLeaderboardV2",
+        "parameters" : [ {
+          "name" : "difficulty",
+          "in" : "query",
+          "description" : "Tier index 1-15, where 15 is Lisa",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "description" : "OK",
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "type" : "array",
+                  "items" : {
+                    "$ref" : "#/components/schemas/LeaderboardEntryResponse"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v2/daily/result" : {
+      "post" : {
+        "tags" : [ "Daily" ],
+        "summary" : "Submit a daily result",
+        "description" : "Verified by replaying the solve order against the regenerated puzzle. A SOLVED result locks the date; FAILED results may be retried all day. A result may be submitted for any date that is not in the future, so a client that finished a daily offline can drain its queue whenever it reconnects; credit is pinned to the date in the body, never the date it arrives. Difficulty is the real tier index 1-15: Lisa (15) is a valid daily tier, unlike in a match. solveOrder is an array of [cell, digit] PAIRS - [[12,4],[13,9],...] - one per non-given cell, and the replay only passes once every one of them is accounted for, hint-filled cells included. The generated schema below flattens the nested array to \"array of integer\", which is wrong: a client that sends bare cell indices is rejected with 400 and its daily never counts.",
+        "operationId" : "submitDailyResultV2",
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/DailyResultRequest"
+              }
+            }
+          }
+        },
+        "responses" : {
+          "200" : {
+            "description" : "OK",
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/DailyResultResponse"
+                }
+              }
+            }
+          },
+          "409" : {
+            "description" : "DAILY_ALREADY_SOLVED or DAILY_DATE_INVALID",
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v2/matches" : {
+      "post" : {
+        "tags" : [ "Matches" ],
+        "summary" : "Create a match",
+        "description" : "The creator chooses the configuration and settings. config.difficulty is the real tier index 1-15; Lisa (15) is rejected for every mode.",
+        "operationId" : "createMatchV2",
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/CreateMatchRequest"
+              }
+            }
+          }
+        },
+        "responses" : {
+          "201" : {
+            "description" : "Created",
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/CreatedMatchResponse"
+                }
+              }
+            }
+          },
+          "400" : {
+            "description" : "LISA_NOT_ALLOWED",
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v2/matches/active" : {
+      "get" : {
+        "tags" : [ "Matches" ],
+        "summary" : "The match this player is currently in",
+        "description" : "The running match the caller is a participant of, or 204 when there is none.",
+        "operationId" : "activeMatchV2",
+        "responses" : {
+          "200" : {
+            "description" : "OK",
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/MatchV2Response"
+                }
+              }
+            }
+          },
+          "204" : {
+            "description" : "Not in a match"
+          }
+        }
+      }
+    },
+    "/api/v2/matches/join" : {
+      "post" : {
+        "tags" : [ "Matches" ],
+        "summary" : "Join a match by its code",
+        "description" : "The code is the whole invitation: it resolves to the lobby on its own, so no match id is needed. Answers NOT_FOUND for a code that is mistyped, belongs to a match that has already started, or was cancelled. Attempt limited per caller.",
+        "operationId" : "joinMatchByCodeV2",
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/JoinByCodeRequest"
+              }
+            }
+          }
+        },
+        "responses" : {
+          "200" : {
+            "description" : "OK",
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/MatchV2Response"
+                }
+              }
+            }
+          },
+          "404" : {
+            "description" : "NOT_FOUND",
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409" : {
+            "description" : "MATCH_FULL or INSUFFICIENT_BALANCE",
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429" : {
+            "description" : "RATE_LIMITED",
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v2/matches/{id}" : {
+      "get" : {
+        "tags" : [ "Matches" ],
+        "summary" : "Get a match",
+        "operationId" : "getMatchV2",
+        "parameters" : [ {
+          "name" : "id",
+          "in" : "path",
+          "description" : "Match id",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "description" : "OK",
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/MatchV2Response"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v2/matches/{id}/join" : {
+      "post" : {
+        "tags" : [ "Matches" ],
+        "summary" : "Join a match",
+        "operationId" : "joinMatchV2",
+        "parameters" : [ {
+          "name" : "id",
+          "in" : "path",
+          "description" : "Match id",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        } ],
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/JoinMatchRequest"
+              }
+            }
+          }
+        },
+        "responses" : {
+          "200" : {
+            "description" : "OK",
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/MatchV2Response"
+                }
+              }
+            }
+          },
+          "409" : {
+            "description" : "MATCH_FULL or INSUFFICIENT_BALANCE",
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v2/players/{id}/stats" : {
+      "get" : {
+        "tags" : [ "Stats" ],
+        "summary" : "A player's aggregate statistics",
+        "description" : "Grouped by difficulty tier, because solve times are only comparable within a tier. Difficulty is the real tier index 1-15, where 15 is Lisa.",
+        "operationId" : "playerStatsV2",
+        "parameters" : [ {
+          "name" : "id",
+          "in" : "path",
+          "description" : "Player id",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "description" : "OK",
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "type" : "array",
+                  "items" : {
+                    "$ref" : "#/components/schemas/StatsEntryResponse"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v2/preferences" : {
+      "get" : {
+        "tags" : [ "Daily" ],
+        "summary" : "Get your daily preferences",
+        "description" : "dailyDifficulty is the real tier index 1-15, where 15 is Lisa.",
+        "operationId" : "getPreferencesV2",
+        "responses" : {
+          "200" : {
+            "description" : "OK",
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/PreferencesResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put" : {
+        "tags" : [ "Daily" ],
+        "summary" : "Set your daily difficulty",
+        "description" : "Takes effect from the next day only; today's tier was fixed when the day began. dailyDifficulty is the real tier index 1-15, where 15 is Lisa.",
+        "operationId" : "setPreferencesV2",
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/PreferencesRequest"
+              }
+            }
+          }
+        },
+        "responses" : {
+          "200" : {
+            "description" : "OK",
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/PreferencesResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v2/puzzles" : {
+      "post" : {
+        "tags" : [ "Puzzles" ],
+        "summary" : "Generate a single-player puzzle",
+        "description" : "Returns the grid as bit-packed Base64 givens alongside the key it was generated from, so the client never has to generate one itself. This is single-player content, so Lisa (15) is an ordinary tier here. A band the requested size cannot produce is refused with 400 naming the bands it can - a 4x4 grid reaches band 1 only, and a 6x6 reaches 1, 2, 3, 7 and 8 - rather than being snapped onto the nearest one, because a puzzle silently two bands off the one that was asked for is worse than a rejection the client can act on.",
+        "operationId" : "createPuzzle",
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/CreatePuzzleRequest"
+              }
+            }
+          }
+        },
+        "responses" : {
+          "200" : {
+            "description" : "OK",
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/NewPuzzleResponse"
+                }
+              }
+            }
+          },
+          "400" : {
+            "description" : "BAD_REQUEST for an unknown size or variant, or a band the size cannot produce",
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v2/stats/games" : {
+      "post" : {
+        "tags" : [ "Stats" ],
+        "summary" : "Upload finished single-player games",
+        "description" : "Called as games are played, and on reconnection for whatever the client queued while offline. Safe to repeat: a game already recorded is skipped, not counted twice. Difficulty is the real tier index 1-15, where 15 is Lisa.",
+        "operationId" : "recordGamesV2",
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/GameResultsRequest"
+              }
+            }
+          }
+        },
+        "responses" : {
+          "200" : {
+            "description" : "OK",
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/GameResultsResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v2/stats/sync" : {
+      "post" : {
+        "tags" : [ "Stats" ],
+        "summary" : "Upload local single-player history",
+        "description" : "Called once on the offline-to-online transition. Local daily streaks are NOT merged; server streaks start fresh. Difficulty is the real tier index 1-15, where 15 is Lisa.",
+        "operationId" : "syncStatsV2",
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/StatsSyncRequest"
+              }
+            }
+          }
+        },
+        "responses" : {
+          "200" : {
+            "description" : "OK",
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/StatsSyncResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/health" : {
       "get" : {
         "tags" : [ "Health" ],
@@ -1549,7 +2013,7 @@
       },
       "Difficulty" : {
         "type" : "string",
-        "enum" : [ "ONE", "TWO", "THREE", "FOUR", "FIVE", "LISA" ]
+        "enum" : [ "ONE", "TWO", "THREE", "FOUR", "FIVE", "SIX", "SEVEN", "EIGHT", "NINE", "TEN", "ELEVEN", "TWELVE", "THIRTEEN", "FOURTEEN", "LISA" ]
       },
       "DailyOutcome" : {
         "type" : "string",
@@ -1625,6 +2089,13 @@
           "requireDifficulty" : {
             "$ref" : "#/components/schemas/Difficulty"
           },
+          "requireLegacyDifficulty" : {
+            "$ref" : "#/components/schemas/Difficulty"
+          },
+          "requireDifficultyIndex" : {
+            "type" : "integer",
+            "format" : "int32"
+          },
           "size" : {
             "type" : "integer",
             "format" : "int32"
@@ -1636,7 +2107,8 @@
             "type" : "integer",
             "format" : "int32"
           }
-        }
+        },
+        "required" : [ "requireDifficultyIndex" ]
       },
       "Settings" : {
         "type" : "object",
@@ -1663,6 +2135,31 @@
           }
         },
         "required" : [ "livesEnabledOrDefault", "hintsEnabledOrDefault", "stakeOrZero" ]
+      },
+      "CreatePuzzleRequest" : {
+        "type" : "object",
+        "properties" : {
+          "requireSize" : {
+            "$ref" : "#/components/schemas/GridSize"
+          },
+          "requireVariant" : {
+            "$ref" : "#/components/schemas/Variant"
+          },
+          "requireDifficulty" : {
+            "$ref" : "#/components/schemas/Difficulty"
+          },
+          "size" : {
+            "type" : "integer",
+            "format" : "int32"
+          },
+          "variant" : {
+            "type" : "string"
+          },
+          "difficulty" : {
+            "type" : "integer",
+            "format" : "int32"
+          }
+        }
       },
       "CurrencySyncRequest" : {
         "type" : "object",
@@ -1776,6 +2273,18 @@
         "type" : "object",
         "properties" : {
           "parseGames" : {
+            "type" : "array",
+            "items" : {
+              "$ref" : "#/components/schemas/PlayedGame"
+            }
+          },
+          "parseLegacyGames" : {
+            "type" : "array",
+            "items" : {
+              "$ref" : "#/components/schemas/PlayedGame"
+            }
+          },
+          "parse" : {
             "type" : "array",
             "items" : {
               "$ref" : "#/components/schemas/PlayedGame"
@@ -1976,6 +2485,18 @@
               "$ref" : "#/components/schemas/SyncEntry"
             }
           },
+          "parseLegacyEntries" : {
+            "type" : "array",
+            "items" : {
+              "$ref" : "#/components/schemas/SyncEntry"
+            }
+          },
+          "parse" : {
+            "type" : "array",
+            "items" : {
+              "$ref" : "#/components/schemas/SyncEntry"
+            }
+          },
           "entries" : {
             "type" : "array",
             "items" : {
@@ -2170,6 +2691,17 @@
           }
         },
         "required" : [ "current", "longest", "restorePoints" ]
+      },
+      "DailyV2Response" : {
+        "type" : "object",
+        "properties" : {
+          "date" : {
+            "type" : "string"
+          },
+          "puzzle" : {
+            "$ref" : "#/components/schemas/PuzzleResponse"
+          }
+        }
       },
       "DeviceResponse" : {
         "type" : "object",
@@ -2392,6 +2924,54 @@
           }
         }
       },
+      "MatchV2Response" : {
+        "type" : "object",
+        "properties" : {
+          "matchId" : {
+            "type" : "string"
+          },
+          "mode" : {
+            "type" : "string"
+          },
+          "state" : {
+            "type" : "string"
+          },
+          "puzzle" : {
+            "$ref" : "#/components/schemas/PuzzleResponse"
+          },
+          "livesEnabled" : {
+            "type" : "boolean"
+          },
+          "hintsEnabled" : {
+            "type" : "boolean"
+          },
+          "stake" : {
+            "type" : "integer",
+            "format" : "int32"
+          },
+          "winnerId" : {
+            "type" : "string"
+          },
+          "endReason" : {
+            "type" : "string"
+          },
+          "participants" : {
+            "type" : "array",
+            "items" : {
+              "$ref" : "#/components/schemas/ParticipantResponse"
+            }
+          }
+        },
+        "required" : [ "livesEnabled", "hintsEnabled", "stake" ]
+      },
+      "NewPuzzleResponse" : {
+        "type" : "object",
+        "properties" : {
+          "puzzle" : {
+            "$ref" : "#/components/schemas/PuzzleResponse"
+          }
+        }
+      },
       "PlayerResponse" : {
         "type" : "object",
         "properties" : {
@@ -2449,6 +3029,33 @@
             "format" : "int32"
           },
           "seed" : {
+            "type" : "string"
+          }
+        },
+        "required" : [ "genVersion", "size", "difficulty" ]
+      },
+      "PuzzleResponse" : {
+        "type" : "object",
+        "properties" : {
+          "genVersion" : {
+            "type" : "integer",
+            "format" : "int32"
+          },
+          "size" : {
+            "type" : "integer",
+            "format" : "int32"
+          },
+          "variant" : {
+            "type" : "string"
+          },
+          "difficulty" : {
+            "type" : "integer",
+            "format" : "int32"
+          },
+          "seed" : {
+            "type" : "string"
+          },
+          "givens" : {
             "type" : "string"
           }
         },

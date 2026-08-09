@@ -12,7 +12,7 @@ import java.util.UUID;
  * @param id primary key
  * @param userId who played
  * @param date the daily's date in the server zone
- * @param difficulty tier index 1-5
+ * @param difficulty tier index 1-15, Lisa included
  * @param attemptNo 1 for the first attempt, incrementing on each retry after a failure
  * @param outcome how it ended
  * @param elapsedMs wall time the player took

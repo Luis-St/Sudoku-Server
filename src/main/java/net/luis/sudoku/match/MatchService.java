@@ -83,10 +83,13 @@ public final class MatchService {
 		// Taken from the pre-generation pool so creation never blocks on generation (spec: keep the
 		// queue at 2x the active-player count).
 		GeneratedPuzzle puzzle = this.puzzles.take(size, variant, difficulty);
+		// Stored alongside the seed so nothing ever generates this grid again: GET /matches/{id},
+		// rehydration and reconnect all rebuild it from these digits instead (see liveFor).
+		String givens = PuzzleFactory.encodeGivens(puzzle);
 		Instant now = this.clock.instant();
 		
 		Match match = this.database.transaction(connection -> {
-			Match created = this.matches.create(connection, mode, actor.userId(), size, variant, difficulty, puzzle.key().seed(), livesEnabled, hintsEnabled, stake, this.freeMatchCode(connection), now);
+			Match created = this.matches.create(connection, mode, actor.userId(), size, variant, difficulty, puzzle.key().seed(), givens, livesEnabled, hintsEnabled, stake, this.freeMatchCode(connection), now);
 			this.matches.addParticipant(connection, created.id(), actor.userId(), now);
 			return created;
 		});
@@ -331,9 +334,45 @@ public final class MatchService {
 			// state and tell the player instead (MatchSocketHandler.onConnect); this is the invariant behind it.
 			throw new IllegalStateException("Match " + match.id() + " has already ended (" + match.state() + ")");
 		}
-		LiveMatch live = this.buildLive(match, PuzzleFactory.generate(match.key()));
+		LiveMatch live = this.buildLive(match, this.puzzleFor(match));
 		this.registry.register(live);
 		return live;
+	}
+	
+	/**
+	 * Rebuilds a match's board, from its stored givens where there are any.
+	 * <p>
+	 * A match created before {@code matches.givens} existed carries none, and falls back to regenerating
+	 * from the key exactly as every match used to - deterministic, just slow. So does one whose stored
+	 * string cannot be turned back into this key's puzzle, which should not happen and is therefore worth a
+	 * line in a warn-only log rather than a failed reconnect.
+	 *
+	 * @param match The match to rebuild the board for
+	 * @return Its puzzle and solution
+	 */
+	private @NonNull GeneratedPuzzle puzzleFor(@NonNull Match match) {
+		String givens = match.givens();
+		if (givens == null) {
+			return PuzzleFactory.generate(match.key());
+		}
+		
+		try {
+			return PuzzleFactory.fromGivens(match.key(), givens);
+		} catch (RuntimeException e) {
+			log.warn("Match {}: stored givens could not be rebuilt, regenerating from the key", match.id(), e);
+			return PuzzleFactory.generate(match.key());
+		}
+	}
+	
+	/**
+	 * Rebuilds a match's board for a caller outside the live half - {@code GET /api/v2/matches/...}, which
+	 * has to report the givens without touching the registry.
+	 *
+	 * @param match The match to rebuild the board for
+	 * @return Its puzzle and solution
+	 */
+	public @NonNull GeneratedPuzzle puzzle(@NonNull Match match) {
+		return this.puzzleFor(match);
 	}
 	
 	private @NonNull LiveMatch buildLive(@NonNull Match match, @NonNull GeneratedPuzzle puzzle) {

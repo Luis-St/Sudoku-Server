@@ -290,7 +290,7 @@ public final class CoopMatch extends LiveMatch {
 		payload.put("matchId", this.id().toString());
 		payload.put("mode", this.mode().name());
 		payload.put("state", this.state().name());
-		payload.put("puzzleKey", MatchPayloads.key(this.match.key()));
+		payload.put("puzzleKey", this.puzzlePayload());
 		payload.put("board", board);
 		payload.put("notes", noteMap);
 		// The pending offer travels in the snapshot as well as in its own broadcast: a player who joins or

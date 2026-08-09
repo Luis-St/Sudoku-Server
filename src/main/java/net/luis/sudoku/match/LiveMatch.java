@@ -4,6 +4,7 @@ import net.luis.sudoku.config.MatchConfig;
 import net.luis.sudoku.domain.Match;
 import net.luis.sudoku.generation.GeneratedPuzzle;
 import net.luis.sudoku.grid.GridSize;
+import net.luis.sudoku.puzzle.PuzzleFactory;
 import org.jspecify.annotations.NonNull;
 import org.jspecify.annotations.Nullable;
 import org.slf4j.Logger;
@@ -30,6 +31,13 @@ public abstract class LiveMatch {
 	/** Insertion-ordered so "first to join" is meaningful and iteration is deterministic. */
 	private final Map<UUID, Connection> connections = new LinkedHashMap<>();
 	private final Map<UUID, ParticipantState> participants = new LinkedHashMap<>();
+	/**
+	 * The encoded givens of this match's grid, computed once.
+	 * <p>
+	 * Every {@code MATCH_STATE} frame carries them, and a match sends one on every connect, reconnect and
+	 * start, so bit-packing the grid per frame would be pure waste - the puzzle never changes.
+	 */
+	private final String givens;
 	protected final Match match;
 	protected final GeneratedPuzzle puzzle;
 	protected final MatchConfig config;
@@ -42,6 +50,7 @@ public abstract class LiveMatch {
 	                    @NonNull MatchCallbacks callbacks) {
 		this.match = match;
 		this.puzzle = puzzle;
+		this.givens = PuzzleFactory.encodeGivens(puzzle);
 		this.config = config;
 		this.callbacks = callbacks;
 		this.state = match.state();
@@ -127,7 +136,7 @@ public abstract class LiveMatch {
 			log.info("Match {}: user {} reconnected, resuming", this.match.id(), userId);
 			this.broadcastAll();
 		} else {
-			connection.send(this.matchStateMessage(userId));
+			this.sendState(connection, userId);
 		}
 		this.onParticipantConnected(participant);
 	}
@@ -320,8 +329,34 @@ public abstract class LiveMatch {
 	
 	protected void broadcastAll() {
 		for (UUID userId : List.copyOf(this.connections.keySet())) {
-			this.sendTo(userId, this.matchStateMessage(userId));
+			Connection connection = this.connections.get(userId);
+			if (connection != null && connection.isOpen()) {
+				this.sendState(connection, userId);
+			}
 		}
+	}
+	
+	/**
+	 * Sends one participant their snapshot, in the shape their socket asked for.
+	 * <p>
+	 * The modes build the v2 shape and nothing else; a v1 socket gets it reduced here. Two players on one
+	 * board may be on different versions, which is why this is per connection rather than per match.
+	 *
+	 * @param connection The socket to send down
+	 * @param forUser The participant whose view to build, which is not always the socket's own owner
+	 */
+	private void sendState(@NonNull Connection connection, @NonNull UUID forUser) {
+		MessageEnvelope message = this.matchStateMessage(forUser);
+		connection.send(connection.apiVersion() >= 2 ? message : MatchPayloads.downgradeState(message));
+	}
+	
+	/**
+	 * The {@code puzzleKey} block every mode's snapshot carries, in its v2 shape.
+	 *
+	 * @return The payload block
+	 */
+	protected @NonNull Map<String, Object> puzzlePayload() {
+		return MatchPayloads.key(this.match.key(), this.givens);
 	}
 	
 	void broadcastShutdown() {

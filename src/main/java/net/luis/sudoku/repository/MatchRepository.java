@@ -25,11 +25,30 @@ import static net.luis.sudoku.db.schema.Schema.*;
  */
 public final class MatchRepository {
 	
+	/**
+	 * Inserts a new lobby.
+	 *
+	 * @param transaction The enclosing transaction
+	 * @param mode Which game
+	 * @param creatorId Who created it
+	 * @param size Grid edge length
+	 * @param variant Region layout variant
+	 * @param difficulty The tier, never Lisa - the guard lives in {@code MatchService.create}
+	 * @param seed The puzzle seed the key is rebuilt from
+	 * @param givens The generated grid's encoded givens, so the board is never generated a second time
+	 * @param livesEnabled Whether lives apply
+	 * @param hintsEnabled Whether participants may spend hints
+	 * @param stake Rhubarb each participant escrows
+	 * @param inviteToken The match code another player joins with
+	 * @param now The creation timestamp
+	 * @return The inserted row, as the database stored it
+	 * @throws SqlException If the insert fails
+	 */
 	public @NonNull Match create(
 		@NonNull SqlTransaction transaction, @NonNull MatchMode mode, @NonNull UUID creatorId, @NonNull GridSize size, @NonNull Variant variant, @NonNull Difficulty difficulty,
-		long seed, boolean livesEnabled, boolean hintsEnabled, int stake, @NonNull String inviteToken, @NonNull Instant now
+		long seed, @NonNull String givens, boolean livesEnabled, boolean hintsEnabled, int stake, @NonNull String inviteToken, @NonNull Instant now
 	) throws SqlException {
-		Match draft = new Match(UUID.randomUUID(), mode, MatchState.WAITING, creatorId, size, variant, difficulty, seed, livesEnabled, hintsEnabled, stake, inviteToken, null, null, now, null, null);
+		Match draft = new Match(UUID.randomUUID(), mode, MatchState.WAITING, creatorId, size, variant, difficulty, seed, givens, livesEnabled, hintsEnabled, stake, inviteToken, null, null, now, null, null);
 		return transaction.from(MATCHES).insert(draft).returning().getFirst();
 	}
 	

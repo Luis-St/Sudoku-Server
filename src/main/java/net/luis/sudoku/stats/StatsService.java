@@ -3,6 +3,7 @@ package net.luis.sudoku.stats;
 import net.luis.sudoku.config.ServerConfig;
 import net.luis.sudoku.db.AdvisoryLocks;
 import net.luis.sudoku.db.Database;
+import net.luis.sudoku.difficulty.Difficulty;
 import net.luis.sudoku.domain.*;
 import net.luis.sudoku.error.ApiException;
 import net.luis.sudoku.grid.GridSize;
@@ -271,7 +272,7 @@ public final class StatsService {
 	 * @param gameId the client's id for this game, generated once when it ended
 	 * @param size grid edge length
 	 * @param variant {@code CLASSIC} or {@code CHAOS}
-	 * @param difficulty tier index 1-6; Lisa is allowed, as in {@link SyncEntry}
+	 * @param difficulty tier index 1-15; Lisa is allowed, as in {@link SyncEntry}
 	 * @param solved whether the player finished the grid, as opposed to running out of lives or giving up
 	 * @param elapsedMs how long it took; only counted towards solve times when {@link #solved}
 	 * @param hintsUsed hints consumed
@@ -285,8 +286,8 @@ public final class StatsService {
 			} catch (IllegalArgumentException e) {
 				throw ApiException.badRequest("Unsupported size/variant in stats upload: " + this.size + "/" + this.variant);
 			}
-			if (this.difficulty < 1 || this.difficulty > 6) {
-				throw ApiException.badRequest("difficulty must be between 1 and 6, got: " + this.difficulty);
+			if (this.difficulty < 1 || this.difficulty > Difficulty.LISA.index()) {
+				throw ApiException.badRequest("difficulty must be between 1 and " + Difficulty.LISA.index() + ", got: " + this.difficulty);
 			}
 			if (this.elapsedMs < 0 || this.hintsUsed < 0) {
 				throw ApiException.badRequest("stats upload counters must not be negative");
@@ -299,7 +300,7 @@ public final class StatsService {
 	 *
 	 * @param size grid edge length
 	 * @param variant {@code CLASSIC} or {@code CHAOS}
-	 * @param difficulty tier index 1-6; Lisa is allowed here because it is a real single-player tier
+	 * @param difficulty tier index 1-15; Lisa is allowed here because it is a real single-player tier
 	 * @param gamesPlayed games finished
 	 * @param solved successes
 	 * @param failed failures
@@ -316,8 +317,8 @@ public final class StatsService {
 			} catch (IllegalArgumentException e) {
 				throw ApiException.badRequest("Unsupported size/variant in stats sync: " + this.size + "/" + this.variant);
 			}
-			if (this.difficulty < 1 || this.difficulty > 6) {
-				throw ApiException.badRequest("difficulty must be between 1 and 6, got: " + this.difficulty);
+			if (this.difficulty < 1 || this.difficulty > Difficulty.LISA.index()) {
+				throw ApiException.badRequest("difficulty must be between 1 and " + Difficulty.LISA.index() + ", got: " + this.difficulty);
 			}
 			if (this.gamesPlayed < 0 || this.solved < 0 || this.failed < 0 || this.totalTimeMs < 0 || this.hintsUsed < 0) {
 				throw ApiException.badRequest("stats sync counters must not be negative");

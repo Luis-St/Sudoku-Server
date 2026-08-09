@@ -232,10 +232,19 @@ public final class Schema {
 	public static final SqlColumn<Match, UUID> MATCH_CREATOR_ID = MATCHES.column("creator_id", UUID_TYPE, Match::creatorId, SqlColumnBuilder::notNull);
 	public static final SqlColumn<Match, GridSize> MATCH_SIZE = MATCHES.column("size", GRID_SIZE_TYPE, Match::size, SqlColumnBuilder::notNull);
 	public static final SqlColumn<Match, Variant> MATCH_VARIANT = MATCHES.column("variant", VARIANT_TYPE, Match::variant, SqlColumnBuilder::notNull);
-	/** LISA (6) is rejected for every multiplayer mode (spec 10.1). */
+	/** LISA (15) is rejected for every multiplayer mode (spec 10.1). */
 	public static final SqlColumn<Match, Difficulty> MATCH_DIFFICULTY = MATCHES.column("difficulty", DIFFICULTY_TYPE, Match::difficulty, SqlColumnBuilder::notNull);
 	/** The PuzzleKey seed; the grid itself is never stored or sent (spec 1). */
 	public static final SqlColumn<Match, Long> MATCH_SEED = MATCHES.column("seed", SqlTypes.LONG, Match::seed, SqlColumnBuilder::notNull);
+	/**
+	 * The generated grid's givens, {@code GivensCodec}-encoded, so a match never has to be generated twice.
+	 * <p>
+	 * Nullable, and nullable for good: every match created before this column existed has none, and
+	 * {@code MatchService.liveFor} falls back to regenerating from the key exactly as it always did. New
+	 * matches always carry it, which is what lets {@code GET /matches/{id}}, rehydration and reconnect all
+	 * rebuild the board from a backtracking solve rather than from a full generate-dig-rate search.
+	 */
+	public static final SqlColumn<Match, String> MATCH_GIVENS = MATCHES.column("givens", SqlTypes.TEXT, Match::givens);
 	public static final SqlColumn<Match, Boolean> MATCH_LIVES_ENABLED = MATCHES.column("lives_enabled", SqlTypes.BOOLEAN, Match::livesEnabled, col -> col.notNull().defaultValue(false));
 	/** Defaults to true, unlike lives: a match created before this column existed had hints available, since nothing stopped them. */
 	public static final SqlColumn<Match, Boolean> MATCH_HINTS_ENABLED = MATCHES.column("hints_enabled", SqlTypes.BOOLEAN, Match::hintsEnabled, col -> col.notNull().defaultValue(true));
@@ -263,7 +272,14 @@ public final class Schema {
 	public static final SqlColumn<LedgerRow, Instant> LEDGER_CREATED_AT = CURRENCY_LEDGER.column("created_at", TIMESTAMP, LedgerRow::createdAt, SqlColumnBuilder::notNull);
 	public static final SqlTable<PreferenceRow> DAILY_PREFERENCES = SqlTable.create(PreferenceRow.class, "daily_preferences");
 	public static final SqlColumn<PreferenceRow, UUID> PREFERENCE_USER_ID = DAILY_PREFERENCES.column("user_id", UUID_TYPE, PreferenceRow::userId, col -> col.primaryKey().notNull());
-	public static final SqlColumn<PreferenceRow, Integer> PREFERENCE_DIFFICULTY = DAILY_PREFERENCES.column("daily_difficulty", SqlTypes.INTEGER, PreferenceRow::difficulty, col -> col.notNull().defaultValue(3));
+	/**
+	 * Defaults to tier 5 of fifteen (spec 8.1), not the 3 it was when there were only six tiers: under the
+	 * fifteen-band scale tier 3 is hidden singles along a line and is over in a minute, which is not what a
+	 * player who never touched the setting should be handed every day. Only new rows are affected - a player
+	 * who already has a preference keeps it, and there is no CHECK constraint on the column to alter, so this
+	 * needs no migration.
+	 */
+	public static final SqlColumn<PreferenceRow, Integer> PREFERENCE_DIFFICULTY = DAILY_PREFERENCES.column("daily_difficulty", SqlTypes.INTEGER, PreferenceRow::difficulty, col -> col.notNull().defaultValue(5));
 	public static final SqlColumn<PreferenceRow, Instant> PREFERENCE_UPDATED_AT = DAILY_PREFERENCES.column("updated_at", TIMESTAMP, PreferenceRow::updatedAt, SqlColumnBuilder::notNull);
 	/**
 	 * The difficulty locked in for one player on one date.

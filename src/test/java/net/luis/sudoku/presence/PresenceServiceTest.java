@@ -102,7 +102,7 @@ class PresenceServiceTest extends PostgresTest {
 	/** A match row straight through the repository - nothing here needs a live match, only a joinable one. */
 	private Match match(Principal creator, int stake) {
 		return database.transaction(transaction -> this.matches.create(transaction, MatchMode.RACE, creator.userId(),
-			GridSize.FOUR, Variant.CLASSIC, Difficulty.TWO, 42L, false, true, stake, "TOKEN-" + UUID.randomUUID(), this.now.get()));
+			GridSize.FOUR, Variant.CLASSIC, Difficulty.TWO, 42L, "givens", false, true, stake, "TOKEN-" + UUID.randomUUID(), this.now.get()));
 	}
 	
 	// --- online status ---

@@ -47,7 +47,25 @@ public final class CurrencyService {
 		GridSize.TWELVE, 15,
 		GridSize.SIXTEEN, 22
 	);
-	/** Spec 9a.1: a solved normal game pays {@code 5 x difficultyIndex}, scaled by the grid size. */
+	/**
+	 * The difficulty weight of tier 1 and of {@link Difficulty#LISA}, in tenths - the two ends the scale is
+	 * pinned to.
+	 * <p>
+	 * <strong>Why a weight and not the index.</strong> The award used to be linear in
+	 * {@link Difficulty#index()}, and Lisa's index moved from {@code 6} to {@code 15} when the scale went
+	 * from six tiers to fifteen. Left alone, every award would silently have inflated by up to 2.5x, the
+	 * daily cap with it, and the client's offline minting - which mirrors this arithmetic - would have
+	 * drifted from the server's until honest players were clamped on sync. So the real index is first mapped
+	 * back onto the old {@code 1..6} range: {@code 1} at {@link Difficulty#ONE}, {@code 6} at
+	 * {@link Difficulty#LISA}, interpolated linearly in between. Tier 1 and Lisa therefore pay exactly what
+	 * they paid before the rework, and the five legacy tiers land within a Rhubarb of their old rate.
+	 * <p>
+	 * Kept in tenths and computed with integer arithmetic throughout, like {@link #SIZE_FACTOR_TENTHS}: an
+	 * award is money, and money must not depend on how a {@code double} happened to round on one machine.
+	 */
+	private static final int MIN_WEIGHT_TENTHS = 10;
+	private static final int MAX_WEIGHT_TENTHS = 60;
+	/** Spec 9a.1: a solved normal game pays {@code 5 x difficultyWeight}, scaled by the grid size. */
 	public static final int PER_DIFFICULTY_INDEX = 5;
 	/** Spec 9a.1: the daily pays the same, plus this bonus. Flat: it pays for the day, not for the grid. */
 	public static final int DAILY_BONUS = 20;
@@ -74,8 +92,26 @@ public final class CurrencyService {
 	 * @return The amount in Rhubarb
 	 */
 	public static int baseAward(@NonNull Difficulty difficulty, @NonNull GridSize size) {
-		int factor = SIZE_FACTOR_TENTHS.get(size);
-		return (PER_DIFFICULTY_INDEX * difficulty.index() * factor + 5) / 10;
+		int factorTenths = SIZE_FACTOR_TENTHS.get(size);
+		// Two tenths-scaled terms, so the product is in hundredths and +50 is the half-up rounding that
+		// +5 was when only one term was scaled.
+		return (PER_DIFFICULTY_INDEX * weightTenths(difficulty) * factorTenths + 50) / 100;
+	}
+	
+	/**
+	 * The difficulty weight of a tier, in tenths: the fifteen-band index mapped back onto the {@code 1..6}
+	 * range the economy was calibrated against - see {@link #MIN_WEIGHT_TENTHS}.
+	 * <p>
+	 * Non-decreasing across the fifteen tiers by construction, since the only division is of a term that
+	 * grows with the index, so a harder tier can never pay less than an easier one.
+	 *
+	 * @param difficulty The tier to weigh
+	 * @return The weight in tenths, {@code 10} at {@link Difficulty#ONE} and {@code 60} at
+	 *   {@link Difficulty#LISA}
+	 */
+	static int weightTenths(@NonNull Difficulty difficulty) {
+		int span = Difficulty.LISA.index() - Difficulty.ONE.index();
+		return MIN_WEIGHT_TENTHS + (difficulty.index() - Difficulty.ONE.index()) * (MAX_WEIGHT_TENTHS - MIN_WEIGHT_TENTHS) / span;
 	}
 	
 	public long balance(@NonNull UUID userId) {

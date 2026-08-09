@@ -51,8 +51,9 @@ public class StatsHandler {
 	}
 	
 	@OpenApi(
-		summary = "A player's aggregate statistics",
-		description = "Grouped by difficulty tier, because solve times are only comparable within a tier.",
+		summary = "A player's aggregate statistics (v1)",
+		description = "Grouped by difficulty tier, because solve times are only comparable within a tier. Difficulty "
+			+ "is the frozen six-tier integer 1-6; two real tiers can therefore share one row here.",
 		operationId = "playerStats",
 		path = "/api/v1/players/{id}/stats",
 		methods = HttpMethod.GET,
@@ -63,15 +64,35 @@ public class StatsHandler {
 	public void playerStats(@NonNull Context ctx) {
 		this.authentication.require(ctx);
 		List<StatsEntryResponse> entries = this.stats.forUser(Handlers.pathUuid(ctx, "id")).stream()
+			.map(StatsEntryResponse::legacy)
+			.toList();
+		ctx.json(entries);
+	}
+	
+	@OpenApi(
+		summary = "A player's aggregate statistics",
+		description = "Grouped by difficulty tier, because solve times are only comparable within a tier. Difficulty "
+			+ "is the real tier index 1-15, where 15 is Lisa.",
+		operationId = "playerStatsV2",
+		path = "/api/v2/players/{id}/stats",
+		methods = HttpMethod.GET,
+		tags = "Stats",
+		pathParams = @OpenApiParam(name = "id", description = "Player id"),
+		responses = @OpenApiResponse(status = "200", content = @OpenApiContent(from = StatsEntryResponse[].class))
+	)
+	public void playerStatsV2(@NonNull Context ctx) {
+		this.authentication.require(ctx);
+		List<StatsEntryResponse> entries = this.stats.forUser(Handlers.pathUuid(ctx, "id")).stream()
 			.map(StatsEntryResponse::of)
 			.toList();
 		ctx.json(entries);
 	}
 	
 	@OpenApi(
-		summary = "Upload finished single-player games",
+		summary = "Upload finished single-player games (v1)",
 		description = "Called as games are played, and on reconnection for whatever the client queued while offline. "
-			+ "Safe to repeat: a game already recorded is skipped, not counted twice.",
+			+ "Safe to repeat: a game already recorded is skipped, not counted twice. Difficulty is the frozen "
+			+ "six-tier integer 1-6.",
 		operationId = "recordGames",
 		path = "/api/v1/stats/games",
 		methods = HttpMethod.POST,
@@ -83,14 +104,34 @@ public class StatsHandler {
 		Principal actor = this.authentication.require(ctx);
 		GameResultsRequest request = ctx.bodyAsClass(GameResultsRequest.class);
 		
+		int recorded = this.stats.recordGames(actor, request.parseLegacyGames());
+		ctx.json(new GameResultsResponse(recorded));
+	}
+	
+	@OpenApi(
+		summary = "Upload finished single-player games",
+		description = "Called as games are played, and on reconnection for whatever the client queued while offline. "
+			+ "Safe to repeat: a game already recorded is skipped, not counted twice. Difficulty is the real tier "
+			+ "index 1-15, where 15 is Lisa.",
+		operationId = "recordGamesV2",
+		path = "/api/v2/stats/games",
+		methods = HttpMethod.POST,
+		tags = "Stats",
+		requestBody = @OpenApiRequestBody(content = @OpenApiContent(from = GameResultsRequest.class)),
+		responses = @OpenApiResponse(status = "200", content = @OpenApiContent(from = GameResultsResponse.class))
+	)
+	public void recordGamesV2(@NonNull Context ctx) {
+		Principal actor = this.authentication.require(ctx);
+		GameResultsRequest request = ctx.bodyAsClass(GameResultsRequest.class);
+		
 		int recorded = this.stats.recordGames(actor, request.parseGames());
 		ctx.json(new GameResultsResponse(recorded));
 	}
 	
 	@OpenApi(
-		summary = "Upload local single-player history",
+		summary = "Upload local single-player history (v1)",
 		description = "Called once on the offline-to-online transition. Local daily streaks are NOT merged; server "
-			+ "streaks start fresh.",
+			+ "streaks start fresh. Difficulty is the frozen six-tier integer 1-6.",
 		operationId = "syncStats",
 		path = "/api/v1/stats/sync",
 		methods = HttpMethod.POST,
@@ -99,6 +140,25 @@ public class StatsHandler {
 		responses = @OpenApiResponse(status = "200", content = @OpenApiContent(from = StatsSyncResponse.class))
 	)
 	public void sync(@NonNull Context ctx) {
+		Principal actor = this.authentication.require(ctx);
+		StatsSyncRequest request = ctx.bodyAsClass(StatsSyncRequest.class);
+		
+		int merged = this.stats.sync(actor, request.parseLegacyEntries());
+		ctx.json(new StatsSyncResponse(merged));
+	}
+	
+	@OpenApi(
+		summary = "Upload local single-player history",
+		description = "Called once on the offline-to-online transition. Local daily streaks are NOT merged; server "
+			+ "streaks start fresh. Difficulty is the real tier index 1-15, where 15 is Lisa.",
+		operationId = "syncStatsV2",
+		path = "/api/v2/stats/sync",
+		methods = HttpMethod.POST,
+		tags = "Stats",
+		requestBody = @OpenApiRequestBody(content = @OpenApiContent(from = StatsSyncRequest.class)),
+		responses = @OpenApiResponse(status = "200", content = @OpenApiContent(from = StatsSyncResponse.class))
+	)
+	public void syncV2(@NonNull Context ctx) {
 		Principal actor = this.authentication.require(ctx);
 		StatsSyncRequest request = ctx.bodyAsClass(StatsSyncRequest.class);
 		

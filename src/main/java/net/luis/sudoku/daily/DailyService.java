@@ -19,8 +19,7 @@ import org.slf4j.LoggerFactory;
 
 import java.time.*;
 import java.time.temporal.ChronoUnit;
-import java.util.List;
-import java.util.UUID;
+import java.util.*;
 import java.util.concurrent.atomic.AtomicReference;
 
 /**
@@ -41,6 +40,20 @@ public final class DailyService {
 	 * rather than stored as somebody's record.
 	 */
 	private static final int MAX_SYNCED_STREAK = 3650;
+	/**
+	 * How many generated dailies to keep.
+	 * <p>
+	 * Sized from the scale rather than guessed at: a single date can want a grid per tier, and there are
+	 * {@link Difficulty#LISA}{@code .index()} of them. Two dates' worth is the working set, because an
+	 * offline queue draining after midnight verifies yesterday's tiers against yesterday's grids while
+	 * today's are being issued. The cap is still what stops a server that has been up for months from
+	 * holding a grid per date it has ever served.
+	 * <p>
+	 * This was eight while the scale had six tiers, which was a comfortable margin then and a cache
+	 * smaller than one day's working set afterwards - it would have evicted grids that were still being
+	 * asked for, and put the generation back on the request threads this cache exists to keep it off.
+	 */
+	private static final int CACHE_CAPACITY = 2 * Difficulty.LISA.index();
 	/** Rhubarb per missed day repaired by spending a restore point. */
 	public static final int RESTORE_COST_PER_DAY = 10;
 	private final Database database;
@@ -56,6 +69,29 @@ public final class DailyService {
 	
 	/** Last date the rollover job ran, so it is attempted once per date rather than per request. */
 	private final AtomicReference<LocalDate> lastRollover = new AtomicReference<>();
+	/**
+	 * Generated dailies, keyed by (date, tier), least recently <em>used</em> evicted first - see
+	 * {@link #puzzleFor}.
+	 * <p>
+	 * Access ordered, which is the third constructor argument and the reason it is spelled out rather than
+	 * defaulted. Insertion order would evict by age of generation, so the tier the most players are
+	 * grinding all evening - the one entry that must never leave - would be dropped the moment fifteen
+	 * newer tiers had been touched behind it, and the busiest grid on the server would be the one
+	 * regenerated most.
+	 * <p>
+	 * Every access is inside {@code synchronized (this.puzzleCache)}: a {@link LinkedHashMap} is not thread
+	 * safe and this is read from every request thread. A plain {@code ConcurrentHashMap} would not do the
+	 * eviction, and the map is tiny enough that a lock held for a get or a put costs nothing measurable.
+	 * Access ordering makes a {@code get} a structural modification, so the lock is now load bearing on the
+	 * read path too, not merely defensive.
+	 */
+	private final Map<DailyPuzzleKey, GeneratedPuzzle> puzzleCache = new LinkedHashMap<>(16, 0.75F, true) {
+		
+		@Override
+		protected boolean removeEldestEntry(Map.Entry<DailyPuzzleKey, GeneratedPuzzle> eldest) {
+			return this.size() > CACHE_CAPACITY;
+		}
+	};
 	
 	public DailyService(
 		@NonNull Database database, @NonNull ServerConfig config, @NonNull String serverId, @NonNull PreferenceRepository preferences, @NonNull DailyResultRepository results,
@@ -106,6 +142,43 @@ public final class DailyService {
 		return PuzzleFactory.singlePlayerKey(this.config.dailySize(), this.config.dailyVariant(), difficulty, seed);
 	}
 	
+	/**
+	 * The generated daily for a date and tier, from a small in-memory cache.
+	 * <p>
+	 * The daily deliberately bypasses {@code PuzzleQueue}, because the queue invents its own seeds and the
+	 * daily's is fixed by {@code serverId ‖ date}. That left every issuance and every result verification
+	 * generating the grid from scratch on a request thread - which at the fifteen-band tiers is up to about
+	 * a second - for a puzzle that is the same for every player all day long. There are at most
+	 * {@link #CACHE_CAPACITY} live (date, tier) pairs in practice: today's tiers, plus yesterday's while an
+	 * offline queue drains.
+	 * <p>
+	 * Deliberately <em>not</em> folded into {@link #keyFor}, which stays pure so issuance and verification
+	 * agree by construction rather than by both happening to hit the same cache entry.
+	 *
+	 * @param date The daily's date in the server zone
+	 * @param difficulty The tier locked in for that date
+	 * @return The generated puzzle
+	 */
+	public @NonNull GeneratedPuzzle puzzleFor(@NonNull LocalDate date, @NonNull Difficulty difficulty) {
+		DailyPuzzleKey cacheKey = new DailyPuzzleKey(date, difficulty);
+		
+		GeneratedPuzzle cached;
+		synchronized (this.puzzleCache) {
+			cached = this.puzzleCache.get(cacheKey);
+		}
+		if (cached != null) {
+			return cached;
+		}
+		
+		// Generated outside the lock: this is the expensive part, and two requests racing on a cold cache
+		// producing the same grid twice is far cheaper than every other daily request blocking behind one.
+		GeneratedPuzzle generated = PuzzleFactory.generate(this.keyFor(date, difficulty));
+		synchronized (this.puzzleCache) {
+			GeneratedPuzzle raced = this.puzzleCache.putIfAbsent(cacheKey, generated);
+			return raced == null ? generated : raced;
+		}
+	}
+	
 	public int preference(@NonNull Principal actor) {
 		return this.database.read(connection -> this.preferences.dailyDifficulty(connection, actor.userId()));
 	}
@@ -131,7 +204,10 @@ public final class DailyService {
 		this.requireSubmittableDate(submit.date(), today);
 		
 		Difficulty difficulty = PuzzleFactory.singlePlayerDifficultyOfIndex(submit.difficulty());
-		GeneratedPuzzle puzzle = PuzzleFactory.generate(this.keyFor(submit.date(), difficulty));
+		// Through the cache, not PuzzleFactory directly: verification replays against the very same grid
+		// issuance handed out, and on the day's busiest tier that is one generation rather than one per
+		// submitted result.
+		GeneratedPuzzle puzzle = this.puzzleFor(submit.date(), difficulty);
 		SolveVerifier.Verification verification = submit.outcome() == DailyOutcome.SOLVED
 			? SolveVerifier.verify(puzzle, submit.solveOrder(), submit.elapsedMs())
 			// A failure never claims a complete grid, so replaying it would always "fail". Only the
@@ -314,10 +390,18 @@ public final class DailyService {
 	public record Daily(@NonNull LocalDate date, @NonNull PuzzleKey key) {}
 	
 	/**
+	 * One cache slot: the two things that decide which grid a daily is - see {@link #puzzleFor}.
+	 *
+	 * @param date the daily's date in the server zone
+	 * @param difficulty the tier locked in for it
+	 */
+	private record DailyPuzzleKey(@NonNull LocalDate date, @NonNull Difficulty difficulty) {}
+	
+	/**
 	 * A submitted attempt.
 	 *
 	 * @param date the date played, which the offline queue may report late
-	 * @param difficulty tier index 1-5
+	 * @param difficulty tier index 1-15, Lisa included
 	 * @param outcome how it ended
 	 * @param elapsedMs wall time
 	 * @param mistakes incorrect entries

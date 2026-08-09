@@ -16,7 +16,7 @@ import java.util.List;
  *
  * @param date {@code yyyy-MM-dd} the puzzle was played on - carried explicitly so an offline queue can
  *   report the date played rather than the date submitted (spec 8.4)
- * @param difficulty tier index 1-6; the daily is single-player, so Lisa is a valid tier
+ * @param difficulty tier index 1-15; the daily is single-player, so Lisa is a valid tier
  * @param outcome {@code SOLVED} or {@code FAILED}
  * @param elapsedMs wall time taken
  * @param mistakes incorrect entries made

@@ -17,18 +17,34 @@ public final class FakeConnection implements Connection {
 	
 	private final UUID userId;
 	private final String displayName;
+	private final int apiVersion;
 	private final List<MessageEnvelope> received = new CopyOnWriteArrayList<>();
 	
 	private boolean open = true;
 	private @Nullable String closeReason;
 	
 	public FakeConnection(@NonNull UUID userId, @NonNull String displayName) {
+		this(userId, displayName, net.luis.sudoku.ApiVersion.CURRENT);
+	}
+	
+	public FakeConnection(@NonNull UUID userId, @NonNull String displayName, int apiVersion) {
 		this.userId = userId;
 		this.displayName = displayName;
+		this.apiVersion = apiVersion;
 	}
 	
 	public static @NonNull FakeConnection of(@NonNull String displayName) {
 		return new FakeConnection(UUID.randomUUID(), displayName);
+	}
+	
+	/** A socket attached on {@code /ws/v1/matches/{id}} or {@code /ws/v2/matches/{id}}. */
+	public static @NonNull FakeConnection of(@NonNull String displayName, int apiVersion) {
+		return new FakeConnection(UUID.randomUUID(), displayName, apiVersion);
+	}
+	
+	@Override
+	public int apiVersion() {
+		return this.apiVersion;
 	}
 	
 	@Override

@@ -1,5 +1,8 @@
 package net.luis.sudoku.db.schema;
 
+import net.luis.sudoku.compat.LegacyDifficulty;
+import net.luis.sudoku.difficulty.Difficulty;
+import net.luis.utils.io.database.Sql;
 import net.luis.utils.io.database.exception.SqlException;
 import net.luis.utils.io.database.migration.*;
 import net.luis.utils.io.database.table.SqlColumn;
@@ -44,10 +47,10 @@ import static net.luis.sudoku.db.schema.Schema.*;
 public final class SchemaMigration {
 	
 	/** Every migration, in version order. */
-	public static final List<SqlMigration> ALL = List.of(new InitialSchema(), new PresencePolling(), new ReinstatableKicks(), new MatchHintSetting(), new RecordedGames());
+	public static final List<SqlMigration> ALL = List.of(new InitialSchema(), new PresencePolling(), new ReinstatableKicks(), new MatchHintSetting(), new RecordedGames(), new MatchGivens(), new RescaledDifficulties());
 	
 	/** The version the schema is at once {@link #ALL} has been applied, reported by {@code /health}. */
-	public static final int CURRENT_VERSION = 5;
+	public static final int CURRENT_VERSION = 7;
 	
 	private SchemaMigration() {}
 	
@@ -362,6 +365,145 @@ public final class SchemaMigration {
 		@Override
 		public void down(@NonNull SqlMigrationBuilder builder, @NonNull SqlMigrationSchema schema) throws SqlException {
 			builder.dropTable(RECORDED_GAMES);
+		}
+	}
+	
+	/**
+	 * Stores a match's generated givens, so the grid is generated once and never again.
+	 * <p>
+	 * A match row carried only the seed, and everything that needed the board - {@code GET /matches/{id}},
+	 * rehydration after a restart, a player reconnecting - regenerated from the key. Under the fifteen-band
+	 * rater that is up to a second of CPU on a request thread per rehydration, for a grid this server had
+	 * already produced when the match was created. The givens are 42 bytes at 9x9 and rebuild the same
+	 * puzzle with a backtracking solve instead.
+	 * <p>
+	 * <strong>Nullable, and it stays nullable.</strong> Every match created before this deploy has no
+	 * givens, and backfilling them would mean regenerating exactly what this column exists to avoid
+	 * regenerating. {@code MatchService.liveFor} falls back to the key for those rows, which is what it
+	 * always did.
+	 * <p>
+	 * Guarded with {@code hasColumn} in both directions for the reason spelled out on
+	 * {@link MatchHintSetting}: {@link #table} renders the initial migration from {@link Schema} as it
+	 * stands <em>now</em>, so a database created after this column was declared already has it by the time
+	 * this migration runs, while one deployed before does not.
+	 */
+	private static final class MatchGivens implements SqlMigration {
+		
+		@Override
+		public @NonNull Version version() {
+			return Version.of(6, 0);
+		}
+		
+		@Override
+		public @NonNull String description() {
+			return "store a match's generated givens so it is never regenerated";
+		}
+		
+		@Override
+		public void up(@NonNull SqlMigrationBuilder builder, @NonNull SqlMigrationSchema schema) throws SqlException {
+			if (!schema.hasColumn(MATCHES.name(), MATCH_GIVENS.name())) {
+				builder.addColumn(MATCH_GIVENS, MATCH_GIVENS.type(), _ -> {});
+			}
+		}
+		
+		@Override
+		public void down(@NonNull SqlMigrationBuilder builder, @NonNull SqlMigrationSchema schema) throws SqlException {
+			if (schema.hasColumn(MATCHES.name(), MATCH_GIVENS.name())) {
+				builder.dropColumn(MATCH_GIVENS);
+			}
+		}
+	}
+	
+	/**
+	 * Rewrites every stored difficulty from the six-tier scale onto the fifteen-tier one.
+	 * <p>
+	 * <strong>The one part of the rework a code change could not do.</strong> The difficulty integer did not
+	 * gain values when the scale went from six bands to fifteen, it changed meaning, and
+	 * {@link net.luis.sudoku.compat.LegacyDifficulty} translates that meaning on the <em>wire</em> - at the
+	 * edge, per request, for a client that still speaks the old scale. It is never applied to a row that is
+	 * already in the database. So without this migration every stored number keeps its digits and silently
+	 * changes what it names the moment this version starts: a player who chose the fourth tier of six, the
+	 * hard one, wakes up on the fourth of fifteen, which is easy, and their setting still reads {@code 4} and
+	 * looks untouched. A daily assignment locked in before the deploy is replayed after it as a different
+	 * band. Every statistics and leaderboard row silently re-buckets, and a v1 client reading its own
+	 * statistics back gets stored {@code 4} through {@code toLegacy} as {@code 2}, not the {@code 4} it wrote.
+	 * <p>
+	 * <strong>Every row present when this runs is a legacy row, by definition.</strong> Migrations complete
+	 * before this version serves its first request, so there is no need - and no way - to tell old rows from
+	 * new ones: there are no new ones yet. On a database created fresh this runs against empty tables and
+	 * changes nothing, which is why it is safe as an unconditional rewrite rather than a guarded one.
+	 * <p>
+	 * <strong>Injective, so the primary keys hold.</strong> {@code stats} and {@code daily_leaderboard} carry
+	 * the difficulty inside their primary key, and rewriting a key column is only safe if no two source
+	 * values collide on one target. The anchors {@code 1, 4, 7, 10, 13} plus Lisa are six distinct tiers
+	 * mapping to six distinct tiers, so no row can ever be rewritten onto another. The per-value statements
+	 * run highest first for the reason given on
+	 * {@link net.luis.sudoku.compat.LegacyDifficulty#legacyTiersHighestFirst()}.
+	 * <p>
+	 * <strong>{@link #down} is honest about being lossy.</strong> Going back maps each real tier to the
+	 * nearest legacy anchor, which is exact for every value this migration wrote and approximate for
+	 * anything a v2 client has chosen since. That is the best a six-value field can do and is stated here
+	 * rather than discovered later.
+	 */
+	private static final class RescaledDifficulties implements SqlMigration {
+		
+		@Override
+		public @NonNull Version version() {
+			return Version.of(7, 0);
+		}
+		
+		@Override
+		public @NonNull String description() {
+			return "rescale stored difficulties from six tiers to fifteen";
+		}
+		
+		@Override
+		public void up(@NonNull SqlMigrationBuilder builder, @NonNull SqlMigrationSchema schema) throws SqlException {
+			for (int legacy : LegacyDifficulty.legacyTiersHighestFirst()) {
+				int real = LegacyDifficulty.fromLegacy(legacy).index();
+				if (real == legacy) {
+					continue; // Tier 1 is tier 1 on both scales.
+				}
+				
+				builder.data(DAILY_PREFERENCES, queries -> queries.update()
+					.set(PREFERENCE_DIFFICULTY, real).where(Sql.equalTo(PREFERENCE_DIFFICULTY, legacy)).execute());
+				builder.data(DAILY_ASSIGNMENTS, queries -> queries.update()
+					.set(ASSIGNMENT_DIFFICULTY, real).where(Sql.equalTo(ASSIGNMENT_DIFFICULTY, legacy)).execute());
+				builder.data(DAILY_RESULTS, queries -> queries.update()
+					.set(RESULT_DIFFICULTY, real).where(Sql.equalTo(RESULT_DIFFICULTY, legacy)).execute());
+				builder.data(STATS, queries -> queries.update()
+					.set(STATS_DIFFICULTY, real).where(Sql.equalTo(STATS_DIFFICULTY, legacy)).execute());
+				builder.data(DAILY_LEADERBOARD, queries -> queries.update()
+					.set(LEADERBOARD_DIFFICULTY, real).where(Sql.equalTo(LEADERBOARD_DIFFICULTY, legacy)).execute());
+				// Typed rather than integer, so the column's own mapper does the conversion either way.
+				builder.data(MATCHES, queries -> queries.update()
+					.set(MATCH_DIFFICULTY, Difficulty.ofIndex(real)).where(Sql.equalTo(MATCH_DIFFICULTY, Difficulty.ofIndex(legacy))).execute());
+			}
+		}
+		
+		@Override
+		public void down(@NonNull SqlMigrationBuilder builder, @NonNull SqlMigrationSchema schema) throws SqlException {
+			// Ascending here, and for the mirror of the reason up() descends: every value written is below
+			// every value a later statement looks for, so no row is rewritten twice.
+			for (Difficulty difficulty : Difficulty.values()) {
+				int legacy = LegacyDifficulty.toLegacy(difficulty);
+				int real = difficulty.index();
+				if (real == legacy) {
+					continue;
+				}
+				
+				builder.data(DAILY_PREFERENCES, queries -> queries.update()
+					.set(PREFERENCE_DIFFICULTY, legacy).where(Sql.equalTo(PREFERENCE_DIFFICULTY, real)).execute());
+				builder.data(DAILY_ASSIGNMENTS, queries -> queries.update()
+					.set(ASSIGNMENT_DIFFICULTY, legacy).where(Sql.equalTo(ASSIGNMENT_DIFFICULTY, real)).execute());
+				builder.data(DAILY_RESULTS, queries -> queries.update()
+					.set(RESULT_DIFFICULTY, legacy).where(Sql.equalTo(RESULT_DIFFICULTY, real)).execute());
+				builder.data(MATCHES, queries -> queries.update()
+					.set(MATCH_DIFFICULTY, Difficulty.ofIndex(legacy)).where(Sql.equalTo(MATCH_DIFFICULTY, difficulty)).execute());
+			}
+			// stats and daily_leaderboard are deliberately left alone: the difficulty is inside their
+			// primary key and the reverse mapping is many to one, so rolling them back would collide two
+			// real tiers onto one legacy row and lose a player's record rather than merely blur it.
 		}
 	}
 }

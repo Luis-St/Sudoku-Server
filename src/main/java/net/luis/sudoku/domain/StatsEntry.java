@@ -12,7 +12,7 @@ import java.util.UUID;
  * @param userId the player
  * @param size grid edge length
  * @param variant {@code CLASSIC} or {@code CHAOS}
- * @param difficulty tier index 1-6, where 6 is Lisa (single-player only, but it does appear here)
+ * @param difficulty tier index 1-15, where 15 is Lisa (single-player only, but it does appear here)
  * @param gamesPlayed games started and finished
  * @param solved successful games
  * @param failed failed games

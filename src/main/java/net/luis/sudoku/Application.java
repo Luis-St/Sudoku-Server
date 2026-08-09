@@ -78,7 +78,7 @@ public class Application {
 	 * Registers plugins, filters and every route. Kept separate from {@link #main} so integration tests
 	 * can build the same application against a test {@link ServiceGraph}.
 	 */
-	static void configure(@NonNull JavalinConfig javalin, @NonNull ServiceGraph services) {
+	public static void configure(@NonNull JavalinConfig javalin, @NonNull ServiceGraph services) {
 		javalin.startup.showJavalinBanner = false;
 		javalin.http.defaultContentType = "application/json";
 		
@@ -129,7 +129,11 @@ public class Application {
 		var currencyHandler = new CurrencyHandler(services.authentication(), services.currencyService());
 		var matchHandler = new MatchHandler(services.authentication(), services.matchService(), services.presenceService(), services.rateLimiter());
 		var presenceHandler = new PresenceHandler(services.authentication(), services.presenceService(), services.config().presence());
-		var matchSocketHandler = new MatchSocketHandler(services.authentication(), services.sessionService(), services.matchService(), services.rateLimiter(), services.clock());
+		var puzzleHandler = new PuzzleHandler(services.authentication(), services.puzzleQueue());
+		// One socket handler per version: the instance stamps its version onto every connection it opens,
+		// which is what decides whether MATCH_STATE carries the six-tier integer or the real one plus givens.
+		var matchSocketHandler = new MatchSocketHandler(services.authentication(), services.sessionService(), services.matchService(), services.rateLimiter(), services.clock(), 1);
+		var matchSocketHandlerV2 = new MatchSocketHandler(services.authentication(), services.sessionService(), services.matchService(), services.rateLimiter(), services.clock(), 2);
 		
 		// Health
 		javalin.routes.get("/health", healthHandler::health);
@@ -166,21 +170,36 @@ public class Application {
 		javalin.routes.post("/api/v1/auth/recovery/request", recoveryHandler::requestRecovery);
 		javalin.routes.post("/api/v1/auth/recovery/redeem", recoveryHandler::redeemRecovery);
 		
-		// Daily puzzle
+		// Daily puzzle. The v1 paths stay registered and working: to a client already in the wild the
+		// difficulty integer is a six-value field where 6 means Lisa, and those handlers translate it in both
+		// directions (LegacyDifficulty). The streak routes carry no difficulty at all and stay v1-only.
 		javalin.routes.get("/api/v1/daily", dailyHandler::daily);
+		javalin.routes.get("/api/v2/daily", dailyHandler::dailyV2);
 		javalin.routes.get("/api/v1/daily/leaderboard", dailyHandler::leaderboard);
+		javalin.routes.get("/api/v2/daily/leaderboard", dailyHandler::leaderboardV2);
 		javalin.routes.post("/api/v1/daily/result", dailyHandler::submitResult);
+		javalin.routes.post("/api/v2/daily/result", dailyHandler::submitResultV2);
 		javalin.routes.get("/api/v1/daily/streak", dailyHandler::streak);
 		javalin.routes.post("/api/v1/daily/streak/sync", dailyHandler::syncStreak);
 		javalin.routes.post("/api/v1/daily/streak/restore", dailyHandler::restoreStreak);
 		javalin.routes.get("/api/v1/preferences", dailyHandler::preferences);
+		javalin.routes.get("/api/v2/preferences", dailyHandler::preferencesV2);
 		javalin.routes.put("/api/v1/preferences", dailyHandler::setPreferences);
+		javalin.routes.put("/api/v2/preferences", dailyHandler::setPreferencesV2);
+		
+		// Server-side generation, v2 only: there was never a v1 of this route, because a v1 client generates
+		// its own puzzles.
+		javalin.routes.post("/api/v2/puzzles", puzzleHandler::create);
 		
 		// Players and statistics
+		// /players carries no difficulty and stays v1-only; the three routes that do carry one are versioned.
 		javalin.routes.get("/api/v1/players", statsHandler::players);
 		javalin.routes.get("/api/v1/players/{id}/stats", statsHandler::playerStats);
+		javalin.routes.get("/api/v2/players/{id}/stats", statsHandler::playerStatsV2);
 		javalin.routes.post("/api/v1/stats/sync", statsHandler::sync);
+		javalin.routes.post("/api/v2/stats/sync", statsHandler::syncV2);
 		javalin.routes.post("/api/v1/stats/games", statsHandler::recordGames);
+		javalin.routes.post("/api/v2/stats/games", statsHandler::recordGamesV2);
 		
 		// Currency
 		javalin.routes.get("/api/v1/currency", currencyHandler::balance);
@@ -188,19 +207,25 @@ public class Application {
 		
 		// Matches
 		javalin.routes.post("/api/v1/matches", matchHandler::create);
+		javalin.routes.post("/api/v2/matches", matchHandler::createV2);
 		// Joining needs only the code, which is why this hangs off /matches rather than /matches/{id}/join -
 		// there is no id to put there until the code has been resolved. The older two-value route below stays
 		// registered for clients already in the wild.
 		javalin.routes.post("/api/v1/matches/join", matchHandler::joinByCode);
+		javalin.routes.post("/api/v2/matches/join", matchHandler::joinByCodeV2);
 		// Before the {id} route: "active" is a name, not a match id, and a path parameter would swallow it.
 		javalin.routes.get("/api/v1/matches/active", matchHandler::active);
+		javalin.routes.get("/api/v2/matches/active", matchHandler::activeV2);
 		javalin.routes.get("/api/v1/matches/{id}", matchHandler::get);
+		javalin.routes.get("/api/v2/matches/{id}", matchHandler::getV2);
 		javalin.routes.delete("/api/v1/matches/{id}", matchHandler::cancel);
 		javalin.routes.post("/api/v1/matches/{id}/join", matchHandler::join);
+		javalin.routes.post("/api/v2/matches/{id}/join", matchHandler::joinV2);
 		javalin.routes.post("/api/v1/matches/{id}/invite", matchHandler::invite);
 		javalin.routes.post("/api/v1/matches/{id}/request", matchHandler::request);
 		javalin.routes.post("/api/v1/matches/{id}/resign", matchHandler::resign);
 		javalin.routes.ws("/ws/v1/matches/{id}", matchSocketHandler);
+		javalin.routes.ws("/ws/v2/matches/{id}", matchSocketHandlerV2);
 		
 		// Presence: the heartbeat every signed-in client sends, and the match requests it collects. There is no
 		// presence WebSocket - an open socket is a worse answer to "is this player there" than a recent

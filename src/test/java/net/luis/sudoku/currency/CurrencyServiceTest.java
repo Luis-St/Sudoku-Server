@@ -117,7 +117,7 @@ class CurrencyServiceTest extends PostgresTest {
 	private UUID match(UUID creatorId, int stake) {
 		Match draft = new Match(
 			UUID.randomUUID(), MatchMode.DUEL, MatchState.WAITING, creatorId, GridSize.NINE, Variant.CLASSIC, Difficulty.THREE,
-			42L, true, true, stake, "token", null, null, NOW, null, null
+			42L, null, true, true, stake, "token", null, null, NOW, null, null
 		);
 		return database.transaction(connection -> connection.from(Schema.MATCHES).insert(draft).returning().getFirst()).id();
 	}
@@ -139,40 +139,67 @@ class CurrencyServiceTest extends PostgresTest {
 	}
 	
 	@Test
-	void awardForGame_onANineByNine_paysFiveTimesTheDifficultyIndex() {
+	void awardForGame_onANineByNine_paysFiveTimesTheDifficultyWeight() {
+		// Tier 3 of fifteen weighs 1.7 on the old 1..6 scale the economy was calibrated against, so
+		// 5 * 1.7 * 1.0 rounds to 9.
 		Principal player = this.player("Owner");
 		
 		int awarded = this.awardGame(player.userId(), Difficulty.THREE);
 		
 		assertAll(
-			() -> assertEquals(15, awarded),
-			() -> assertEquals(15, this.currency.balance(player.userId()))
+			() -> assertEquals(9, awarded),
+			() -> assertEquals(9, this.currency.balance(player.userId()))
 		);
 	}
 	
 	@Test
-	void awardForGame_atEveryTier_scalesLinearly() {
+	void awardForGame_atTheEndsOfTheScale_paysWhatItAlwaysPaid() {
+		// The point of the weight: Lisa's index moved from 6 to 15 and the award did not move with it.
 		Principal player = this.player("Owner");
 		
 		assertAll(
-			() -> assertEquals(5, this.awardGame(player.userId(), Difficulty.ONE)),
-			() -> assertEquals(10, this.awardGame(player.userId(), Difficulty.TWO)),
-			() -> assertEquals(25, this.awardGame(player.userId(), Difficulty.FIVE)),
-			() -> assertEquals(30, this.awardGame(player.userId(), Difficulty.LISA), "Lisa is index 6")
+			() -> assertEquals(5, this.awardGame(player.userId(), Difficulty.ONE), "tier 1 is unchanged"),
+			() -> assertEquals(30, this.awardGame(player.userId(), Difficulty.LISA), "Lisa is unchanged, not 2.5x")
+		);
+	}
+	
+	@Test
+	void awardForGame_acrossTheFifteenTiers_neverPaysLessForAHarderOne() {
+		Principal player = this.player("Owner");
+		
+		int previous = 0;
+		for (Difficulty difficulty : Difficulty.values()) {
+			int award = CurrencyService.baseAward(difficulty, GridSize.NINE);
+			assertTrue(award >= previous, "tier " + difficulty.index() + " pays " + award + " after " + previous);
+			previous = award;
+		}
+	}
+	
+	@Test
+	void baseAward_atTheLegacyAnchors_staysWithinARhubarbOfTheOldRate() {
+		// The five tiers a v1 client can name map to real 1, 4, 7, 10, 13. Their awards have to stay put, or
+		// the client's mirrored offline minting drifts from the server's and honest players get clamped.
+		assertAll(
+			() -> assertEquals(5, CurrencyService.baseAward(Difficulty.ONE, GridSize.NINE)),
+			() -> assertEquals(10, CurrencyService.baseAward(Difficulty.FOUR, GridSize.NINE)),
+			() -> assertEquals(16, CurrencyService.baseAward(Difficulty.SEVEN, GridSize.NINE)),
+			() -> assertEquals(21, CurrencyService.baseAward(Difficulty.TEN, GridSize.NINE)),
+			() -> assertEquals(26, CurrencyService.baseAward(Difficulty.THIRTEEN, GridSize.NINE)),
+			() -> assertEquals(30, CurrencyService.baseAward(Difficulty.LISA, GridSize.NINE))
 		);
 	}
 	
 	@Test
 	void awardForGame_scalesWithTheGrid() {
-		// Spec 9a.1: 5 * 3 = 15 on a 9x9, times the size factor, rounded half up.
+		// Spec 9a.1: 5 * 1.7 = 9 on a 9x9, times the size factor, rounded half up.
 		Principal player = this.player("Owner");
 		
 		assertAll(
-			() -> assertEquals(6, this.awardGame(player.userId(), Difficulty.THREE, GridSize.FOUR)),
-			() -> assertEquals(9, this.awardGame(player.userId(), Difficulty.THREE, GridSize.SIX)),
-			() -> assertEquals(15, this.awardGame(player.userId(), Difficulty.THREE, GridSize.NINE)),
-			() -> assertEquals(23, this.awardGame(player.userId(), Difficulty.THREE, GridSize.TWELVE)),
-			() -> assertEquals(33, this.awardGame(player.userId(), Difficulty.THREE, GridSize.SIXTEEN))
+			() -> assertEquals(3, this.awardGame(player.userId(), Difficulty.THREE, GridSize.FOUR)),
+			() -> assertEquals(5, this.awardGame(player.userId(), Difficulty.THREE, GridSize.SIX)),
+			() -> assertEquals(9, this.awardGame(player.userId(), Difficulty.THREE, GridSize.NINE)),
+			() -> assertEquals(13, this.awardGame(player.userId(), Difficulty.THREE, GridSize.TWELVE)),
+			() -> assertEquals(19, this.awardGame(player.userId(), Difficulty.THREE, GridSize.SIXTEEN))
 		);
 	}
 	
@@ -220,17 +247,17 @@ class CurrencyServiceTest extends PostgresTest {
 		
 		int awarded = this.awardDaily(player.userId(), Difficulty.THREE, date);
 		
-		assertEquals(5 * 3 + CurrencyService.DAILY_BONUS, awarded);
+		assertEquals(9 + CurrencyService.DAILY_BONUS, awarded);
 	}
 	
 	@Test
 	void awardForDaily_scalesTheBaseButNotTheBonus() {
-		// 23 for the grid (5 * 3 * 1.5, rounded half up) plus the flat 20.
+		// 13 for the grid (5 * 1.7 * 1.5, rounded half up) plus the flat 20.
 		Principal player = this.player("Owner");
 		
 		int awarded = this.awardDaily(player.userId(), Difficulty.THREE, GridSize.TWELVE, LocalDate.ofInstant(NOW, ZONE));
 		
-		assertEquals(23 + CurrencyService.DAILY_BONUS, awarded);
+		assertEquals(13 + CurrencyService.DAILY_BONUS, awarded);
 	}
 	
 	@Test
@@ -242,9 +269,9 @@ class CurrencyServiceTest extends PostgresTest {
 		int second = this.awardDaily(player.userId(), Difficulty.THREE, date);
 		
 		assertAll(
-			() -> assertEquals(35, first),
+			() -> assertEquals(29, first),
 			() -> assertEquals(0, second),
-			() -> assertEquals(35, this.currency.balance(player.userId()))
+			() -> assertEquals(29, this.currency.balance(player.userId()))
 		);
 	}
 	
@@ -310,7 +337,7 @@ class CurrencyServiceTest extends PostgresTest {
 		
 		long reconciled = this.currency.sync(player.userId(), 1, 1);
 		
-		assertEquals(25, reconciled, "the server's own record wins over a lower client report");
+		assertEquals(12, reconciled, "the server's own record wins over a lower client report");
 	}
 	
 	@Test
@@ -332,7 +359,7 @@ class CurrencyServiceTest extends PostgresTest {
 		
 		database.execute(connection -> this.currency.escrowStake(connection, player.userId(), 10, matchId));
 		
-		assertEquals(15, this.currency.balance(player.userId()));
+		assertEquals(2, this.currency.balance(player.userId()));
 	}
 	
 	@Test
@@ -376,8 +403,8 @@ class CurrencyServiceTest extends PostgresTest {
 		});
 		
 		assertAll(
-			() -> assertEquals(35, this.currency.balance(winner.userId()), "25 - 10 stake + 20 pot"),
-			() -> assertEquals(15, this.currency.balance(loser.userId()), "25 - 10 stake")
+			() -> assertEquals(22, this.currency.balance(winner.userId()), "12 - 10 stake + 20 pot"),
+			() -> assertEquals(2, this.currency.balance(loser.userId()), "12 - 10 stake")
 		);
 	}
 	
@@ -397,8 +424,8 @@ class CurrencyServiceTest extends PostgresTest {
 		});
 		
 		assertAll(
-			() -> assertEquals(25, this.currency.balance(first.userId())),
-			() -> assertEquals(25, this.currency.balance(second.userId()))
+			() -> assertEquals(12, this.currency.balance(first.userId())),
+			() -> assertEquals(12, this.currency.balance(second.userId()))
 		);
 	}
 	
@@ -413,7 +440,7 @@ class CurrencyServiceTest extends PostgresTest {
 		long summed = database.read(connection -> this.ledger.balance(connection, player.userId()));
 		
 		assertAll(
-			() -> assertEquals(10, summed),
+			() -> assertEquals(4, summed, "9 for the tier, less the 5 stake"),
 			() -> assertEquals(summed, this.currency.balance(player.userId()))
 		);
 	}

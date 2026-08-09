@@ -1,5 +1,6 @@
 package net.luis.sudoku.dto.request;
 
+import net.luis.sudoku.compat.LegacyDifficulty;
 import net.luis.sudoku.difficulty.Difficulty;
 import net.luis.sudoku.error.ApiException;
 import net.luis.sudoku.grid.GridSize;
@@ -36,7 +37,7 @@ public record CreateMatchRequest(@Nullable String mode, @Nullable Config config,
 	/**
 	 * @param size grid edge length
 	 * @param variant {@code CLASSIC} or {@code CHAOS}
-	 * @param difficulty tier index 1-5; Lisa is rejected for every mode
+	 * @param difficulty tier index 1-15; Lisa (15) is rejected for every mode
 	 */
 	public record Config(@Nullable Integer size, @Nullable String variant, @Nullable Integer difficulty) {
 		
@@ -62,11 +63,31 @@ public record CreateMatchRequest(@Nullable String mode, @Nullable Config config,
 			}
 		}
 		
+		/**
+		 * @return The real fifteen-tier band a v2 client asked for
+		 * @throws ApiException {@code LISA_NOT_ALLOWED} for Lisa, {@code BAD_REQUEST} otherwise
+		 */
 		public @NonNull Difficulty requireDifficulty() {
+			return PuzzleFactory.difficultyOfIndex(this.requireDifficultyIndex());
+		}
+		
+		/**
+		 * The same field read as the frozen six-tier integer a v1 client sends.
+		 *
+		 * @return The band that legacy tier names
+		 * @throws ApiException {@code LISA_NOT_ALLOWED} for legacy 6, {@code BAD_REQUEST} otherwise
+		 */
+		public @NonNull Difficulty requireLegacyDifficulty() {
+			Difficulty difficulty = LegacyDifficulty.fromLegacy(this.requireDifficultyIndex());
+			PuzzleFactory.requireMultiplayerSafe(difficulty);
+			return difficulty;
+		}
+		
+		private int requireDifficultyIndex() {
 			if (this.difficulty == null) {
 				throw ApiException.badRequest("Missing required field: config.difficulty");
 			}
-			return PuzzleFactory.difficultyOfIndex(this.difficulty);
+			return this.difficulty;
 		}
 	}
 	

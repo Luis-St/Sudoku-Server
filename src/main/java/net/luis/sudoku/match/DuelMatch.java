@@ -289,7 +289,7 @@ public final class DuelMatch extends LiveMatch {
 		payload.put("matchId", this.id().toString());
 		payload.put("mode", this.mode().name());
 		payload.put("state", this.state().name());
-		payload.put("puzzleKey", MatchPayloads.key(this.match.key()));
+		payload.put("puzzleKey", this.puzzlePayload());
 		// The shared pen layer holds only correct entries, so sending it leaks nothing a participant
 		// has not already earned.
 		payload.put("board", board);

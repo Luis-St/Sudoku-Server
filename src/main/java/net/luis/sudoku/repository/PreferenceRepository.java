@@ -21,8 +21,14 @@ import static net.luis.sudoku.db.schema.Schema.*;
  */
 public final class PreferenceRepository {
 	
-	/** Spec 8.1: the default tier when a player has never chosen one. */
-	public static final int DEFAULT_DIFFICULTY = 3;
+	/**
+	 * Spec 8.1: the default tier when a player has never chosen one.
+	 * <p>
+	 * Must agree with {@code Schema.PREFERENCE_DIFFICULTY}'s column default: this is what a player with no
+	 * row at all gets, that is what a row written without the column gets, and the two answering differently
+	 * would hand the same player two different dailies depending on which path created their row.
+	 */
+	public static final int DEFAULT_DIFFICULTY = 5;
 	
 	public int dailyDifficulty(@NonNull SqlTransaction transaction, @NonNull UUID userId) throws SqlException {
 		Schema.PreferenceRow row = transaction.from(DAILY_PREFERENCES).select()

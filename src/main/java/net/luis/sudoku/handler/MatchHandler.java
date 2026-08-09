@@ -3,8 +3,7 @@ package net.luis.sudoku.handler;
 import io.javalin.http.Context;
 import io.javalin.openapi.*;
 import net.luis.sudoku.auth.Authentication;
-import net.luis.sudoku.domain.Match;
-import net.luis.sudoku.domain.Principal;
+import net.luis.sudoku.domain.*;
 import net.luis.sudoku.dto.request.*;
 import net.luis.sudoku.dto.response.*;
 import net.luis.sudoku.error.ApiException;
@@ -13,6 +12,7 @@ import net.luis.sudoku.presence.PresenceService;
 import net.luis.sudoku.security.RateLimiter;
 import org.jspecify.annotations.NonNull;
 
+import java.util.List;
 import java.util.UUID;
 
 /**
@@ -33,8 +33,9 @@ public class MatchHandler {
 	}
 	
 	@OpenApi(
-		summary = "Create a match",
-		description = "The creator chooses the configuration and settings. Difficulty LISA is rejected for every mode.",
+		summary = "Create a match (v1)",
+		description = "The creator chooses the configuration and settings. config.difficulty is the frozen six-tier "
+			+ "integer 1-6; 6 is Lisa and is rejected for every mode.",
 		operationId = "createMatch",
 		path = "/api/v1/matches",
 		methods = HttpMethod.POST,
@@ -47,6 +48,35 @@ public class MatchHandler {
 		}
 	)
 	public void create(@NonNull Context ctx) {
+		this.createMatch(ctx, true);
+	}
+	
+	@OpenApi(
+		summary = "Create a match",
+		description = "The creator chooses the configuration and settings. config.difficulty is the real tier index "
+			+ "1-15; Lisa (15) is rejected for every mode.",
+		operationId = "createMatchV2",
+		path = "/api/v2/matches",
+		methods = HttpMethod.POST,
+		tags = "Matches",
+		requestBody = @OpenApiRequestBody(content = @OpenApiContent(from = CreateMatchRequest.class)),
+		responses = {
+			@OpenApiResponse(status = "201", content = @OpenApiContent(from = CreatedMatchResponse.class)),
+			@OpenApiResponse(status = "400", description = "LISA_NOT_ALLOWED",
+				content = @OpenApiContent(from = ErrorResponse.class))
+		}
+	)
+	public void createV2(@NonNull Context ctx) {
+		this.createMatch(ctx, false);
+	}
+	
+	/**
+	 * Creates a match. Only how the difficulty integer is read differs between the versions.
+	 *
+	 * @param ctx The request
+	 * @param legacy Whether config.difficulty is the frozen six-tier integer
+	 */
+	private void createMatch(@NonNull Context ctx, boolean legacy) {
 		Principal actor = this.authentication.require(ctx);
 		CreateMatchRequest request = ctx.bodyAsClass(CreateMatchRequest.class);
 		CreateMatchRequest.Config config = request.requireConfig();
@@ -57,7 +87,7 @@ public class MatchHandler {
 			request.requireMode(),
 			config.requireSize(),
 			config.requireVariant(),
-			config.requireDifficulty(),
+			legacy ? config.requireLegacyDifficulty() : config.requireDifficulty(),
 			settings.livesEnabledOrDefault(),
 			settings.hintsEnabledOrDefault(),
 			settings.stakeOrZero()
@@ -65,6 +95,18 @@ public class MatchHandler {
 		
 		ctx.status(201);
 		ctx.json(new CreatedMatchResponse(created.match().id().toString(), created.inviteToken()));
+	}
+	
+	/**
+	 * Answers with the v2 shape of a match: the real fifteen-tier index plus the givens, rebuilt from the
+	 * row rather than generated again.
+	 *
+	 * @param ctx The request to answer
+	 * @param match The match to report
+	 */
+	private void respondV2(@NonNull Context ctx, @NonNull Match match) {
+		List<MatchParticipant> participants = this.matches.participants(match.id());
+		ctx.json(MatchV2Response.of(match, this.matches.puzzle(match), participants));
 	}
 	
 	@OpenApi(
@@ -82,14 +124,35 @@ public class MatchHandler {
 		}
 	)
 	public void join(@NonNull Context ctx) {
+		ctx.json(MatchResponse.of(this.joinMatch(ctx), this.matches.participants(Handlers.pathUuid(ctx, "id"))));
+	}
+	
+	@OpenApi(
+		summary = "Join a match",
+		operationId = "joinMatchV2",
+		path = "/api/v2/matches/{id}/join",
+		methods = HttpMethod.POST,
+		tags = "Matches",
+		pathParams = @OpenApiParam(name = "id", description = "Match id"),
+		requestBody = @OpenApiRequestBody(content = @OpenApiContent(from = JoinMatchRequest.class)),
+		responses = {
+			@OpenApiResponse(status = "200", content = @OpenApiContent(from = MatchV2Response.class)),
+			@OpenApiResponse(status = "409", description = "MATCH_FULL or INSUFFICIENT_BALANCE",
+				content = @OpenApiContent(from = ErrorResponse.class))
+		}
+	)
+	public void joinV2(@NonNull Context ctx) {
+		this.respondV2(ctx, this.joinMatch(ctx));
+	}
+	
+	private @NonNull Match joinMatch(@NonNull Context ctx) {
 		Principal actor = this.authentication.require(ctx);
 		UUID matchId = Handlers.pathUuid(ctx, "id");
 		JoinMatchRequest request = ctx.body().isBlank()
 			? new JoinMatchRequest(null)
 			: ctx.bodyAsClass(JoinMatchRequest.class);
 		
-		Match match = this.matches.join(actor, matchId, request.inviteToken());
-		ctx.json(MatchResponse.of(match, this.matches.participants(matchId)));
+		return this.matches.join(actor, matchId, request.inviteToken());
 	}
 	
 	@OpenApi(
@@ -112,6 +175,33 @@ public class MatchHandler {
 		}
 	)
 	public void joinByCode(@NonNull Context ctx) {
+		Match match = this.joinMatchByCode(ctx);
+		ctx.json(MatchResponse.of(match, this.matches.participants(match.id())));
+	}
+	
+	@OpenApi(
+		summary = "Join a match by its code",
+		description = "The code is the whole invitation: it resolves to the lobby on its own, so no match id is "
+			+ "needed. Answers NOT_FOUND for a code that is mistyped, belongs to a match that has already started, or "
+			+ "was cancelled. Attempt limited per caller.",
+		operationId = "joinMatchByCodeV2",
+		path = "/api/v2/matches/join",
+		methods = HttpMethod.POST,
+		tags = "Matches",
+		requestBody = @OpenApiRequestBody(content = @OpenApiContent(from = JoinByCodeRequest.class)),
+		responses = {
+			@OpenApiResponse(status = "200", content = @OpenApiContent(from = MatchV2Response.class)),
+			@OpenApiResponse(status = "404", description = "NOT_FOUND", content = @OpenApiContent(from = ErrorResponse.class)),
+			@OpenApiResponse(status = "409", description = "MATCH_FULL or INSUFFICIENT_BALANCE",
+				content = @OpenApiContent(from = ErrorResponse.class)),
+			@OpenApiResponse(status = "429", description = "RATE_LIMITED", content = @OpenApiContent(from = ErrorResponse.class))
+		}
+	)
+	public void joinByCodeV2(@NonNull Context ctx) {
+		this.respondV2(ctx, this.joinMatchByCode(ctx));
+	}
+	
+	private @NonNull Match joinMatchByCode(@NonNull Context ctx) {
 		Principal actor = this.authentication.require(ctx);
 		JoinByCodeRequest request = ctx.bodyAsClass(JoinByCodeRequest.class);
 		String code = Requests.require(request.code(), "code");
@@ -120,8 +210,7 @@ public class MatchHandler {
 		// spend the budget against than an address several players may share.
 		this.rateLimiter.check(RateLimiter.Bucket.MATCH_JOIN_CODE, actor.userId().toString());
 		
-		Match match = this.matches.joinByCode(actor, code);
-		ctx.json(MatchResponse.of(match, this.matches.participants(match.id())));
+		return this.matches.joinByCode(actor, code);
 	}
 	
 	@OpenApi(
@@ -137,6 +226,20 @@ public class MatchHandler {
 		this.authentication.require(ctx);
 		UUID matchId = Handlers.pathUuid(ctx, "id");
 		ctx.json(MatchResponse.of(this.matches.get(matchId), this.matches.participants(matchId)));
+	}
+	
+	@OpenApi(
+		summary = "Get a match",
+		operationId = "getMatchV2",
+		path = "/api/v2/matches/{id}",
+		methods = HttpMethod.GET,
+		tags = "Matches",
+		pathParams = @OpenApiParam(name = "id", description = "Match id"),
+		responses = @OpenApiResponse(status = "200", content = @OpenApiContent(from = MatchV2Response.class))
+	)
+	public void getV2(@NonNull Context ctx) {
+		this.authentication.require(ctx);
+		this.respondV2(ctx, this.matches.get(Handlers.pathUuid(ctx, "id")));
 	}
 	
 	@OpenApi(
@@ -161,6 +264,28 @@ public class MatchHandler {
 			return;
 		}
 		ctx.json(MatchResponse.of(match, this.matches.participants(match.id())));
+	}
+	
+	@OpenApi(
+		summary = "The match this player is currently in",
+		description = "The running match the caller is a participant of, or 204 when there is none.",
+		operationId = "activeMatchV2",
+		path = "/api/v2/matches/active",
+		methods = HttpMethod.GET,
+		tags = "Matches",
+		responses = {
+			@OpenApiResponse(status = "200", content = @OpenApiContent(from = MatchV2Response.class)),
+			@OpenApiResponse(status = "204", description = "Not in a match")
+		}
+	)
+	public void activeV2(@NonNull Context ctx) {
+		Principal actor = this.authentication.require(ctx);
+		Match match = this.matches.activeMatch(actor);
+		if (match == null) {
+			ctx.status(204);
+			return;
+		}
+		this.respondV2(ctx, match);
 	}
 	
 	@OpenApi(

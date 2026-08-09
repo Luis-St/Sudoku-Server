@@ -24,8 +24,10 @@ import java.util.UUID;
  * @param creatorId who created it and chose the configuration
  * @param size grid edge length
  * @param variant classic or chaos
- * @param difficulty tier index 1-5; Lisa is rejected for every mode (spec 10.1)
+ * @param difficulty tier index 1-15; Lisa is rejected for every mode (spec 10.1)
  * @param seed the puzzle seed, from which the key is rebuilt
+ * @param givens the generated grid's givens, {@code GivensCodec}-encoded, or null for a match created
+ *   before the column existed - see {@link net.luis.sudoku.match.MatchService#liveFor}
  * @param livesEnabled whether lives apply
  * @param hintsEnabled whether participants may spend hints; a match setting rather than a per-player one,
  *   so everybody on a shared board is playing the same game
@@ -46,6 +48,7 @@ public record Match(
 	@NonNull Variant variant,
 	@NonNull Difficulty difficulty,
 	long seed,
+	@Nullable String givens,
 	boolean livesEnabled,
 	boolean hintsEnabled,
 	int stake,

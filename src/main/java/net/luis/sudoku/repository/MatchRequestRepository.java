@@ -1,6 +1,5 @@
 package net.luis.sudoku.repository;
 
-import net.luis.sudoku.db.schema.Schema.*;
 import net.luis.sudoku.match.MatchMode;
 import net.luis.sudoku.match.MatchState;
 import net.luis.sudoku.presence.PendingMatchRequest;

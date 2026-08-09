@@ -1,11 +1,13 @@
 package net.luis.sudoku.dto.request;
 
+import net.luis.sudoku.compat.LegacyDifficulty;
 import net.luis.sudoku.error.ApiException;
 import net.luis.sudoku.stats.StatsService.PlayedGame;
 import org.jspecify.annotations.NonNull;
 import org.jspecify.annotations.Nullable;
 
 import java.util.*;
+import java.util.function.IntUnaryOperator;
 
 /**
  * Body of {@code POST /api/v1/stats/games} (server-spec 9): finished single-player games, uploaded as
@@ -18,7 +20,21 @@ import java.util.*;
  */
 public record GameResultsRequest(@Nullable List<PlayedGameBody> games) {
 	
+	/**
+	 * @return The uploaded games, their tiers read as real fifteen-tier indices
+	 */
 	public @NonNull List<PlayedGame> parseGames() {
+		return this.parse(IntUnaryOperator.identity());
+	}
+	
+	/**
+	 * @return The uploaded games, their tiers read as the frozen six-tier integers a v1 client sends
+	 */
+	public @NonNull List<PlayedGame> parseLegacyGames() {
+		return this.parse(legacy -> LegacyDifficulty.fromLegacy(legacy).index());
+	}
+	
+	private @NonNull List<PlayedGame> parse(@NonNull IntUnaryOperator difficulties) {
 		if (this.games == null || this.games.isEmpty()) {
 			return List.of();
 		}
@@ -28,7 +44,7 @@ public record GameResultsRequest(@Nullable List<PlayedGameBody> games) {
 			if (game == null) {
 				throw ApiException.badRequest("stats upload contains a null game");
 			}
-			parsed.add(game.toPlayedGame());
+			parsed.add(game.toPlayedGame(difficulties));
 		}
 		return parsed;
 	}
@@ -39,7 +55,7 @@ public record GameResultsRequest(@Nullable List<PlayedGameBody> games) {
 	 * @param gameId the client's id for this game, which is what makes a retry recognisable as one
 	 * @param size grid edge length
 	 * @param variant {@code CLASSIC} or {@code CHAOS}
-	 * @param difficulty tier index 1-6; Lisa is a genuine single-player tier and is accepted here
+	 * @param difficulty tier index 1-15; Lisa is a genuine single-player tier and is accepted here
 	 * @param solved whether the grid was finished
 	 * @param elapsedMs how long it took
 	 * @param hintsUsed hints consumed
@@ -61,7 +77,7 @@ public record GameResultsRequest(@Nullable List<PlayedGameBody> games) {
 			return value;
 		}
 		
-		private @NonNull PlayedGame toPlayedGame() {
+		private @NonNull PlayedGame toPlayedGame(@NonNull IntUnaryOperator difficulties) {
 			UUID id;
 			try {
 				id = UUID.fromString(Requests.require(this.gameId, "gameId").trim());
@@ -72,7 +88,7 @@ public record GameResultsRequest(@Nullable List<PlayedGameBody> games) {
 				id,
 				require(this.size, "size"),
 				Requests.require(this.variant, "variant").trim().toUpperCase(),
-				require(this.difficulty, "difficulty"),
+				difficulties.applyAsInt(require(this.difficulty, "difficulty")),
 				this.solved != null && this.solved,
 				this.elapsedMs == null ? 0 : this.elapsedMs,
 				this.hintsUsed == null ? 0 : this.hintsUsed

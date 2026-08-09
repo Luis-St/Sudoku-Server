@@ -21,10 +21,16 @@ import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Consumer;
 
 /**
- * The match WebSocket, {@code WS /ws/v1/matches/{id}} (server-spec 10.2, 10.3).
+ * The match WebSocket, {@code WS /ws/v1/matches/{id}} and {@code WS /ws/v2/matches/{id}}
+ * (server-spec 10.2, 10.3).
  * <p>
  * This class does authentication, framing and validation only. Every accepted message is handed to the
  * match's own queue, so no game state is ever touched from a socket thread (spec 10.4).
+ * <p>
+ * One instance is registered per version, each stamping its {@link #apiVersion} onto the connections it
+ * opens. That is the only difference between the two paths: a v1 socket has its {@code MATCH_STATE}
+ * {@code puzzleKey} reduced to the six-tier integer with no givens, a v2 socket gets the real fifteen-tier
+ * index and the givens. Both may be attached to the same match at the same time.
  */
 public class MatchSocketHandler implements Consumer<WsConfig> {
 	
@@ -50,14 +56,29 @@ public class MatchSocketHandler implements Consumer<WsConfig> {
 	private final SessionService sessions;
 	private final MatchService matches;
 	private final Clock clock;
+	/** The version of the path this instance is registered on; stamped onto every connection it opens. */
+	private final int apiVersion;
 	
 	private final Map<String, SocketState> states = new ConcurrentHashMap<>();
 	
 	public MatchSocketHandler(@NonNull Authentication authentication, @NonNull SessionService sessions, @NonNull MatchService matches, @NonNull RateLimiter rateLimiter, @NonNull Clock clock) {
+		this(authentication, sessions, matches, rateLimiter, clock, 1);
+	}
+	
+	/**
+	 * @param authentication The authenticator
+	 * @param sessions The session store a socket token is resolved against
+	 * @param matches The match service
+	 * @param rateLimiter The shared rate limiter
+	 * @param clock The clock
+	 * @param apiVersion The version of the path this instance is registered on
+	 */
+	public MatchSocketHandler(@NonNull Authentication authentication, @NonNull SessionService sessions, @NonNull MatchService matches, @NonNull RateLimiter rateLimiter, @NonNull Clock clock, int apiVersion) {
 		this.authentication = authentication;
 		this.sessions = sessions;
 		this.matches = matches;
 		this.clock = clock;
+		this.apiVersion = apiVersion;
 	}
 	
 	@Override
@@ -115,7 +136,7 @@ public class MatchSocketHandler implements Consumer<WsConfig> {
 			}
 			
 			LiveMatch live = this.matches.liveFor(match);
-			SocketConnection connection = new SocketConnection(context, principal);
+			SocketConnection connection = new SocketConnection(context, principal, this.apiVersion);
 			
 			this.states.put(context.sessionId(), new SocketState(matchId, principal.userId(), live, connection));
 			log.info("Match {}: user {} opened a socket", matchId, principal.userId());
@@ -264,11 +285,17 @@ public class MatchSocketHandler implements Consumer<WsConfig> {
 	/**
 	 * Adapts a Javalin {@link WsContext} to the transport-free {@link Connection} the match logic uses.
 	 */
-	private record SocketConnection(WsContext context, Principal principal) implements Connection {
+	private record SocketConnection(WsContext context, Principal principal, int version) implements Connection {
 		
-		private SocketConnection(@NonNull WsContext context, @NonNull Principal principal) {
+		private SocketConnection(@NonNull WsContext context, @NonNull Principal principal, int version) {
 			this.context = context;
 			this.principal = principal;
+			this.version = version;
+		}
+		
+		@Override
+		public int apiVersion() {
+			return this.version;
 		}
 		
 		@Override

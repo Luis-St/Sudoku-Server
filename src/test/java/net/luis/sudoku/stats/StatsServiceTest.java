@@ -369,7 +369,7 @@ class StatsServiceTest extends PostgresTest {
 	@Test
 	void recordGames_aTierOutsideTheRange_isRejected() {
 		Principal player = this.player("Owner");
-		assertThrows(ApiException.class, () -> this.stats.recordGames(player, List.of(game(9, "CLASSIC", 7, true, 1000, 0))));
+		assertThrows(ApiException.class, () -> this.stats.recordGames(player, List.of(game(9, "CLASSIC", 16, true, 1000, 0))));
 	}
 	
 	@Test
