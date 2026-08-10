@@ -5,7 +5,9 @@ import net.luis.sudoku.difficulty.Difficulty;
 import net.luis.sudoku.difficulty.DifficultyBands;
 import net.luis.sudoku.generation.GeneratedPuzzle;
 import net.luis.sudoku.grid.GridSize;
+import net.luis.sudoku.grid.Puzzle;
 import net.luis.sudoku.grid.Variant;
+import net.luis.sudoku.key.PuzzleKey;
 import net.luis.sudoku.repository.PuzzlePoolRepository;
 import net.luis.sudoku.version.GenVersion;
 import net.luis.sudoku.support.MovableClock;
@@ -18,6 +20,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.IntSupplier;
+import java.util.function.Supplier;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -239,6 +242,87 @@ class PuzzleQueueTest extends PostgresTest {
 			() -> assertEquals(30, PuzzleQueue.generationTimeout(GridSize.NINE).toSeconds()),
 			() -> assertEquals(30, PuzzleQueue.generationTimeout(GridSize.TWELVE).toSeconds()),
 			() -> assertTrue(PuzzleQueue.generationTimeout(GridSize.SIXTEEN).toSeconds() > 30)
+		);
+	}
+
+	/**
+	 * A canned generation rated at {@code rated}, standing in for one attempt of the real generator.
+	 * <p>
+	 * The key always asks for Lisa, because that is the only request the retry policy treats specially; what
+	 * varies between attempts is what the search came back with.
+	 */
+	private static GeneratedPuzzle attemptRatedAt(Difficulty rated) {
+		PuzzleKey key = PuzzleKey.of(GridSize.FOUR, Variant.CLASSIC, Difficulty.LISA, 1L);
+		int[] solution = { 1, 2, 3, 4, 3, 4, 1, 2, 2, 1, 4, 3, 4, 3, 2, 1 };
+		Puzzle puzzle = Puzzle.classicOfGivens(GridSize.FOUR, solution);
+		return new GeneratedPuzzle(key, puzzle, solution, rated);
+	}
+
+	/** Hands out the given ratings in order, and counts how many attempts were actually asked for. */
+	private static final class Attempts implements Supplier<GeneratedPuzzle> {
+
+		private final Difficulty[] ratings;
+		private int calls;
+
+		private Attempts(Difficulty... ratings) {
+			this.ratings = ratings;
+		}
+
+		@Override
+		public GeneratedPuzzle get() {
+			return attemptRatedAt(this.ratings[Math.min(this.calls++, this.ratings.length - 1)]);
+		}
+	}
+
+	@Test
+	void withLisaRetries_aLisaRequestThatLandsFirstTime_doesNotRetry() {
+		Attempts attempts = new Attempts(Difficulty.LISA);
+
+		GeneratedPuzzle generated = PuzzleQueue.withLisaRetries(Difficulty.LISA, attempts);
+
+		assertAll(
+			() -> assertEquals(Difficulty.LISA, generated.rated()),
+			() -> assertEquals(1, attempts.calls, "a request that landed must not pay for a retry")
+		);
+	}
+
+	@Test
+	void withLisaRetries_aMissedLisaRequest_retriesUntilOneLands() {
+		Attempts attempts = new Attempts(Difficulty.THIRTEEN, Difficulty.FOURTEEN, Difficulty.LISA);
+
+		GeneratedPuzzle generated = PuzzleQueue.withLisaRetries(Difficulty.LISA, attempts);
+
+		assertAll(
+			() -> assertEquals(Difficulty.LISA, generated.rated()),
+			() -> assertEquals(3, attempts.calls, "it must stop as soon as an attempt lands")
+		);
+	}
+
+	@Test
+	void withLisaRetries_whenEveryAttemptMisses_servesTheHardestOfThem() {
+		// The fallback: Lisa is the top of the scale, so every miss is downwards and the best attempt is the
+		// closest thing to what was asked for. Refusing would turn a rare near miss into an unservable request.
+		Attempts attempts = new Attempts(Difficulty.TWELVE, Difficulty.FOURTEEN, Difficulty.ELEVEN, Difficulty.THIRTEEN);
+
+		GeneratedPuzzle generated = PuzzleQueue.withLisaRetries(Difficulty.LISA, attempts);
+
+		assertAll(
+			() -> assertEquals(Difficulty.FOURTEEN, generated.rated()),
+			() -> assertEquals(4, attempts.calls, "one attempt plus three retries, and no more")
+		);
+	}
+
+	@Test
+	void withLisaRetries_aMissedOrdinaryBand_isNotRetried() {
+		// Every other tier is a rating and nothing else, so a band-low result is served honestly rather than
+		// re-searched. Only Lisa also carries a gameplay mode that a miss would silently change.
+		Attempts attempts = new Attempts(Difficulty.TEN);
+
+		GeneratedPuzzle generated = PuzzleQueue.withLisaRetries(Difficulty.THIRTEEN, attempts);
+
+		assertAll(
+			() -> assertEquals(Difficulty.TEN, generated.rated()),
+			() -> assertEquals(1, attempts.calls)
 		);
 	}
 

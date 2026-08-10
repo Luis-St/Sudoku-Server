@@ -22,6 +22,7 @@ import java.util.*;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.IntSupplier;
+import java.util.function.Supplier;
 
 /**
  * A pre-generation pool, so no request ever blocks on puzzle generation.
@@ -69,6 +70,16 @@ public final class PuzzleQueue implements AutoCloseable {
 
 	/** Enough to keep the dear buckets from starving the cheap ones, never enough to own the machine. */
 	private static final int MAX_WORKER_THREADS = 4;
+
+	/**
+	 * How many further attempts a missed Lisa request gets, on top of its first.
+	 * <p>
+	 * Three, so a Lisa bucket makes at most four searches before settling for its best. Bounded rather than
+	 * "until it lands", because the search can miss for reasons a fresh seed will not fix - at a size whose
+	 * ceiling is below Lisa the request is snapped before it ever gets here, and an unbounded loop there would
+	 * never terminate. See {@link #generateFor}.
+	 */
+	private static final int LISA_RETRIES = 3;
 
 	/**
 	 * How long one background generation may take before the refill gives up on its bucket for this round,
@@ -223,7 +234,62 @@ public final class PuzzleQueue implements AutoCloseable {
 		}
 
 		log.debug("Puzzle queue miss for {}, generating inline", bucket);
-		return PuzzleFactory.generate(this.freshKey(bucket));
+		return this.generateFor(bucket);
+	}
+
+	/**
+	 * Generates one puzzle for a bucket, retrying a missed <b>Lisa</b> request before giving up on it.
+	 * <p>
+	 * <b>Lisa is the one band where a near miss costs more than a wrong label.</b> Every other tier is a
+	 * rating and nothing else, so a request that lands a band low is served honestly by reporting the band it
+	 * landed on. Lisa is also a <i>mode</i>: the client reads the band it is told and applies Lisa's fixed
+	 * modifier set from it, so a miss does not merely mis-describe the puzzle, it silently gives the player a
+	 * different game from the one they chose. Retrying is cheap by comparison - a fresh seed is a fresh search,
+	 * and 9x9 classic lands Lisa on 32 of 32 measured seeds, so a second attempt almost always settles it.
+	 * <p>
+	 * {@link #LISA_RETRIES} retries after the first attempt, then <b>the hardest band any attempt reached</b>.
+	 * Falling back rather than failing is deliberate: Lisa is the top of the scale, so every miss is downwards
+	 * and the best attempt is the closest thing to what was asked for. Refusing instead would turn a rare
+	 * near miss into a request that cannot be served at all.
+	 * <p>
+	 * Only the seed changes between attempts. The daily therefore cannot use this at all - its key is fixed by
+	 * {@code serverId ‖ date} and inventing a seed for it would break the client's ability to derive the same
+	 * puzzle offline - so a Lisa daily can still be a near miss. Match creation never reaches it either, since
+	 * Lisa is refused for every multiplayer mode.
+	 */
+	private @NonNull GeneratedPuzzle generateFor(@NonNull Bucket bucket) {
+		GeneratedPuzzle generated = withLisaRetries(bucket.difficulty(), () -> PuzzleFactory.generate(this.freshKey(bucket)));
+		if (bucket.difficulty() == Difficulty.LISA && generated.rated() != Difficulty.LISA) {
+			log.info("Lisa request for {} missed {} times; serving its hardest attempt, band {}",
+				bucket, LISA_RETRIES + 1, generated.rated().index());
+		}
+		return generated;
+	}
+
+	/**
+	 * The retry policy itself, separated from where the puzzles come from so it can be tested against a
+	 * generator whose misses are chosen rather than hoped for.
+	 *
+	 * @param requested The band that was asked for
+	 * @param attempt Produces one fresh generation per call; only the seed differs between calls
+	 * @return A puzzle rated {@code requested} if any attempt reached it, otherwise the hardest-rated attempt
+	 */
+	static @NonNull GeneratedPuzzle withLisaRetries(@NonNull Difficulty requested, @NonNull Supplier<GeneratedPuzzle> attempt) {
+		GeneratedPuzzle best = attempt.get();
+		if (requested != Difficulty.LISA || best.rated() == Difficulty.LISA) {
+			return best;
+		}
+
+		for (int retry = 0; retry < LISA_RETRIES; retry++) {
+			GeneratedPuzzle next = attempt.get();
+			if (next.rated() == Difficulty.LISA) {
+				return next;
+			}
+			if (next.rated().index() > best.rated().index()) {
+				best = next;
+			}
+		}
+		return best;
 	}
 
 	/**
@@ -269,7 +335,10 @@ public final class PuzzleQueue implements AutoCloseable {
 	private @Nullable GeneratedPuzzle generateGuarded(@NonNull Bucket bucket) {
 		Future<GeneratedPuzzle> pending;
 		try {
-			pending = this.generator.submit(() -> PuzzleFactory.generate(this.freshKey(bucket)));
+			// The retry loop lives inside the guarded task, so the timeout covers a Lisa bucket's whole set of
+			// attempts rather than one of them. That is the right shape: what the guard protects is the worker
+			// thread, and a bucket that spends four searches missing Lisa has occupied it for all four.
+			pending = this.generator.submit(() -> this.generateFor(bucket));
 		} catch (RejectedExecutionException e) {
 			// Shutting down; the caller simply stops refilling.
 			return null;
