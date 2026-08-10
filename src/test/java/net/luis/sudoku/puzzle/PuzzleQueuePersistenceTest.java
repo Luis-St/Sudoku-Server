@@ -1,5 +1,6 @@
 package net.luis.sudoku.puzzle;
 
+import net.luis.sudoku.config.PoolConfig;
 import net.luis.sudoku.db.schema.Schema.PuzzlePoolRow;
 import net.luis.sudoku.difficulty.Difficulty;
 import net.luis.sudoku.generation.GeneratedPuzzle;
@@ -12,7 +13,9 @@ import net.luis.sudoku.support.PostgresTest;
 import net.luis.sudoku.version.GenVersion;
 import org.junit.jupiter.api.Test;
 
+import java.util.EnumMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
 
@@ -35,6 +38,15 @@ class PuzzleQueuePersistenceTest extends PostgresTest {
 	private static final Difficulty BAND = Difficulty.ONE;
 	
 	private final PuzzlePoolRepository pool = new PuzzlePoolRepository();
+
+	/** A floor of one, so a refill is a single generation and these tests stay about the table, not the depth. */
+	private static PoolConfig pool() {
+		Map<GridSize, Integer> depths = new EnumMap<>(GridSize.class);
+		for (GridSize size : GridSize.values()) {
+			depths.put(size, 1);
+		}
+		return new PoolConfig(depths, 32, false);
+	}
 	
 	/** Waits for the background refill rather than sleeping a fixed amount, as the in-memory tests do. */
 	private int awaitStored() throws Exception {
@@ -73,11 +85,11 @@ class PuzzleQueuePersistenceTest extends PostgresTest {
 		// The point of the whole change: a restart used to throw away everything the process had paid to
 		// generate, because the depth lived in a map. If the depth is still in memory afterwards, nothing
 		// about that has actually changed.
-		try (PuzzleQueue queue = new PuzzleQueue(() -> 0, new MovableClock(), database)) {
+		try (PuzzleQueue queue = new PuzzleQueue(() -> 0, new MovableClock(), database, pool())) {
 			queue.take(SIZE, VARIANT, BAND);
 			
 			assertTrue(this.awaitStored() > 0, "the worker should have filled the table");
-			assertTrue(queue.depth(SIZE, VARIANT, BAND) <= 2, "the in-memory part is a buffer, not the pool");
+			assertEquals(this.stored(), queue.depth(SIZE, VARIANT, BAND), "the depth the queue reports is the table's, with nothing held back in memory");
 		}
 	}
 	
@@ -91,7 +103,7 @@ class PuzzleQueuePersistenceTest extends PostgresTest {
 		Set<Long> generatedBefore = this.storedSeeds();
 		assertEquals(1, generatedBefore.size(), "the pool must hold exactly the puzzle this test put there");
 		
-		try (PuzzleQueue queue = new PuzzleQueue(() -> 0, new MovableClock(), database)) {
+		try (PuzzleQueue queue = new PuzzleQueue(() -> 0, new MovableClock(), database, pool())) {
 			GeneratedPuzzle served = queue.take(SIZE, VARIANT, BAND);
 			
 			assertAll(
@@ -107,7 +119,7 @@ class PuzzleQueuePersistenceTest extends PostgresTest {
 	void take_withAnEmptyTable_stillReturnsAPuzzle() {
 		// The fallback that made the queue safe to add in the first place, and it has to keep working now
 		// that a miss also means "the table had nothing", not only "the map had nothing".
-		try (PuzzleQueue queue = new PuzzleQueue(() -> 0, new MovableClock(), database)) {
+		try (PuzzleQueue queue = new PuzzleQueue(() -> 0, new MovableClock(), database, pool())) {
 			GeneratedPuzzle puzzle = queue.take(SIZE, VARIANT, BAND);
 			
 			assertAll(
@@ -124,7 +136,7 @@ class PuzzleQueuePersistenceTest extends PostgresTest {
 		this.storeRow(GenVersion.CURRENT + 1, 42L);
 		assertEquals(1, this.rows().size(), "the stale row must be there before the queue is built, or this proves nothing");
 		
-		try (PuzzleQueue queue = new PuzzleQueue(() -> 0, new MovableClock(), database)) {
+		try (PuzzleQueue queue = new PuzzleQueue(() -> 0, new MovableClock(), database, pool())) {
 			// Nothing is taken, so nothing refills: whatever is left is what the constructor decided to keep.
 			assertEquals(0, queue.depth(SIZE, VARIANT, BAND));
 			assertTrue(this.rows().isEmpty(), "a stale generator version must not be left in the pool");

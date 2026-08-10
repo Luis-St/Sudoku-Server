@@ -60,7 +60,7 @@ public class PuzzleHandler {
 		
 		GridSize size = request.requireSize();
 		Variant variant = request.requireVariant(size);
-		Difficulty difficulty = request.requireDifficulty(size);
+		Difficulty difficulty = request.requireDifficulty(size, variant);
 		
 		GeneratedPuzzle generated = this.puzzles.take(size, variant, difficulty);
 		ctx.json(NewPuzzleResponse.of(generated));

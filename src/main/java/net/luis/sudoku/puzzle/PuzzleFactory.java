@@ -46,8 +46,26 @@ public final class PuzzleFactory {
 	 * @throws ApiException {@code INTERNAL} if the stored string is not givens for this key
 	 */
 	public static @NonNull GeneratedPuzzle fromGivens(@NonNull PuzzleKey key, @NonNull String encodedGivens) {
+		return fromGivens(key, encodedGivens, key.difficulty());
+	}
+
+	/**
+	 * The same rebuild for a caller that recorded what the grid actually rated.
+	 * <p>
+	 * A pooled row is exactly that caller. The generator hands back its closest candidate when the search
+	 * misses its target, so the band on the key is a request and the band on the row is a measurement; the
+	 * rebuild must carry the measurement, or a puzzle that rated band 8 goes back onto the wire labelled
+	 * band 13 because that is what somebody asked for.
+	 *
+	 * @param key The key the givens belong to
+	 * @param encodedGivens The {@code GivensCodec} string the givens were stored as
+	 * @param rated The band the grid was rated at when it was generated
+	 * @return The rebuilt puzzle, reporting the rated band
+	 * @throws ApiException {@code INTERNAL} if the stored string is not givens for this key
+	 */
+	public static @NonNull GeneratedPuzzle fromGivens(@NonNull PuzzleKey key, @NonNull String encodedGivens, @NonNull Difficulty rated) {
 		try {
-			return PuzzleGenerator.fromGivens(key, GivensCodec.decode(encodedGivens));
+			return PuzzleGenerator.fromGivens(key, GivensCodec.decode(encodedGivens), rated);
 		} catch (IllegalArgumentException e) {
 			// Only ever reachable if a row was written by something other than this server, so it is a bug
 			// rather than a bad request; the caller falls back to regenerating from the key.

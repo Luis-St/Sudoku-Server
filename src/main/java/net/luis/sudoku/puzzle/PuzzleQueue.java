@@ -1,8 +1,10 @@
 package net.luis.sudoku.puzzle;
 
+import net.luis.sudoku.config.PoolConfig;
 import net.luis.sudoku.db.Database;
 import net.luis.sudoku.db.schema.Schema.PuzzlePoolRow;
 import net.luis.sudoku.difficulty.Difficulty;
+import net.luis.sudoku.difficulty.DifficultyBands;
 import net.luis.sudoku.generation.GeneratedPuzzle;
 import net.luis.sudoku.grid.GridSize;
 import net.luis.sudoku.grid.Variant;
@@ -24,39 +26,36 @@ import java.util.function.IntSupplier;
 /**
  * A pre-generation pool, so no request ever blocks on puzzle generation.
  * <p>
- * Generation is fast but not free - 12x12 and 16x16, and chaos at any size, cost tens of milliseconds, and
- * the hard bands cost seconds. A background worker keeps each {@code (size, variant, difficulty)} bucket
- * topped up to roughly twice the active-player count, so match creation is instant.
+ * Generation is fast but not free - 12x12 and chaos at any size cost tens to hundreds of milliseconds, the
+ * hard bands cost seconds, and 16x16 costs tens of seconds. A background worker keeps each
+ * {@code (size, variant, difficulty)} bucket topped up, so match creation and every single-player game start
+ * are instant.
  * <p>
  * The whole {@link GeneratedPuzzle} is pooled, not just its key, so the givens are already computed by the
  * time a request arrives and serving one costs a bit-pack rather than a generation.
  * <p>
- * <strong>Sized for what it now serves.</strong> This began as the pool behind match creation - six bands,
- * Lisa excluded, a handful of buckets. Since {@code POST /api/v2/puzzles} it is the path every single
- * player game start takes, across fifteen bands and every size and variant, so both the worker count and
- * the bucket lifetime are set from that: several threads rather than one, so a band that costs seconds
- * cannot starve the ones that cost milliseconds, and buckets that fall out of use are dropped rather than
- * held at depth forever because someone opened them once.
+ * <strong>The pool is {@code puzzle_pool} and nothing else.</strong> It used to live in a map in this class,
+ * which made it per-process twice over: a restart threw away every puzzle the process had paid to generate,
+ * and a second instance kept a pool of its own and duplicated the work. A shallow in-memory buffer survived
+ * that change and has now gone too, deliberately: a buffered puzzle is one that a restart loses, that a
+ * second instance cannot see, and that no {@code SELECT} can count, so "the pool is at least this deep" was
+ * never a statement the table alone could answer. Every {@link #take} now reads the table. The cost is one
+ * short transaction and a backtracking solve per request; the gain is that the depth guarantee is real.
  * <p>
- * <strong>The pool lives in {@code puzzle_pool}, with a shallow buffer in front of it.</strong> It used to
- * live only in this map, which made it per-process twice over: a restart threw away every puzzle the
- * process had paid to generate, and a second instance kept a pool of its own and duplicated the work. The
- * table is now the pool, and the in-memory deque is deliberately kept to {@link #BUFFERED_DEPTH} entries -
- * enough that an ordinary {@link #take} is answered without touching the database, small enough that the
- * bulk of the pool is the part that survives. Holding the full depth in memory was the obvious alternative
- * and is exactly wrong: it would put the whole pool back where a restart loses it and where a second
- * instance cannot see it, leaving the table as bookkeeping rather than as the pool.
+ * <strong>A pooled puzzle is in exactly one place.</strong> Claiming deletes the row in the same transaction
+ * that reads it, under {@code FOR UPDATE SKIP LOCKED}, so two instances can never hand the same puzzle to
+ * two players - see {@link PuzzlePoolRepository}.
  * <p>
- * <strong>A pooled puzzle is in exactly one place.</strong> Claiming deletes the row in the same
- * transaction that reads it, under {@code FOR UPDATE SKIP LOCKED}, so the puzzles in this buffer are ones
- * no other instance can still see - see {@link PuzzlePoolRepository}. The price is that an ungraceful stop
- * loses whatever is buffered, at most {@link #BUFFERED_DEPTH} puzzles per bucket in use, which is a
- * generation or two rather than the whole pool.
+ * <strong>Every bucket is guaranteed a floor, and the floor is per size.</strong> {@link PoolConfig} carries
+ * it, because 16x16 still costs two orders of magnitude more than 9x9 and its cost distribution has a tail
+ * the others do not. {@link #warm()} fills every bucket the library says a size supports, cheapest sizes
+ * first, so a cold pool serves the common sizes within seconds rather than after the 16x16 sweep; and
+ * because the table is durable, that sweep is paid once per {@code genVersion} rather than once per deploy.
  * <p>
- * <strong>Nothing here needs the database to be up.</strong> Every pool operation falls back to what this
- * class did before there was a table: a failed claim is a miss and generates inline, a failed store is a
- * puzzle that was pooled in memory instead. A queue constructed without a database - which is what the unit
- * tests do - is the old in-memory queue exactly.
+ * <strong>Nothing here needs the database to <em>stay</em> up.</strong> A failed claim is a miss and
+ * generates inline; a failed store loses the puzzles rather than the request. A database outage makes the
+ * server slower, never wrong. What it can no longer do is run without a database at all, which is the
+ * deliberate price of the guarantee above.
  * <p>
  * <strong>Determinism is untouched.</strong> The queue only pre-generates puzzles for cases where the
  * server is free to choose the seed - normal and match play - drawing seeds from {@link SecureRandom}.
@@ -65,45 +64,15 @@ import java.util.function.IntSupplier;
  * same puzzle offline.
  */
 public final class PuzzleQueue implements AutoCloseable {
-	
+
 	private static final Logger log = LoggerFactory.getLogger(PuzzleQueue.class);
-	
-	/** Even with no players connected, keep a few ready so the first request of the day is instant. */
-	private static final int MIN_DEPTH = 4;
-	
-	/** Bounds memory: a puzzle is a few hundred bytes, but the bucket count is the product of three axes. */
-	private static final int MAX_DEPTH = 32;
-	
+
 	/** Enough to keep the dear buckets from starving the cheap ones, never enough to own the machine. */
 	private static final int MAX_WORKER_THREADS = 4;
-	
+
 	/**
-	 * How many puzzles a bucket keeps in memory once the pool is a table.
-	 * <p>
-	 * Two, because this buffer exists to cover the latency of one request rather than to be the pool: a
-	 * {@link #take} drains one and immediately asks for a refill that restores it, and the second entry is
-	 * what keeps two requests arriving together from sending one of them to the database. Everything above
-	 * that belongs in {@code puzzle_pool}, where a restart and a second instance can both still see it.
-	 */
-	private static final int BUFFERED_DEPTH = 2;
-	
-	/**
-	 * How long a bucket may go untouched before it is dropped entirely.
-	 * <p>
-	 * The bucket space is the product of three axes and grew two and a half times when the difficulty
-	 * scale did - around 150 combinations, against the handful any one server actually plays. Without
-	 * this, every bucket a single curious player ever opened stayed pooled at full depth forever, and the
-	 * pool's memory was decided by what had been asked for once rather than by what is in use. An hour is
-	 * far longer than a session's gap between games and far shorter than a day.
-	 * <p>
-	 * It ages the <em>buffer</em>, not the table. A stored row costs about a hundred bytes and stays
-	 * perfectly good until the generator version moves, so dropping it would only mean generating it again
-	 * for the next player who opens that bucket; the whole table at full depth across every combination
-	 * that exists is a few thousand rows.
-	 */
-	private static final Duration IDLE_BUCKET_TTL = Duration.ofHours(1);
-	/**
-	 * How long one background generation may take before the refill gives up on its bucket for this round.
+	 * How long one background generation may take before the refill gives up on its bucket for this round,
+	 * at every size below 16x16.
 	 * <p>
 	 * Defence in depth, not the fix. The reason this exists is that {@code SolutionFiller} used to be able to
 	 * search forever on an unlucky 16x16 seed: one seed was seen holding a core for 34 minutes. A refill worker
@@ -111,25 +80,47 @@ public final class PuzzleQueue implements AutoCloseable {
 	 * permanently and every bucket then missed into inline generation on a request thread. The shared core now
 	 * bounds its own search, so nothing should ever reach this timeout; it is here so that a future regression
 	 * in the generator degrades into slow refills and a warning rather than into a pool that silently stops.
-	 * <p>
-	 * Thirty seconds is far above the worst measured cost of a single generation, the dearest 16x16 Lisa bucket,
-	 * so a loaded box does not trip it.
 	 */
 	private static final Duration GENERATION_TIMEOUT = Duration.ofSeconds(30);
 
-	private final Map<Bucket, ConcurrentLinkedDeque<GeneratedPuzzle>> pools = new ConcurrentHashMap<>();
+	/**
+	 * The same guard at 16x16, where the tail is long enough that thirty seconds is a thin margin.
+	 * <p>
+	 * <b>Not the emergency it looked like.</b> The 2026-08-09 sweep put 16x16 at 25.7 s average and 306 s
+	 * worst, which would have made a flat thirty seconds a guarantee that these buckets never fill. Those
+	 * numbers were measured <em>before</em> {@code SolutionFiller} gained its node bound later the same day,
+	 * and they no longer describe this generator: re-measured on 2026-08-10 at genVersion 2, 16x16 classic
+	 * averages 0.4 to 3.3 s per band with a 7.2 s worst case, and 16x16 chaos is cheaper still at under a
+	 * second. Thirty seconds is already several times the worst case.
+	 * <p>
+	 * Two minutes rather than thirty seconds all the same, because the 16x16 fill distribution is
+	 * heavy-tailed with no ceiling: the bound turns an unlucky seed into restarts rather than into a hang,
+	 * and a seed that needs all eight restarts on a loaded box can still run far past the average. Paying
+	 * that wait in the background is free; tripping the timeout is not, because it costs the bucket a round
+	 * and pushes the next request inline.
+	 */
+	private static final Duration LARGE_GENERATION_TIMEOUT = Duration.ofMinutes(2);
+
+	/**
+	 * The order {@link #warm()} fills sizes in: cheapest first.
+	 * <p>
+	 * Not the enum's own order, and not a comparator on {@code n()}, because the point is cost rather than
+	 * size - it just happens that measured cost is monotone in the edge length while the cost of a
+	 * <em>band</em> at 16x16 is not. A cold server therefore has 9x9 ready in seconds instead of after the
+	 * thirty 16x16 buckets, which is the difference between a deploy that serves and one that appears hung.
+	 */
+	private static final List<GridSize> WARM_ORDER = List.of(GridSize.FOUR, GridSize.SIX, GridSize.NINE, GridSize.TWELVE, GridSize.SIXTEEN);
+
 	private final Map<Bucket, AtomicInteger> refilling = new ConcurrentHashMap<>();
-	/** When each bucket was last taken from, which is what {@link #IDLE_BUCKET_TTL} is measured against. */
-	private final Map<Bucket, Instant> lastUsed = new ConcurrentHashMap<>();
 	private final SecureRandom random = new SecureRandom();
 	private final PuzzlePoolRepository pool = new PuzzlePoolRepository();
 	private final IntSupplier activePlayerCount;
 	private final Clock clock;
-	/** Null for a memory-only queue: see the class comment on why every path tolerates that. */
-	private final @Nullable Database database;
+	private final Database database;
+	private final PoolConfig config;
 	private final ExecutorService worker;
 	/**
-	 * Where guarded background generations actually run, so that {@link #GENERATION_TIMEOUT} can be waited on
+	 * Where guarded background generations actually run, so that the generation timeout can be waited on
 	 * from a worker thread. It has to be a second pool: a worker cannot time itself out, and running the
 	 * generation on the pool that is waiting for it would deadlock as soon as both were busy. Unbounded and
 	 * cached rather than fixed, because the whole point is that a wedged generation must not occupy a slot
@@ -137,33 +128,23 @@ public final class PuzzleQueue implements AutoCloseable {
 	 */
 	private final ExecutorService generator;
 
-	public PuzzleQueue(@NonNull IntSupplier activePlayerCount) {
-		this(activePlayerCount, Clock.systemUTC());
-	}
-	
 	/**
-	 * @param activePlayerCount How many players are connected, which sizes every pool
-	 * @param clock The clock idle buckets are aged against
+	 * @param activePlayerCount How many players are connected, which sizes every pool above its floor
+	 * @param clock The clock that stamps stored rows
+	 * @param database Where the pool is kept; required, since a pool that is not in the table is not a pool
+	 * @param config The per-size floors, the ceiling and whether to warm at startup
 	 */
-	public PuzzleQueue(@NonNull IntSupplier activePlayerCount, @NonNull Clock clock) {
-		this(activePlayerCount, clock, null);
-	}
-	
-	/**
-	 * @param activePlayerCount How many players are connected, which sizes every pool
-	 * @param clock The clock idle buckets are aged against, and that stamps stored rows
-	 * @param database Where the pool is kept, or {@code null} to keep it in memory only
-	 */
-	public PuzzleQueue(@NonNull IntSupplier activePlayerCount, @NonNull Clock clock, @Nullable Database database) {
-		this.activePlayerCount = activePlayerCount;
-		this.clock = clock;
-		this.database = database;
+	public PuzzleQueue(@NonNull IntSupplier activePlayerCount, @NonNull Clock clock, @NonNull Database database, @NonNull PoolConfig config) {
+		this.activePlayerCount = Objects.requireNonNull(activePlayerCount, "Active player count must not be null");
+		this.clock = Objects.requireNonNull(clock, "Clock must not be null");
+		this.database = Objects.requireNonNull(database, "Database must not be null");
+		this.config = Objects.requireNonNull(config, "Pool config must not be null");
 		// Deliberately small, and deliberately no longer one.
 		//
 		// Single-threaded was right while this fed match creation alone: six bands, no Lisa, and a miss cost
 		// tens of milliseconds. It now serves every single-player game start across fifteen bands including
 		// Lisa, where the dearest combinations take seconds each - and one thread means a cold 16x16 high
-		// band refilling to MIN_DEPTH is four of those in a row, with every other bucket's refill queued
+		// band refilling to its floor is several of those in a row, with every other bucket's refill queued
 		// behind it. Buckets that would have been warm are then missed, and a miss generates inline on a
 		// request thread, so serializing the background work is what puts the work back in the foreground.
 		//
@@ -179,19 +160,52 @@ public final class PuzzleQueue implements AutoCloseable {
 
 		this.dropOtherGenVersions();
 	}
-	
+
 	/**
-	 * Takes a ready puzzle, generating one inline if neither the buffer nor the table has one.
+	 * Queues a refill for every bucket the library supports, cheapest sizes first.
 	 * <p>
-	 * Falling back to inline generation rather than blocking keeps a cold queue correct, just slower - and
+	 * Called once at startup when {@link PoolConfig#warmOnStartup()} is set. It only <em>queues</em> the
+	 * work - the sweep runs on the same bounded worker pool as every other refill, so a boot never blocks on
+	 * generation and a request arriving mid-sweep is served by whatever is already in the table, or inline.
+	 * <p>
+	 * Sizes whose floor is zero are skipped entirely, which is what makes a floor of zero the way to opt out
+	 * of pooling a size rather than a way to pool it shallowly.
+	 *
+	 * @return How many buckets were queued, for the boot log and for tests
+	 */
+	public int warm() {
+		DifficultyBands bands = DifficultyBands.defaults();
+		int queued = 0;
+		for (GridSize size : WARM_ORDER) {
+			if (this.config.minDepth(size) <= 0) {
+				continue;
+			}
+			for (Variant variant : Variant.values()) {
+				if (!variant.isSupportedAt(size)) {
+					continue;
+				}
+				// Only the bands this size and variant can actually produce. Warming an unsupported band would
+				// generate a puzzle that snaps to a neighbouring one, which is a row filed under a band the
+				// grid does not have - and at 16x16 chaos that would be seven of the fifteen buckets.
+				for (Difficulty band : bands.supported(size, variant)) {
+					this.requestRefill(new Bucket(size, variant, band));
+					queued++;
+				}
+			}
+		}
+		log.info("Queued {} puzzle buckets for warming", queued);
+		return queued;
+	}
+
+	/**
+	 * Takes a ready puzzle, generating one inline if the table has none.
+	 * <p>
+	 * Falling back to inline generation rather than blocking keeps a cold pool correct, just slower - and
 	 * that is what a database this cannot reach degrades to as well.
 	 * <p>
-	 * <strong>Every tier is poolable, Lisa included.</strong> This used to call
-	 * {@code PuzzleFactory.requireMultiplayerSafe} first, which structurally excluded Lisa from the pool -
-	 * and Lisa is both the most expensive band to generate and, now that {@code POST /api/v2/puzzles} serves
-	 * single-player content from here, the one that most needs pooling. Refusing Lisa is a rule about
-	 * <em>matches</em>, not about pre-generation, and it still runs where it belongs, in
-	 * {@code MatchService.create}.
+	 * <strong>Every tier is poolable, Lisa included</strong>, since {@code POST /api/v2/puzzles} serves it as
+	 * an ordinary single-player band and it is the dearest tier to generate, so it is the one that most needs
+	 * pooling. Refusing it here would only move that cost onto a request thread.
 	 *
 	 * @param size The grid size
 	 * @param variant The region layout variant
@@ -200,23 +214,18 @@ public final class PuzzleQueue implements AutoCloseable {
 	 */
 	public @NonNull GeneratedPuzzle take(@NonNull GridSize size, @NonNull Variant variant, @NonNull Difficulty difficulty) {
 		Bucket bucket = new Bucket(size, variant, difficulty);
-		this.lastUsed.put(bucket, this.clock.instant());
-		
-		GeneratedPuzzle pooled = this.buffer(bucket).poll();
-		if (pooled == null) {
-			// The buffer is only two deep, so an empty one is ordinary rather than exceptional: the pool
-			// itself is the table, and this is the normal way a request reaches it.
-			pooled = this.claim(bucket, 1).stream().findFirst().orElse(null);
-		}
+		GeneratedPuzzle pooled = this.claim(bucket, 1).stream().findFirst().orElse(null);
+		// Asked for on every take, hit or miss: a hit has just made the bucket one shallower than its floor,
+		// and a miss means it was already under it.
 		this.requestRefill(bucket);
 		if (pooled != null) {
 			return pooled;
 		}
-		
+
 		log.debug("Puzzle queue miss for {}, generating inline", bucket);
 		return PuzzleFactory.generate(this.freshKey(bucket));
 	}
-	
+
 	/**
 	 * Asks the worker to top this bucket up. Idempotent: a bucket already queued for refill is skipped,
 	 * so a burst of misses cannot pile up redundant work.
@@ -226,7 +235,7 @@ public final class PuzzleQueue implements AutoCloseable {
 		if (!pending.compareAndSet(0, 1)) {
 			return;
 		}
-		
+
 		try {
 			this.worker.execute(() -> {
 				try {
@@ -242,9 +251,9 @@ public final class PuzzleQueue implements AutoCloseable {
 			pending.set(0);
 		}
 	}
-	
+
 	/**
-	 * Generates one puzzle for the bucket, giving up after {@link #GENERATION_TIMEOUT}.
+	 * Generates one puzzle for the bucket, giving up after the size's generation timeout.
 	 * <p>
 	 * Only the background paths call this. A miss still generates inline on the request thread unguarded,
 	 * because abandoning that one means answering the request some other way, and there is no better answer
@@ -266,13 +275,14 @@ public final class PuzzleQueue implements AutoCloseable {
 			return null;
 		}
 
+		Duration timeout = generationTimeout(bucket.size());
 		try {
-			return pending.get(GENERATION_TIMEOUT.toMillis(), TimeUnit.MILLISECONDS);
+			return pending.get(timeout.toMillis(), TimeUnit.MILLISECONDS);
 		} catch (TimeoutException e) {
 			pending.cancel(true);
 			// Loud, because the shared core is supposed to make this unreachable. If this ever appears, the
 			// generator's own bound has regressed and the pool is running degraded until it is fixed.
-			log.warn("Generating a puzzle for {} exceeded {}; the bucket is left short for this round", bucket, GENERATION_TIMEOUT);
+			log.warn("Generating a puzzle for {} exceeded {}; the bucket is left short for this round", bucket, timeout);
 			return null;
 		} catch (ExecutionException e) {
 			log.warn("Could not pre-generate a puzzle for {}; the bucket is left short for this round", bucket, e.getCause());
@@ -284,61 +294,37 @@ public final class PuzzleQueue implements AutoCloseable {
 		}
 	}
 
-	private void refill(@NonNull Bucket bucket) {
-		// Opportunistic rather than scheduled: a refill is the only moment this class is awake anyway, and
-		// a sweep of a map of at most a few hundred entries is nothing beside the generation it precedes.
-		// No timer thread to own, and a queue nobody is using stops sweeping because nobody is refilling.
-		this.evictIdleBuckets();
-		
-		ConcurrentLinkedDeque<GeneratedPuzzle> buffer = this.buffer(bucket);
-		int target = this.targetDepth();
-		
-		this.topUpStore(bucket, target, buffer.size());
-		
-		int buffered = this.bufferTarget(target);
-		buffer.addAll(this.claim(bucket, buffered - buffer.size()));
-		// Whatever the table could not supply - because it is empty, because another instance got there
-		// first, or because it is unreachable - is generated here, which is what the queue always did.
-		while (buffer.size() < buffered) {
-			GeneratedPuzzle generated = this.generateGuarded(bucket);
-			if (generated == null) {
-				break;
-			}
-			buffer.add(generated);
-		}
-		// Trim if the player count dropped since the buffer was filled.
-		while (buffer.size() > MAX_DEPTH) {
-			buffer.pollFirst();
-		}
-	}
-	
 	/**
-	 * Generates whatever the durable pool is short of and appends it.
-	 * <p>
-	 * The count is read outside the write, so two instances refilling the same bucket at the same moment
-	 * both see the old shortfall and both fill it. That is deliberate: the alternative is holding a lock
-	 * across seconds of generation, and the cost of being wrong is a bucket at twice its target for as long
-	 * as it takes to drain - bounded, self-correcting, and cheaper than serialising every instance's
-	 * generation behind every other's.
+	 * @param size The grid size being generated
+	 * @return How long a single background generation of that size may take
 	 */
-	private void topUpStore(@NonNull Bucket bucket, int target, int buffered) {
-		if (this.database == null) {
+	static @NonNull Duration generationTimeout(@NonNull GridSize size) {
+		return size == GridSize.SIXTEEN ? LARGE_GENERATION_TIMEOUT : GENERATION_TIMEOUT;
+	}
+
+	private void refill(@NonNull Bucket bucket) {
+		int target = this.targetDepth(bucket.size());
+		if (target <= 0) {
 			return;
 		}
-		
+
 		int stored;
 		try {
 			stored = this.database.read(transaction -> this.pool.count(transaction, bucket.size(), bucket.variant(), bucket.difficulty(), GenVersion.CURRENT));
 		} catch (RuntimeException e) {
-			log.warn("Could not read the pooled depth of {}; the bucket falls back to its in-memory buffer", bucket, e);
+			log.warn("Could not read the pooled depth of {}; it keeps whatever it already holds", bucket, e);
 			return;
 		}
-		
-		int deficit = target - stored - buffered;
+
+		// The count is read outside the write, so two instances refilling the same bucket at the same moment
+		// both see the old shortfall and both fill it. That is deliberate: the alternative is holding a lock
+		// across seconds - at 16x16, minutes - of generation, and the cost of being wrong is a bucket at twice
+		// its target for as long as it takes to drain.
+		int deficit = target - stored;
 		if (deficit <= 0) {
 			return;
 		}
-		
+
 		Instant now = this.clock.instant();
 		List<PuzzlePoolRow> rows = new ArrayList<>(deficit);
 		for (int i = 0; i < deficit; i++) {
@@ -346,8 +332,7 @@ public final class PuzzleQueue implements AutoCloseable {
 			if (generated == null) {
 				break;
 			}
-			PuzzleKey key = generated.key();
-			rows.add(new PuzzlePoolRow(0L, key.genVersion(), key.size(), key.variant(), key.difficulty(), key.seed(), PuzzleFactory.encodeGivens(generated), now));
+			rows.add(rowOf(generated, now));
 		}
 
 		if (rows.isEmpty()) {
@@ -357,32 +342,46 @@ public final class PuzzleQueue implements AutoCloseable {
 		try {
 			this.database.execute(transaction -> this.pool.store(transaction, rows));
 		} catch (RuntimeException e) {
-			// The puzzles are lost rather than the request: the buffer is filled below either way, and the
-			// next refill tries again. Loud, because a pool that cannot be written is a pool that is not
-			// surviving restarts any more, and nothing else says so.
-			log.warn("Could not store {} pre-generated puzzles for {}; the pool is running from memory only", rows.size(), bucket, e);
+			// The puzzles are lost rather than the request: the next refill tries again. Loud, because a pool
+			// that cannot be written is not surviving restarts any more, and nothing else says so.
+			log.warn("Could not store {} pre-generated puzzles for {}; the bucket stays short", rows.size(), bucket, e);
 		}
 	}
-	
+
 	/**
-	 * Takes rows out of the durable pool and rebuilds them into puzzles.
+	 * Files a generated puzzle under the band it <b>rated</b>, not the one it was asked for.
+	 * <p>
+	 * The generator returns its closest candidate when the search misses, and that candidate can be several
+	 * bands away - at 16x16 chaos above band 10 it always is. Filing it under the request would make the
+	 * pool a durable, replicated store of mislabelled puzzles: every client claiming one would be told a
+	 * band the grid does not have, and paid currency at that band's rate.
+	 */
+	private static @NonNull PuzzlePoolRow rowOf(@NonNull GeneratedPuzzle generated, @NonNull Instant now) {
+		PuzzleKey key = generated.key();
+		return new PuzzlePoolRow(0L, key.genVersion(), key.size(), key.variant(), generated.rated(), key.seed(), PuzzleFactory.encodeGivens(generated), now);
+	}
+
+	/**
+	 * Takes rows out of the pool and rebuilds them into puzzles.
 	 *
-	 * @return the claimed puzzles, which is empty for a memory-only queue and for any failure
+	 * @return the claimed puzzles, which is empty for any failure
 	 */
 	private @NonNull List<GeneratedPuzzle> claim(@NonNull Bucket bucket, int limit) {
-		if (this.database == null || limit <= 0) {
+		if (limit <= 0) {
 			return List.of();
 		}
-		
+
 		try {
 			List<PuzzlePoolRow> rows = this.database.transaction(transaction ->
 				this.pool.claim(transaction, bucket.size(), bucket.variant(), bucket.difficulty(), GenVersion.CURRENT, limit));
-			
+
 			List<GeneratedPuzzle> puzzles = new ArrayList<>(rows.size());
 			for (PuzzlePoolRow row : rows) {
 				// A backtracking solve, not a generate-dig-rate search: this is the whole reason the row
-				// carries the givens and no solution.
-				puzzles.add(PuzzleFactory.fromGivens(PuzzleKey.of(row.size(), row.variant(), row.difficulty(), row.seed()), row.givens()));
+				// carries the givens and no solution. The row's band is the rated one, which is why it is
+				// passed rather than left to default to the key's.
+				PuzzleKey key = PuzzleKey.of(row.size(), row.variant(), row.difficulty(), row.seed());
+				puzzles.add(PuzzleFactory.fromGivens(key, row.givens(), row.difficulty()));
 			}
 			return puzzles;
 		} catch (RuntimeException e) {
@@ -392,7 +391,7 @@ public final class PuzzleQueue implements AutoCloseable {
 			return List.of();
 		}
 	}
-	
+
 	/**
 	 * Clears out puzzles some other generator version produced, once, at startup.
 	 * <p>
@@ -401,10 +400,6 @@ public final class PuzzleQueue implements AutoCloseable {
 	 * as well, so this is about not carrying dead rows rather than about safety.
 	 */
 	private void dropOtherGenVersions() {
-		if (this.database == null) {
-			return;
-		}
-		
 		try {
 			int dropped = this.database.transaction(transaction -> this.pool.deleteOtherGenVersions(transaction, GenVersion.CURRENT));
 			if (dropped > 0) {
@@ -414,82 +409,53 @@ public final class PuzzleQueue implements AutoCloseable {
 			log.warn("Could not clear pooled puzzles from other generator versions", e);
 		}
 	}
-	
+
 	/**
-	 * Drops every bucket untouched for {@link #IDLE_BUCKET_TTL}, buffer and bookkeeping together.
-	 * <p>
-	 * The bucket being refilled right now cannot be evicted here: {@link #take} stamps it immediately
-	 * before asking for the refill, so its timestamp is younger than this sweep. A bucket that is evicted
-	 * and then asked for again simply misses once and refills, which is the same cost as its very first
-	 * request and the reason this can be as blunt as it is.
-	 * <p>
-	 * The buffered puzzles go with it rather than being written back. They are at most
-	 * {@link #BUFFERED_DEPTH} per bucket, and a store on the eviction path would put a database write
-	 * inside a sweep that runs on the generation worker.
+	 * @param size The grid size
+	 * @return the configured floor for that size, raised towards twice the active-player count and clamped
+	 *   to the configured ceiling
 	 */
-	private void evictIdleBuckets() {
-		Instant cutoff = this.clock.instant().minus(IDLE_BUCKET_TTL);
-		for (Map.Entry<Bucket, Instant> entry : this.lastUsed.entrySet()) {
-			if (entry.getValue().isAfter(cutoff)) {
-				continue;
-			}
-			// Remove the stamp first: a take() racing with this re-stamps and repopulates, so the worst
-			// case is a pool dropped a moment after it was wanted, not a bucket left permanently unpooled.
-			this.lastUsed.remove(entry.getKey(), entry.getValue());
-			this.pools.remove(entry.getKey());
-			this.refilling.remove(entry.getKey());
-			log.debug("Dropped idle puzzle bucket {}", entry.getKey());
+	int targetDepth(@NonNull GridSize size) {
+		int floor = this.config.minDepth(size);
+		if (floor <= 0) {
+			return 0;
 		}
-	}
-	
-	/**
-	 * @return at least twice the active-player count, clamped to sane bounds
-	 */
-	int targetDepth() {
+
 		int players = Math.max(0, this.activePlayerCount.getAsInt());
-		return Math.clamp(players * 2L, MIN_DEPTH, MAX_DEPTH);
+		return Math.clamp(players * 2L, floor, Math.max(floor, this.config.maxDepth()));
 	}
-	
-	/**
-	 * @return how much of {@link #targetDepth} is held in memory - all of it with no table to hold the
-	 *   rest, and {@link #BUFFERED_DEPTH} otherwise
-	 */
-	private int bufferTarget(int target) {
-		return this.database == null ? target : Math.min(target, BUFFERED_DEPTH);
-	}
-	
-	private @NonNull ConcurrentLinkedDeque<GeneratedPuzzle> buffer(@NonNull Bucket bucket) {
-		return this.pools.computeIfAbsent(bucket, _ -> new ConcurrentLinkedDeque<>());
-	}
-	
+
 	private @NonNull PuzzleKey freshKey(@NonNull Bucket bucket) {
 		return PuzzleKey.of(bucket.size(), bucket.variant(), bucket.difficulty(), this.random.nextLong());
 	}
-	
+
 	/**
-	 * @return how many puzzles this bucket holds <em>in memory</em>, for tests and diagnostics - which is
-	 *   the whole pool only for a memory-only queue, and the buffer in front of {@code puzzle_pool}
-	 *   otherwise
+	 * @param size The grid size
+	 * @param variant The region layout variant
+	 * @param difficulty The band
+	 * @return how many puzzles this bucket holds, for diagnostics and tests
 	 */
 	public int depth(@NonNull GridSize size, @NonNull Variant variant, @NonNull Difficulty difficulty) {
-		ConcurrentLinkedDeque<GeneratedPuzzle> buffer = this.pools.get(new Bucket(size, variant, difficulty));
-		return buffer == null ? 0 : buffer.size();
+		try {
+			return this.database.read(transaction -> this.pool.count(transaction, size, variant, difficulty, GenVersion.CURRENT));
+		} catch (RuntimeException e) {
+			log.warn("Could not read the pooled depth of {}/{}/{}", size, variant, difficulty, e);
+			return 0;
+		}
 	}
-	
+
 	@Override
 	public void close() {
 		this.worker.shutdownNow();
 		this.generator.shutdownNow();
 	}
-	
+
 	/**
-	 * One pool key: the three axes that fully determine what a pre-generated puzzle can be used for.
+	 * One pool bucket: everything that has to match for two puzzles to be interchangeable.
+	 *
+	 * @param size The grid size
+	 * @param variant The region layout variant
+	 * @param difficulty The band
 	 */
-	public record Bucket(@NonNull GridSize size, @NonNull Variant variant, @NonNull Difficulty difficulty) {
-		
-		@Override
-		public @NonNull String toString() {
-			return this.size.n() + "x" + this.size.n() + " " + this.variant + " " + this.difficulty;
-		}
-	}
+	public record Bucket(@NonNull GridSize size, @NonNull Variant variant, @NonNull Difficulty difficulty) {}
 }

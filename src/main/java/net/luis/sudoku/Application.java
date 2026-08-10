@@ -72,6 +72,14 @@ public class Application {
 			return;
 		}
 		log.info("{} started on port {}", config.serverName(), config.port());
+
+		// After the port is bound, deliberately. Warming only queues work onto the pool's own bounded
+		// workers, but a cold pool is minutes of background generation and the server is meant to be
+		// answering requests throughout it - a request that arrives mid-warm is served from whatever the
+		// table already holds, or inline, exactly as it would be with no warm at all.
+		if (config.pool().warmOnStartup()) {
+			services.puzzleQueue().warm();
+		}
 	}
 	
 	/**

@@ -56,6 +56,17 @@ public final class EnvKeys {
 	public static final String PRESENCE_ONLINE_TTL = "SUDOKU_PRESENCE_ONLINE_TTL";
 	public static final String PRESENCE_REQUEST_TTL = "SUDOKU_PRESENCE_REQUEST_TTL";
 	
+	// Puzzle pool. The per-size floors are separate variables rather than one list because they are set for
+	// entirely different reasons: at 16x16 the floor is a generation-cost decision, everywhere else it is a
+	// latency one.
+	public static final String POOL_MIN_DEPTH_4 = "SUDOKU_POOL_MIN_DEPTH_4";
+	public static final String POOL_MIN_DEPTH_6 = "SUDOKU_POOL_MIN_DEPTH_6";
+	public static final String POOL_MIN_DEPTH_9 = "SUDOKU_POOL_MIN_DEPTH_9";
+	public static final String POOL_MIN_DEPTH_12 = "SUDOKU_POOL_MIN_DEPTH_12";
+	public static final String POOL_MIN_DEPTH_16 = "SUDOKU_POOL_MIN_DEPTH_16";
+	public static final String POOL_MAX_DEPTH = "SUDOKU_POOL_MAX_DEPTH";
+	public static final String POOL_WARM_ON_STARTUP = "SUDOKU_POOL_WARM_ON_STARTUP";
+
 	// Currency
 	public static final String CURRENCY_DAILY_GAME_CAP = "SUDOKU_CURRENCY_DAILY_GAME_CAP";
 	

@@ -29,6 +29,7 @@ import java.time.ZoneId;
  * @param duel duel-mode time-bank tuning
  * @param match match reconnect tuning
  * @param presence online-status and match-request tuning
+ * @param pool pre-generated puzzle pool depth, per grid size
  * @param currencyDailyGameCap currency-earning normal games per day
  * @param mail SMTP settings for account recovery email, or null if mail is not configured
  */
@@ -43,6 +44,7 @@ public record ServerConfig(
 	@NonNull DuelConfig duel,
 	@NonNull MatchConfig match,
 	@NonNull PresenceConfig presence,
+	@NonNull PoolConfig pool,
 	int currencyDailyGameCap,
 	@Nullable MailConfig mail
 ) {
@@ -77,6 +79,7 @@ public record ServerConfig(
 			DuelConfig.from(env),
 			MatchConfig.from(env),
 			PresenceConfig.from(env),
+			PoolConfig.from(env),
 			env.integer(EnvKeys.CURRENCY_DAILY_GAME_CAP, 10),
 			MailConfig.from(env)
 		);

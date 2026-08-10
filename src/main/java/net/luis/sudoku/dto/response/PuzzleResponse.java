@@ -37,7 +37,11 @@ public record PuzzleResponse(int genVersion, int size, @NonNull String variant, 
 			key.genVersion(),
 			key.size().n(),
 			key.variant().name(),
-			key.difficulty().index(),
+			// The band the grid rated, not the band the request asked for. The generator returns its closest
+			// candidate when the search misses, so those two differ often enough to matter - and this number is
+			// what the player is shown and what CurrencyService pays against, so a request here is a lie that
+			// costs money.
+			generated.rated().index(),
 			Long.toString(key.seed()),
 			PuzzleFactory.encodeGivens(generated)
 		);

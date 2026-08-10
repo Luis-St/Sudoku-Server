@@ -83,13 +83,17 @@ public final class MatchService {
 		// Taken from the pre-generation pool so creation never blocks on generation (spec: keep the
 		// queue at 2x the active-player count).
 		GeneratedPuzzle puzzle = this.puzzles.take(size, variant, difficulty);
+		// What the grid rated, which is not always what was asked for: the generator hands back its closest
+		// candidate when the search misses. Both players are shown this number and it is what the stake is
+		// judged against, so the match is recorded under the band it is actually played at.
+		Difficulty rated = puzzle.rated();
 		// Stored alongside the seed so nothing ever generates this grid again: GET /matches/{id},
 		// rehydration and reconnect all rebuild it from these digits instead (see liveFor).
 		String givens = PuzzleFactory.encodeGivens(puzzle);
 		Instant now = this.clock.instant();
-		
+
 		Match match = this.database.transaction(connection -> {
-			Match created = this.matches.create(connection, mode, actor.userId(), size, variant, difficulty, puzzle.key().seed(), givens, livesEnabled, hintsEnabled, stake, this.freeMatchCode(connection), now);
+			Match created = this.matches.create(connection, mode, actor.userId(), size, variant, rated, puzzle.key().seed(), givens, livesEnabled, hintsEnabled, stake, this.freeMatchCode(connection), now);
 			this.matches.addParticipant(connection, created.id(), actor.userId(), now);
 			return created;
 		});
@@ -100,7 +104,7 @@ public final class MatchService {
 		this.registry.register(live);
 		
 		log.info("Match {} created by {} ({} {}x{} {} stake {})", match.id(), actor.userId(), mode, size.n(), size.n(),
-			difficulty, stake);
+			rated, stake);
 		return new Created(match, inviteToken);
 	}
 	

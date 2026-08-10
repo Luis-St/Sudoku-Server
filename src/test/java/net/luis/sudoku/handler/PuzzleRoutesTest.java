@@ -61,12 +61,17 @@ class PuzzleRoutesTest extends HttpTest {
 	void createPuzzle_withLisa_isAllowed() {
 		// Single-player content, so Lisa is an ordinary tier here - and the queue no longer refuses it.
 		String token = this.register("Owner");
-		
+
 		Response response = this.post(token, "/api/v2/puzzles", body(9, "CLASSIC", Difficulty.LISA.index()));
-		
+
 		assertAll(
 			() -> assertEquals(200, response.status(), response.body()),
-			() -> assertEquals(Difficulty.LISA.index(), response.at("puzzle", "difficulty").asInt())
+			// Not pinned to 15. The response reports the band the grid rated, and Lisa is the hardest band
+			// there is, so a search that misses can only miss downwards - measured at 32 of 32 seeds on 9x9
+			// classic, but not guaranteed. What the route promises is that the request is accepted and served
+			// at the hard end of the scale, not that every Lisa request produces a Lisa grid.
+			() -> assertTrue(response.at("puzzle", "difficulty").asInt() >= Difficulty.THIRTEEN.index(),
+				"expected a band near Lisa, got " + response.at("puzzle", "difficulty").asInt())
 		);
 	}
 	

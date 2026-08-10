@@ -71,20 +71,26 @@ public record CreatePuzzleRequest(@Nullable Integer size, @Nullable String varia
 	 * the grid the client can render a picker from, so the honest answer is to name it and let the client
 	 * ask again.
 	 *
+	 * <strong>The variant is part of the question.</strong> A 16x16 jigsaw reaches band 8 and no further while
+	 * a 16x16 classic reaches all fifteen, so "is tier 13 reachable at 16x16" has no answer until the layout
+	 * is known - and answering it from the size alone is what used to hand a chaos player a band-8 grid
+	 * labelled 13.
+	 *
 	 * @param size The size the tier has to be reachable at
+	 * @param variant The layout the tier has to be reachable in
 	 * @return The requested tier
 	 * @throws ApiException {@code BAD_REQUEST} if the field is missing, names no tier, or names a band this
-	 *   size cannot produce
+	 *   size and variant cannot produce
 	 */
-	public @NonNull Difficulty requireDifficulty(@NonNull GridSize size) {
+	public @NonNull Difficulty requireDifficulty(@NonNull GridSize size, @NonNull Variant variant) {
 		if (this.difficulty == null) {
 			throw ApiException.badRequest("Missing required field: difficulty");
 		}
-		
+
 		Difficulty requested = PuzzleFactory.singlePlayerDifficultyOfIndex(this.difficulty);
-		Set<Difficulty> supported = DifficultyBands.defaults().supported(size);
+		Set<Difficulty> supported = DifficultyBands.defaults().supported(size, variant);
 		if (!supported.contains(requested)) {
-			throw ApiException.badRequest("difficulty " + requested.index() + " is not reachable at " + size.n() + "x" + size.n()
+			throw ApiException.badRequest("difficulty " + requested.index() + " is not reachable for " + variant + " at " + size.n() + "x" + size.n()
 				+ "; supported: " + supported.stream().map(band -> String.valueOf(band.index())).toList());
 		}
 		return requested;

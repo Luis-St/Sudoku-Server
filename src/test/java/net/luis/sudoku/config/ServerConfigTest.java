@@ -158,6 +158,46 @@ class ServerConfigTest {
 	}
 	
 	@Test
+	void from_onlyRequiredVariablesSet_appliesEveryPoolDefault() {
+		PoolConfig pool = ServerConfig.from(Env.of(minimalEnv())).pool();
+
+		assertAll(
+			() -> assertEquals(10, pool.minDepth(GridSize.FOUR)),
+			() -> assertEquals(10, pool.minDepth(GridSize.SIX)),
+			() -> assertEquals(10, pool.minDepth(GridSize.NINE)),
+			() -> assertEquals(6, pool.minDepth(GridSize.TWELVE)),
+			// Shallow on purpose: the one size whose generation cost has a tail worth planning around.
+			() -> assertEquals(2, pool.minDepth(GridSize.SIXTEEN)),
+			() -> assertEquals(32, pool.maxDepth()),
+			() -> assertTrue(pool.warmOnStartup(), "a cold pool is what the floors exist to prevent")
+		);
+	}
+
+	@Test
+	void from_everySizeHasAFloor_soNoBucketIsUnconfigured() {
+		PoolConfig pool = ServerConfig.from(Env.of(minimalEnv())).pool();
+		assertEquals(GridSize.values().length, pool.minDepth().size());
+	}
+
+	@Test
+	void from_aZeroPoolFloor_optsThatSizeOutRatherThanThrowing() {
+		// The documented way to stop pre-generating a size entirely; those requests then generate inline.
+		assertEquals(0, configWith(EnvKeys.POOL_MIN_DEPTH_16, "0").pool().minDepth(GridSize.SIXTEEN));
+	}
+
+	@Test
+	void from_negativePoolFloor_throws() {
+		ConfigException e = failWith(EnvKeys.POOL_MIN_DEPTH_9, "-1");
+		assertTrue(e.getMessage().contains("SUDOKU_POOL_MIN_DEPTH_9"), e.getMessage());
+	}
+
+	@Test
+	void from_poolMaxDepthBelowOne_throws() {
+		ConfigException e = failWith(EnvKeys.POOL_MAX_DEPTH, "0");
+		assertTrue(e.getMessage().contains(EnvKeys.POOL_MAX_DEPTH), e.getMessage());
+	}
+
+	@Test
 	void from_negativeCurrencyCap_throws() {
 		assertThrows(ConfigException.class, () -> configWith(EnvKeys.CURRENCY_DAILY_GAME_CAP, "-1"));
 	}

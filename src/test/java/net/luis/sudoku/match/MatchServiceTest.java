@@ -29,6 +29,18 @@ import static org.junit.jupiter.api.Assertions.*;
  * Test class for {@link MatchService}, covering server-spec 10.1 and the stake handling in 9a.3.
  */
 class MatchServiceTest extends PostgresTest {
+
+	/**
+	 * A floor of one and no startup warm: these tests are about matches, and a queue that pre-generates the
+	 * whole bucket space in the background would spend far longer warming than the tests take to run.
+	 */
+	private static PoolConfig matchTestPool() {
+		Map<GridSize, Integer> depths = new EnumMap<>(GridSize.class);
+		for (GridSize size : GridSize.values()) {
+			depths.put(size, 1);
+		}
+		return new PoolConfig(depths, 32, false);
+	}
 	
 	private static final String BOOTSTRAP = "BOOTSTRAP1";
 	private static final Instant NOW = Instant.parse("2026-07-25T12:00:00Z");
@@ -66,7 +78,7 @@ class MatchServiceTest extends PostgresTest {
 			new SignatureVerifier(), clock);
 		this.currency = new CurrencyService(database, this.ledger, stats, config, clock);
 		this.registry = new MatchRegistry();
-		this.puzzles = new PuzzleQueue(() -> 0);
+		this.puzzles = new PuzzleQueue(() -> 0, clock, database, matchTestPool());
 		this.matches = new MatchService(database, this.matchRepository, this.registry, this.puzzles, this.currency,
 			config, new CodeGenerator(), clock);
 		this.registrations.ensureBootstrapInvite(BOOTSTRAP);
@@ -172,7 +184,10 @@ class MatchServiceTest extends PostgresTest {
 		assertAll(
 			() -> assertEquals(GridSize.FOUR, stored.key().size()),
 			() -> assertEquals(Variant.CLASSIC, stored.key().variant()),
-			() -> assertEquals(Difficulty.TWO, stored.key().difficulty()),
+			// ONE, not the TWO that was asked for, and that is the fix rather than a regression: a 4x4 grid
+			// reaches band 1 and nothing else, so the generator snapped. The match is recorded at the band it
+			// is actually played at instead of the band somebody typed.
+			() -> assertEquals(Difficulty.ONE, stored.key().difficulty()),
 			() -> assertEquals(created.match().seed(), stored.key().seed())
 		);
 	}

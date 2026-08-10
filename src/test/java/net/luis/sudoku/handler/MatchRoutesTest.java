@@ -34,24 +34,39 @@ class MatchRoutesTest extends HttpTest {
 	
 	// --- creation ---
 	
+	/**
+	 * Asserts a match was created on the hard end of the scale rather than at the legacy reading of the same
+	 * integer.
+	 * <p>
+	 * Deliberately a range and not an equality. A match is now recorded at the band the grid <em>rated</em>,
+	 * and the generator returns its closest candidate when a search misses its target - so a band-13 request
+	 * legitimately stores 12 now and then, and pinning the exact value makes these tests fail on the
+	 * generator's luck rather than on the routing they are about. What they actually claim is that the tier
+	 * integer was read on the fifteen-band scale: anything at 11 or above is unreachable from a misreading,
+	 * where the legacy value would have been 5.
+	 */
+	private void assertStoredNearBandThirteen(String matchId) {
+		Difficulty stored = this.services.matchService().get(UUID.fromString(matchId)).difficulty();
+		assertTrue(stored.index() >= 11, "expected a band near 13, got " + stored + " (" + stored.index() + ")");
+	}
+
 	@Test
 	void createMatch_atV1_readsTheSixTierInteger() {
 		// A v1 client asking for its hardest ordinary tier means band 13, not band 5.
 		String token = this.register("Owner");
-		
+
 		String matchId = this.createMatch(token, "/api/v1/matches", 5);
-		
-		Match stored = this.services.matchService().get(UUID.fromString(matchId));
-		assertEquals(Difficulty.THIRTEEN, stored.difficulty());
+
+		this.assertStoredNearBandThirteen(matchId);
 	}
-	
+
 	@Test
 	void createMatch_atV2_readsTheRealTier() {
 		String token = this.register("Owner");
-		
+
 		String matchId = this.createMatch(token, "/api/v2/matches", 13);
-		
-		assertEquals(Difficulty.THIRTEEN, this.services.matchService().get(UUID.fromString(matchId)).difficulty());
+
+		this.assertStoredNearBandThirteen(matchId);
 	}
 	
 	@Test
