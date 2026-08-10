@@ -119,7 +119,9 @@ public final class ServiceGraph implements AutoCloseable {
 		this.statsService = new StatsService(this.database, this.stats, this.users, this.streaks, this.dailyResults, this.dailyLeaderboard, this.recordedGames, config, clock);
 		this.currencyService = new CurrencyService(this.database, this.ledger, this.stats, config, clock);
 		this.dailyService = new DailyService(this.database, config, this.serverId, this.preferences, this.dailyResults, this.streaks, this.dailyLeaderboard, this.currencyService, this.statsService, clock);
-		this.puzzleQueue = new PuzzleQueue(this::activePlayerCount);
+		// Given the database so the pool lives in puzzle_pool: a restart keeps what it paid to generate,
+		// and a second instance shares it rather than duplicating it.
+		this.puzzleQueue = new PuzzleQueue(this::activePlayerCount, clock, this.database);
 		
 		this.matchService = new MatchService(this.database, this.matchRepository, this.matchRegistry, this.puzzleQueue, this.currencyService, config, this.codes, clock);
 		this.presenceService = new PresenceService(this.database, this.presenceRepository, this.matchRequests, config.presence(), clock);

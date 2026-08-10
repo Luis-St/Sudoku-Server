@@ -4,9 +4,10 @@ import net.luis.sudoku.difficulty.Difficulty;
 import net.luis.sudoku.generation.GeneratedPuzzle;
 import net.luis.sudoku.grid.GridSize;
 import net.luis.sudoku.grid.Variant;
+import net.luis.sudoku.support.MovableClock;
 import org.junit.jupiter.api.Test;
 
-import java.time.*;
+import java.time.Duration;
 import java.util.HashSet;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -152,33 +153,6 @@ class PuzzleQueueTest {
 		try (PuzzleQueue queue = new PuzzleQueue(() -> 0)) {
 			GeneratedPuzzle puzzle = queue.take(GridSize.NINE, Variant.CHAOS, Difficulty.THREE);
 			assertEquals(Variant.CHAOS, puzzle.puzzle().variant());
-		}
-	}
-	
-	/**
-	 * A clock the test moves by hand, so bucket ageing is exercised without a test that sleeps for an hour.
-	 */
-	private static final class MovableClock extends Clock {
-		
-		private Instant now = Instant.parse("2026-08-09T10:00:00Z");
-		
-		void advance(Duration amount) {
-			this.now = this.now.plus(amount);
-		}
-		
-		@Override
-		public ZoneId getZone() {
-			return ZoneOffset.UTC;
-		}
-		
-		@Override
-		public Clock withZone(ZoneId zone) {
-			return this;
-		}
-		
-		@Override
-		public Instant instant() {
-			return this.now;
 		}
 	}
 }

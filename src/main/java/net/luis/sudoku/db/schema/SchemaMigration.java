@@ -47,10 +47,12 @@ import static net.luis.sudoku.db.schema.Schema.*;
 public final class SchemaMigration {
 	
 	/** Every migration, in version order. */
-	public static final List<SqlMigration> ALL = List.of(new InitialSchema(), new PresencePolling(), new ReinstatableKicks(), new MatchHintSetting(), new RecordedGames(), new MatchGivens(), new RescaledDifficulties());
+	public static final List<SqlMigration> ALL = List.of(
+		new InitialSchema(), new PresencePolling(), new ReinstatableKicks(), new MatchHintSetting(), new RecordedGames(), new MatchGivens(), new RescaledDifficulties(), new PooledPuzzles()
+	);
 	
 	/** The version the schema is at once {@link #ALL} has been applied, reported by {@code /health}. */
-	public static final int CURRENT_VERSION = 7;
+	public static final int CURRENT_VERSION = 8;
 	
 	private SchemaMigration() {}
 	
@@ -504,6 +506,52 @@ public final class SchemaMigration {
 			// stats and daily_leaderboard are deliberately left alone: the difficulty is inside their
 			// primary key and the reverse mapping is many to one, so rolling them back would collide two
 			// real tiers onto one legacy row and lose a player's record rather than merely blur it.
+		}
+	}
+	
+	/**
+	 * Gives the pre-generation pool a table, so it survives a restart and is shared between instances.
+	 * <p>
+	 * {@code PuzzleQueue} held its pool in a map, which made it per-process twice over: a deploy threw away
+	 * every puzzle it had paid to generate, and a second container generated its own copy of the same work.
+	 * That was tolerable while the queue only fed match creation; it feeds every single-player game start as
+	 * well now, across fifteen bands where the dear ones cost seconds apiece, so the pool is worth keeping.
+	 * See {@link Schema#PUZZLE_POOL} for why a row carries the givens and no solution.
+	 * <p>
+	 * <strong>The index is the whole design.</strong> The only query on this table is "give me the oldest
+	 * unclaimed row of this bucket at the current generator version", run as
+	 * {@code ORDER BY id LIMIT n FOR UPDATE SKIP LOCKED} - which is what makes two instances unable to hand
+	 * the same row to two players. Leading with the four bucket columns and ending with {@code id} means
+	 * that claim is an index range scan whose first match is the row it wants, rather than a sort of the
+	 * whole bucket; and {@code SKIP LOCKED} then walks the index forward past whatever another instance
+	 * already holds instead of blocking on it.
+	 * <p>
+	 * No {@code hasColumn}-style guard, for the reason given on {@link RecordedGames}: the guard exists
+	 * because {@link #table} renders the <em>initial</em> migration from {@link Schema} as it stands now, so
+	 * a new column appears retroactively in a freshly created database. A new table does not.
+	 */
+	private static final class PooledPuzzles implements SqlMigration {
+		
+		@Override
+		public @NonNull Version version() {
+			return Version.of(8, 0);
+		}
+		
+		@Override
+		public @NonNull String description() {
+			return "persist the pre-generated puzzle pool";
+		}
+		
+		@Override
+		public void up(@NonNull SqlMigrationBuilder builder, @NonNull SqlMigrationSchema schema) throws SqlException {
+			table(builder, PUZZLE_POOL, POOL_ID);
+			
+			builder.createIndex(PUZZLE_POOL, "puzzle_pool_claim_idx", index -> index.columns(POOL_SIZE, POOL_VARIANT, POOL_DIFFICULTY, POOL_GEN_VERSION, POOL_ID));
+		}
+		
+		@Override
+		public void down(@NonNull SqlMigrationBuilder builder, @NonNull SqlMigrationSchema schema) throws SqlException {
+			builder.dropTable(PUZZLE_POOL);
 		}
 	}
 }

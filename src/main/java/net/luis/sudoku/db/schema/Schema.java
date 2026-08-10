@@ -351,6 +351,42 @@ public final class Schema {
 	/** When the server accepted it, which is what the rollover prunes on - not when it was played. */
 	public static final SqlColumn<RecordedGameRow, Instant> RECORDED_AT = RECORDED_GAMES.column("recorded_at", TIMESTAMP, RecordedGameRow::recordedAt, SqlColumnBuilder::notNull);
 	
+	/**
+	 * The pre-generated puzzles waiting to be handed out - {@code PuzzleQueue}'s pool, made durable.
+	 * <p>
+	 * The pool used to be a map in one process, which meant a restart threw away every puzzle it had paid
+	 * to generate and a second instance kept a pool of its own. Neither is affordable now that the queue
+	 * sits in front of every single-player game start as well as every match: the dear bands cost seconds
+	 * apiece, so the pool is worth keeping across a deploy and worth sharing between containers.
+	 * <p>
+	 * <strong>A row is a key plus its givens, and no solution.</strong> {@code PuzzleGenerator.fromGivens}
+	 * derives the solution with a backtracking solve in milliseconds, so storing it would buy nothing and
+	 * cost the one thing a derived column always costs - a second field that can disagree with the first.
+	 * The same reasoning is written out on {@code PuzzleResponse}, which sends the givens and no solution
+	 * for exactly this reason.
+	 * <p>
+	 * <strong>{@code gen_version} is stored, not assumed.</strong> A row written by a previous generator
+	 * version names a puzzle this build would no longer produce from the same key, and handing one out
+	 * would put a client on a grid its own shared-core disagrees with. Every claim filters on the current
+	 * version and the rest are deleted outright, which is why the column is here rather than derived from
+	 * "whatever this build is".
+	 */
+	public static final SqlTable<PuzzlePoolRow> PUZZLE_POOL = SqlTable.create(PuzzlePoolRow.class, "puzzle_pool");
+	
+	// --- puzzle_pool ---------------------------------------------------------------------------
+	/** DB-generated identity, so a claim can name exactly the rows it locked when it deletes them. */
+	public static final SqlColumn<PuzzlePoolRow, Long> POOL_ID = PUZZLE_POOL.column("id", SqlTypes.LONG, PuzzlePoolRow::id, col -> col.primaryKey().notNull().autoIncrement());
+	public static final SqlColumn<PuzzlePoolRow, Integer> POOL_GEN_VERSION = PUZZLE_POOL.column("gen_version", SqlTypes.INTEGER, PuzzlePoolRow::genVersion, SqlColumnBuilder::notNull);
+	public static final SqlColumn<PuzzlePoolRow, GridSize> POOL_SIZE = PUZZLE_POOL.column("size", GRID_SIZE_TYPE, PuzzlePoolRow::size, SqlColumnBuilder::notNull);
+	public static final SqlColumn<PuzzlePoolRow, Variant> POOL_VARIANT = PUZZLE_POOL.column("variant", VARIANT_TYPE, PuzzlePoolRow::variant, SqlColumnBuilder::notNull);
+	/** Lisa (15) is pooled like every other band: the queue serves single-player content too. */
+	public static final SqlColumn<PuzzlePoolRow, Difficulty> POOL_DIFFICULTY = PUZZLE_POOL.column("difficulty", DIFFICULTY_TYPE, PuzzlePoolRow::difficulty, SqlColumnBuilder::notNull);
+	public static final SqlColumn<PuzzlePoolRow, Long> POOL_SEED = PUZZLE_POOL.column("seed", SqlTypes.LONG, PuzzlePoolRow::seed, SqlColumnBuilder::notNull);
+	/** {@code GivensCodec}-encoded, the same string {@link #MATCH_GIVENS} stores and the wire carries. */
+	public static final SqlColumn<PuzzlePoolRow, String> POOL_GIVENS = PUZZLE_POOL.column("givens", SqlTypes.TEXT, PuzzlePoolRow::givens, SqlColumnBuilder::notNull);
+	/** Diagnostic only: how old a pool is answers "did the workers stall", which nothing else does. */
+	public static final SqlColumn<PuzzlePoolRow, Instant> POOL_CREATED_AT = PUZZLE_POOL.column("created_at", TIMESTAMP, PuzzlePoolRow::createdAt, SqlColumnBuilder::notNull);
+	
 	private Schema() {}
 	
 	/** A reference whose rows are deleted with the row they belong to. */
@@ -509,4 +545,15 @@ public final class Schema {
 	 * {@code stats}, so a repeat upload of it is a retry and not a second game.
 	 */
 	public record RecordedGameRow(@NonNull UUID userId, @NonNull UUID gameId, @NonNull Instant recordedAt) {}
+	
+	/**
+	 * A row of {@code puzzle_pool}: one pre-generated puzzle, as everything needed to rebuild it and
+	 * nothing more.
+	 * <p>
+	 * {@code id} is DB-generated identity, so the value passed on insert is never rendered - the same
+	 * arrangement as {@link LedgerRow}.
+	 */
+	public record PuzzlePoolRow(
+		long id, int genVersion, @NonNull GridSize size, @NonNull Variant variant, @NonNull Difficulty difficulty, long seed, @NonNull String givens, @NonNull Instant createdAt
+	) {}
 }

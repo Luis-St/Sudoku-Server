@@ -3,7 +3,12 @@ package net.luis.sudoku.db.schema;
 import net.luis.sudoku.compat.LegacyDifficulty;
 import net.luis.sudoku.db.Migrations;
 import net.luis.sudoku.difficulty.Difficulty;
+import net.luis.sudoku.domain.Match;
+import net.luis.sudoku.grid.GridSize;
+import net.luis.sudoku.grid.Variant;
+import net.luis.sudoku.match.MatchMode;
 import net.luis.sudoku.permission.Role;
+import net.luis.sudoku.repository.MatchRepository;
 import net.luis.sudoku.repository.PreferenceRepository;
 import net.luis.sudoku.repository.UserRepository;
 import net.luis.sudoku.support.PostgresTest;
@@ -12,22 +17,33 @@ import net.luis.utils.io.database.migration.SqlMigration;
 import net.luis.utils.io.database.migration.SqlMigrationRunner;
 import org.junit.jupiter.api.Test;
 
+import java.sql.PreparedStatement;
+import java.sql.ResultSet;
+import java.sql.Statement;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.UUID;
 
+import static net.luis.sudoku.db.schema.Schema.MATCHES;
+import static net.luis.sudoku.db.schema.Schema.MATCH_GIVENS;
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
- * Test class for {@link SchemaMigration}, and specifically for the one migration that rewrites data
- * rather than shape.
+ * Test class for {@link SchemaMigration}, and specifically for the two migrations that a suite starting
+ * from a fully migrated database cannot say anything about.
  * <p>
  * The rest of the suite proves nothing about the rescale: {@link PostgresTest} starts every test from a
  * database migrated all the way to {@link SchemaMigration#CURRENT_VERSION}, so the rescale runs against
  * empty tables and passes whether it works or not. These tests deliberately stop at the version
  * <em>before</em> it, write rows that mean what they meant then, and only then let it run - which is the
  * only arrangement in which it can be wrong.
+ * <p>
+ * Migration 6 has the same problem one step further in: its {@code hasColumn} guard skips the
+ * {@code addColumn} on every database this suite ever builds, because the initial migration renders
+ * {@code matches.givens} out of {@link Schema} as it stands now. Only a database that genuinely predates
+ * the column takes the other branch, and building one is fiddlier than it looks - see
+ * {@link #migrateToVersionFiveWithoutGivens()}.
  */
 class SchemaMigrationTest extends PostgresTest {
 	
@@ -36,6 +52,17 @@ class SchemaMigrationTest extends PostgresTest {
 	
 	private final UserRepository users = new UserRepository();
 	private final PreferenceRepository preferences = new PreferenceRepository();
+	private final MatchRepository matches = new MatchRepository();
+	
+	/**
+	 * Every migration up to and including {@code version}.
+	 * <p>
+	 * By version rather than by position, so appending a migration cannot silently change which schema a
+	 * test that wanted "the one before the rescale" actually boots.
+	 */
+	private static List<SqlMigration> upToVersion(int version) {
+		return SchemaMigration.ALL.stream().filter(migration -> migration.version().getMajor() <= version).toList();
+	}
 	
 	/**
 	 * Rewinds to the schema as it stood before the rescale, so a row can be written in the old meaning.
@@ -48,7 +75,7 @@ class SchemaMigrationTest extends PostgresTest {
 			transaction.dropSchema("public", true);
 			transaction.createSchema("public");
 		});
-		this.runMigrations(SchemaMigration.ALL.subList(0, SchemaMigration.ALL.size() - 1));
+		this.runMigrations(upToVersion(6));
 	}
 	
 	private void runMigrations(List<SqlMigration> migrations) {
@@ -57,7 +84,7 @@ class SchemaMigrationTest extends PostgresTest {
 			runner.register(migrations);
 			runner.migrate();
 		} catch (SqlException e) {
-			throw new IllegalStateException("Failed to migrate to the version before the rescale", e);
+			throw new IllegalStateException("Failed to apply the migrations under test", e);
 		}
 	}
 	
@@ -133,6 +160,86 @@ class SchemaMigrationTest extends PostgresTest {
 		// The ordinary path, and the one every deploy after the first takes: nothing to rewrite, and the
 		// migration must still apply and record itself rather than fail on an empty table.
 		assertEquals(SchemaMigration.CURRENT_VERSION, Migrations.migrate(database));
+	}
+	
+	// --- the add-column guard ---
+	
+	/**
+	 * Builds the one thing the suite otherwise never has: a database at version 5 whose {@code matches}
+	 * table predates {@code givens}, recorded bookkeeping included.
+	 * <p>
+	 * Migrating to 5 is not enough on its own, and that is exactly why this branch was never covered.
+	 * {@code SchemaMigration.table} renders the initial migration from {@link Schema} as it stands
+	 * <em>now</em>, so a database created today already has the column by the time migration 6 runs,
+	 * {@code hasColumn} answers true and the {@code addColumn} inside it never executes.
+	 * <p>
+	 * <strong>The order below is load-bearing, and dropping the column after migrating to 5 does not
+	 * work.</strong> The {@code SqlMigrationSchema} that {@code hasColumn} is asked is not live
+	 * introspection - it is the snapshot LUtils recorded when the <em>last</em> migration was applied. The
+	 * runner does introspect the real database to build that snapshot, but only at the moment a migration
+	 * commits, so an {@code ALTER TABLE} run afterwards is invisible to the guard and migration 6 still
+	 * takes the skip branch. The drop therefore has to happen while there is still a migration left to
+	 * apply: 1 to 4 first, then the column goes, then 5 commits and snapshots a schema that genuinely has
+	 * no {@code givens} - which is the state a database deployed before that column existed is really in.
+	 */
+	private void migrateToVersionFiveWithoutGivens() {
+		database.execute(transaction -> {
+			transaction.dropSchema("public", true);
+			transaction.createSchema("public");
+		});
+		this.runMigrations(upToVersion(4));
+		database.withConnection(connection -> {
+			try (Statement statement = connection.createStatement()) {
+				statement.execute("ALTER TABLE " + MATCHES.name() + " DROP COLUMN " + MATCH_GIVENS.name());
+			}
+			return null;
+		});
+		this.runMigrations(upToVersion(5));
+	}
+	
+	private boolean matchesHasGivens() {
+		return database.withConnection(connection -> {
+			try (PreparedStatement statement = connection.prepareStatement(
+				"SELECT 1 FROM information_schema.columns WHERE table_name = ? AND column_name = ?"
+			)) {
+				statement.setString(1, MATCHES.name());
+				statement.setString(2, MATCH_GIVENS.name());
+				try (ResultSet rows = statement.executeQuery()) {
+					return rows.next();
+				}
+			}
+		});
+	}
+	
+	@Test
+	void matchGivens_onADatabaseWhoseMatchesTablePredatesTheColumn_addsIt() {
+		// The branch this covers has never run: every other test starts from a schema where the initial
+		// migration already rendered givens out of Schema, so hasColumn is true and the addColumn inside it
+		// is skipped. A production database deployed before the column existed takes the other path, and
+		// until now nothing proved that path even compiles into working DDL.
+		this.migrateToVersionFiveWithoutGivens();
+		assertFalse(this.matchesHasGivens(), "the column must be absent before the migration runs, or this test proves nothing");
+		
+		this.runMigrations(upToVersion(6));
+		
+		assertTrue(this.matchesHasGivens());
+	}
+	
+	@Test
+	void matchGivens_afterTheColumnIsAddedBackOntoAnOlderTable_carriesAMatchsGivens() {
+		// Adding the column is only half of it: the point of migration 6 is that a match created afterwards
+		// stores its grid, so the column has to be one the ordinary write path can actually use.
+		this.migrateToVersionFiveWithoutGivens();
+		this.runMigrations(upToVersion(6));
+		UUID creator = this.createUser("Given-Carrier");
+		
+		Match created = database.transaction(transaction -> this.matches.create(
+			transaction, MatchMode.RACE, creator, GridSize.NINE, Variant.CLASSIC, Difficulty.THREE, 4242L, "ABCDEF", false, true, 0, "CODE1234", NOW
+		));
+		Match reloaded = database.read(transaction -> this.matches.find(transaction, created.id()));
+		
+		assertNotNull(reloaded);
+		assertEquals("ABCDEF", reloaded.givens());
 	}
 	
 	// --- the list itself ---

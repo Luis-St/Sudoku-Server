@@ -1,0 +1,157 @@
+package net.luis.sudoku.repository;
+
+import net.luis.sudoku.db.schema.Schema.PuzzlePoolRow;
+import net.luis.sudoku.difficulty.Difficulty;
+import net.luis.sudoku.generation.GeneratedPuzzle;
+import net.luis.sudoku.grid.GridSize;
+import net.luis.sudoku.grid.Variant;
+import net.luis.sudoku.key.PuzzleKey;
+import net.luis.sudoku.puzzle.PuzzleFactory;
+import net.luis.sudoku.support.PostgresTest;
+import net.luis.sudoku.version.GenVersion;
+import net.luis.utils.io.database.exception.SqlException;
+import net.luis.utils.io.database.transaction.SqlTransaction;
+import org.junit.jupiter.api.Test;
+
+import java.time.Instant;
+import java.util.List;
+
+import static org.junit.jupiter.api.Assertions.*;
+
+/**
+ * Test class for {@link PuzzlePoolRepository}.
+ * <p>
+ * The claim is the only thing here that is hard rather than tedious, and it is hard for a reason no
+ * single-connection test can reach: two servers must never hand the same pooled puzzle to two players. So
+ * several of these tests open two transactions at once and assert on what the second one sees while the
+ * first still holds its rows, which is the situation the {@code FOR UPDATE SKIP LOCKED} exists for and the
+ * only one in which it can be wrong.
+ */
+class PuzzlePoolRepositoryTest extends PostgresTest {
+	
+	private static final Instant NOW = Instant.parse("2026-08-09T10:00:00Z");
+	private static final GridSize SIZE = GridSize.NINE;
+	private static final Variant VARIANT = Variant.CLASSIC;
+	private static final Difficulty BAND = Difficulty.ONE;
+	
+	private final PuzzlePoolRepository pool = new PuzzlePoolRepository();
+	
+	/** A row for the standard bucket, generated for real so its givens actually decode. */
+	private static PuzzlePoolRow row(int genVersion) {
+		GeneratedPuzzle generated = PuzzleFactory.generate(PuzzleKey.of(SIZE, VARIANT, BAND, System.nanoTime()));
+		PuzzleKey key = generated.key();
+		return new PuzzlePoolRow(0L, genVersion, key.size(), key.variant(), key.difficulty(), key.seed(), PuzzleFactory.encodeGivens(generated), NOW);
+	}
+	
+	private void store(int count) {
+		database.execute(transaction -> {
+			for (int i = 0; i < count; i++) {
+				this.pool.store(transaction, List.of(row(GenVersion.CURRENT)));
+			}
+		});
+	}
+	
+	private int count() {
+		return database.read(transaction -> this.pool.count(transaction, SIZE, VARIANT, BAND, GenVersion.CURRENT));
+	}
+	
+	private List<PuzzlePoolRow> claim(SqlTransaction transaction, int limit) throws SqlException {
+		return this.pool.claim(transaction, SIZE, VARIANT, BAND, GenVersion.CURRENT, limit);
+	}
+	
+	@Test
+	void claim_aStoredPuzzle_returnsItAndRemovesItFromThePool() {
+		this.store(1);
+		
+		List<PuzzlePoolRow> claimed = database.transaction(transaction -> this.claim(transaction, 1));
+		
+		assertAll(
+			() -> assertEquals(1, claimed.size()),
+			() -> assertEquals(SIZE, claimed.getFirst().size()),
+			() -> assertEquals(0, this.count(), "a claimed puzzle must not still be claimable")
+		);
+	}
+	
+	@Test
+	void claim_anEmptyPool_returnsNothing() {
+		assertTrue(database.transaction(transaction -> this.claim(transaction, 1)).isEmpty());
+	}
+	
+	@Test
+	void claim_moreThanThePoolHolds_returnsWhatThereIs() {
+		this.store(2);
+		
+		assertEquals(2, database.transaction(transaction -> this.claim(transaction, 8)).size());
+	}
+	
+	@Test
+	void claim_fromTwoTransactionsAtOnce_neverReturnsTheSameRowTwice() throws Exception {
+		// The finding this whole table is shaped around: two instances taking from the same bucket at the
+		// same moment must not both be told about the same row, or two players start the same grid - and in
+		// a match that is one board handed out as two independent games.
+		this.store(2);
+		
+		long firstId;
+		long secondId;
+		try (SqlTransaction first = sqlDatabase().beginTransaction(); SqlTransaction second = sqlDatabase().beginTransaction()) {
+			// Deliberately claimed before either commits, so the second one is looking at rows the first
+			// still holds locks on.
+			firstId = this.claim(first, 1).getFirst().id();
+			secondId = this.claim(second, 1).getFirst().id();
+			first.commit();
+			second.commit();
+		}
+		
+		assertNotEquals(firstId, secondId);
+		assertEquals(0, this.count());
+	}
+	
+	@Test
+	void claim_whenTheOnlyRowIsHeldByAnotherTransaction_comesBackEmptyRatherThanBlocking() throws Exception {
+		// SKIP LOCKED rather than a plain FOR UPDATE. Without it this second claim waits for the first
+		// transaction to end, which turns a puzzle request on one instance into a request that blocks on
+		// whatever another instance happens to be doing.
+		this.store(1);
+		
+		try (SqlTransaction holder = sqlDatabase().beginTransaction(); SqlTransaction other = sqlDatabase().beginTransaction()) {
+			assertEquals(1, this.claim(holder, 1).size());
+			
+			assertTrue(this.claim(other, 1).isEmpty(), "the locked row must be skipped, not waited for");
+			other.commit();
+			holder.commit();
+		}
+	}
+	
+	@Test
+	void claim_aRowFromAnotherGenVersion_doesNotServeIt() {
+		// A puzzle generated by a different build is not this build's puzzle: the same key regenerates a
+		// different grid, so serving one puts the client on a board its own shared-core disagrees with.
+		database.execute(transaction -> this.pool.store(transaction, List.of(row(GenVersion.CURRENT + 1))));
+		
+		assertTrue(database.transaction(transaction -> this.claim(transaction, 1)).isEmpty());
+	}
+	
+	@Test
+	void claim_aRowFromAnotherBucket_doesNotServeIt() {
+		this.store(1);
+		
+		List<PuzzlePoolRow> claimed = database.transaction(transaction ->
+			this.pool.claim(transaction, GridSize.SIXTEEN, VARIANT, BAND, GenVersion.CURRENT, 1));
+		
+		assertTrue(claimed.isEmpty());
+		assertEquals(1, this.count(), "the row that was not asked for must still be there");
+	}
+	
+	@Test
+	void deleteOtherGenVersions_removesTheStaleRowsAndKeepsTheCurrentOnes() {
+		this.store(1);
+		database.execute(transaction -> this.pool.store(transaction, List.of(row(GenVersion.CURRENT + 1))));
+		
+		int dropped = database.transaction(transaction -> this.pool.deleteOtherGenVersions(transaction, GenVersion.CURRENT));
+		
+		assertAll(
+			() -> assertEquals(1, dropped),
+			() -> assertEquals(1, this.count(), "the current version's puzzles must survive the sweep")
+		);
+	}
+}

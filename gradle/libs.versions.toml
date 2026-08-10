@@ -1,5 +1,5 @@
 [versions]
-sudoku-lib = "2.0.0"
+sudoku-lib = "2.0.1"
 lutils = "10.4.0-beta.4"
 javalin = "7.2.0"
 javalin-openapi = "7.2.2"

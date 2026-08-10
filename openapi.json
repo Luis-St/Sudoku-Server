@@ -2763,6 +2763,10 @@
           "status" : {
             "type" : "string"
           },
+          "uptimeSeconds" : {
+            "type" : "integer",
+            "format" : "int64"
+          },
           "schemaVersion" : {
             "type" : "integer",
             "format" : "int32"
@@ -2772,7 +2776,7 @@
             "format" : "int32"
           }
         },
-        "required" : [ "schemaVersion", "activeMatches" ]
+        "required" : [ "uptimeSeconds", "schemaVersion", "activeMatches" ]
       },
       "HeartbeatResponse" : {
         "type" : "object",

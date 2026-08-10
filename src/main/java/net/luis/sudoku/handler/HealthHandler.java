@@ -8,6 +8,9 @@ import org.jspecify.annotations.NonNull;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.time.Clock;
+import java.time.Duration;
+import java.time.Instant;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.BooleanSupplier;
 import java.util.function.IntSupplier;
@@ -31,6 +34,16 @@ public class HealthHandler {
 	private final int schemaVersion;
 	private final IntSupplier activeMatchCount;
 	private final BooleanSupplier databaseReachable;
+	private final Clock clock;
+	/**
+	 * When this handler was built, which is as close to "when the process began serving" as anything in
+	 * the graph gets - it is constructed after migrations and after crash recovery, immediately before the
+	 * routes are registered.
+	 * <p>
+	 * Read off the injected {@link Clock} rather than {@code System.currentTimeMillis()} so a test can move
+	 * time and see the field change, which is the only way to assert anything about it at all.
+	 */
+	private final Instant startedAt;
 	
 	/**
 	 * What the last probe found, so the transitions get logged rather than every single probe.
@@ -42,10 +55,12 @@ public class HealthHandler {
 	 */
 	private final AtomicBoolean reachable = new AtomicBoolean(true);
 	
-	public HealthHandler(int schemaVersion, @NonNull IntSupplier activeMatchCount, @NonNull BooleanSupplier databaseReachable) {
+	public HealthHandler(int schemaVersion, @NonNull IntSupplier activeMatchCount, @NonNull BooleanSupplier databaseReachable, @NonNull Clock clock) {
 		this.schemaVersion = schemaVersion;
 		this.activeMatchCount = activeMatchCount;
 		this.databaseReachable = databaseReachable;
+		this.clock = clock;
+		this.startedAt = clock.instant();
 	}
 	
 	@OpenApi(
@@ -78,6 +93,14 @@ public class HealthHandler {
 		}
 		
 		ctx.status(up ? HttpStatus.OK : HttpStatus.SERVICE_UNAVAILABLE);
-		ctx.json(new HealthResponse(up ? "UP" : "DOWN", this.schemaVersion, this.activeMatchCount.getAsInt()));
+		ctx.json(new HealthResponse(up ? "UP" : "DOWN", this.uptimeSeconds(), this.schemaVersion, this.activeMatchCount.getAsInt()));
+	}
+	
+	/**
+	 * @return how long this process has been serving, never negative - a clock that jumped backwards is
+	 *   worth reporting as zero rather than as a negative age nothing downstream expects
+	 */
+	long uptimeSeconds() {
+		return Math.max(0L, Duration.between(this.startedAt, this.clock.instant()).toSeconds());
 	}
 }
