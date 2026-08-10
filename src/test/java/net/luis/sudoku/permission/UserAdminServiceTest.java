@@ -45,7 +45,7 @@ class UserAdminServiceTest extends PostgresTest {
 		this.sessions = new SessionRepository();
 		this.invites = new InviteRepository();
 		
-		SessionCloser closer = (userId, reason) -> this.closedFor.add(userId + ":" + reason);
+		SessionCloser closer = (userId, deviceId, reason) -> this.closedFor.add(userId + ":" + reason);
 		this.sessionService = new SessionService(database, this.sessions, this.users, this.devices,
 			new CodeGenerator(), closer);
 		this.registrations = new RegistrationService(database, this.users, this.devices, this.invites,
@@ -226,7 +226,8 @@ class UserAdminServiceTest extends PostgresTest {
 			() -> assertTrue(this.admin.get(player.userId()).revoked()),
 			() -> assertFalse(playerDevices.isEmpty()),
 			() -> assertTrue(playerDevices.stream().allMatch(Device::revoked), "every key must be revoked"),
-			() -> assertNull(database.read(connection -> this.sessions.findByUser(connection, player.userId())))
+			() -> assertTrue(database.read(connection -> this.sessions.findAllByUser(connection, player.userId())).isEmpty(),
+				"a kick takes every device, so it takes every session")
 		);
 	}
 	

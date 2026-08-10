@@ -197,11 +197,14 @@ public abstract class LiveMatch {
 	/**
 	 * Closes one user's connection to this match without ending it - used for
 	 * {@code SESSION_SUPERSEDED} and kicks.
+	 *
+	 * @param deviceId the only device to close, or null for whichever device is attached - a kick
+	 *   revokes the account and takes any of them, while a superseded session names one
 	 */
-	public void disconnectUser(@NonNull UUID userId, @NonNull String reason) {
+	public void disconnectUser(@NonNull UUID userId, @Nullable UUID deviceId, @NonNull String reason) {
 		this.submit(() -> {
 			Connection connection = this.connections.get(userId);
-			if (connection != null) {
+			if (connection != null && (deviceId == null || deviceId.equals(connection.deviceId()))) {
 				connection.close(reason);
 				this.onDisconnect(userId, false);
 			}

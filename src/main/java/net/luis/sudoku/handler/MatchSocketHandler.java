@@ -304,6 +304,11 @@ public class MatchSocketHandler implements Consumer<WsConfig> {
 		}
 		
 		@Override
+		public @NonNull UUID deviceId() {
+			return this.principal.deviceId();
+		}
+
+		@Override
 		public @NonNull String displayName() {
 			return this.principal.user().displayName();
 		}

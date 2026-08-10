@@ -16,6 +16,7 @@ import java.util.concurrent.CopyOnWriteArrayList;
 public final class FakeConnection implements Connection {
 	
 	private final UUID userId;
+	private final UUID deviceId;
 	private final String displayName;
 	private final int apiVersion;
 	private final List<MessageEnvelope> received = new CopyOnWriteArrayList<>();
@@ -28,7 +29,13 @@ public final class FakeConnection implements Connection {
 	}
 	
 	public FakeConnection(@NonNull UUID userId, @NonNull String displayName, int apiVersion) {
+		this(userId, UUID.randomUUID(), displayName, apiVersion);
+	}
+
+	/** The device matters only where a test closes one device's socket and leaves another's alone. */
+	public FakeConnection(@NonNull UUID userId, @NonNull UUID deviceId, @NonNull String displayName, int apiVersion) {
 		this.userId = userId;
+		this.deviceId = deviceId;
 		this.displayName = displayName;
 		this.apiVersion = apiVersion;
 	}
@@ -52,6 +59,11 @@ public final class FakeConnection implements Connection {
 		return this.userId;
 	}
 	
+	@Override
+	public @NonNull UUID deviceId() {
+		return this.deviceId;
+	}
+
 	@Override
 	public @NonNull String displayName() {
 		return this.displayName;

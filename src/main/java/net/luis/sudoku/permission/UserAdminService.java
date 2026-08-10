@@ -11,6 +11,7 @@ import net.luis.sudoku.repository.*;
 import net.luis.utils.io.database.exception.SqlException;
 import net.luis.utils.io.database.transaction.SqlTransaction;
 import org.jspecify.annotations.NonNull;
+import org.jspecify.annotations.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -142,7 +143,7 @@ public final class UserAdminService {
 		
 		// After commit: if the transaction had rolled back, we would have disconnected a user who is
 		// still perfectly entitled to be connected.
-		this.closer.closeSocketsFor(targetId, ErrorCode.USER_REVOKED.name());
+		this.closer.closeSocketsFor(targetId, null, ErrorCode.USER_REVOKED.name());
 		log.warn("Admin action: {} ({}) kicked {} ({})", actor.user().displayName(), actor.userId(),
 			target.displayName(), target.id());
 	}
@@ -198,7 +199,7 @@ public final class UserAdminService {
 	 * @return true if the caller revoked their own current device, meaning their session just ended
 	 */
 	public boolean revokeDevice(@NonNull Principal actor, @NonNull UUID deviceId) {
-		boolean revokedOwn = this.database.transaction(connection -> {
+		DeviceRevocation revocation = this.database.transaction(connection -> {
 			lockAdminInvariant(connection);
 			var device = this.devices.find(connection, deviceId);
 			if (device == null) {
@@ -209,7 +210,7 @@ public final class UserAdminService {
 				actor.require(Permission.CAN_KICK);
 			}
 			if (device.revoked()) {
-				return false;
+				return new DeviceRevocation(null, false);
 			}
 			
 			User owner = this.users.findForUpdate(connection, device.userId());
@@ -221,15 +222,26 @@ public final class UserAdminService {
 			
 			this.devices.revoke(connection, deviceId);
 			this.sessions.deleteByDevice(connection, deviceId);
-			return deviceId.equals(actor.deviceId());
+			return new DeviceRevocation(device.userId(), deviceId.equals(actor.deviceId()));
 		});
-		
-		if (revokedOwn) {
-			this.closer.closeSocketsFor(actor.userId(), "DEVICE_REVOKED");
+
+		// The revoked device's socket goes, and only that device's: its owner may well be signed in on
+		// another one, which this action says nothing about. That was unrepresentable while sockets could
+		// only be closed per user, so a device revoked from somewhere else kept playing until its next
+		// request happened to fail.
+		if (revocation.ownerId() != null) {
+			this.closer.closeSocketsFor(revocation.ownerId(), deviceId, "DEVICE_REVOKED");
 		}
 		log.warn("Admin action: {} ({}) revoked device {}", actor.user().displayName(), actor.userId(), deviceId);
-		return revokedOwn;
+		return revocation.own();
 	}
+
+	/**
+	 * @param ownerId the user the revoked device belonged to, or null if nothing was revoked because the
+	 *   device was already gone
+	 * @param own whether that device was the caller's own current one, meaning their session just ended
+	 */
+	private record DeviceRevocation(@Nullable UUID ownerId, boolean own) {}
 	
 	private void requireAnotherAdminExists(@NonNull SqlTransaction connection, @NonNull UUID excluding) throws SqlException {
 		if (this.users.countActiveAdmins(connection, excluding) == 0) {

@@ -145,16 +145,20 @@ class DeviceLinkServiceTest extends PostgresTest {
 	}
 	
 	@Test
-	void link_signsTheNewDeviceIn_andDisplacesTheOldSession() {
+	void link_signsTheNewDeviceIn_andLeavesTheLinkingDeviceSignedIn() {
+		// The reported bug in one test: linking used to sign the first device out, whose client then
+		// silently signed itself back in and signed the new one out, and so on every few seconds.
 		Principal owner = this.owner();
 		DeviceLinkService.LinkCode code = this.links.mint(owner);
 		TestKeys tablet = TestKeys.ecdsa("tablet");
-		
+
 		DeviceLinkService.Linked linked = this.links.link(code.code(), tablet.publicKey(), KeyAlgorithm.ECDSA_P256, "Tablet");
-		
+
 		assertAll(
 			() -> assertNotNull(this.sessionService.authenticate(linked.session().token(), NOW)),
-			() -> assertThrows(ApiException.class, () -> this.sessionService.authenticate(owner.session().token(), NOW))
+			() -> assertNotNull(this.sessionService.authenticate(owner.session().token(), NOW),
+				"the device that handed out the code must stay signed in"),
+			() -> assertNull(linked.displaced(), "nothing was displaced, so no socket may be closed")
 		);
 	}
 	

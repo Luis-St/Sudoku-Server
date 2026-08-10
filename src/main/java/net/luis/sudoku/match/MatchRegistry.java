@@ -75,10 +75,13 @@ public final class MatchRegistry implements AutoCloseable {
 	 * <p>
 	 * This is what makes {@code SESSION_SUPERSEDED} (spec 6.2) and a kick (spec 7.2) actually take
 	 * effect on a live socket rather than only in the database.
+	 *
+	 * @param deviceId the one device to close, or null for all of them - a kick revokes the whole
+	 *   account, while a superseded session belongs to the single device that re-authenticated
 	 */
-	public void closeSocketsFor(@NonNull UUID userId, @NonNull String reason) {
+	public void closeSocketsFor(@NonNull UUID userId, @Nullable UUID deviceId, @NonNull String reason) {
 		for (LiveMatch match : this.matches.values()) {
-			match.disconnectUser(userId, reason);
+			match.disconnectUser(userId, deviceId, reason);
 		}
 	}
 	

@@ -1,6 +1,7 @@
 package net.luis.sudoku.auth;
 
 import org.jspecify.annotations.NonNull;
+import org.jspecify.annotations.Nullable;
 
 import java.util.UUID;
 
@@ -12,15 +13,17 @@ import java.util.UUID;
  */
 @FunctionalInterface
 public interface SessionCloser {
-	
+
 	/**
 	 * A closer that does nothing, for use before any socket infrastructure exists.
 	 */
-	SessionCloser NONE = (userId, reason) -> {};
-	
+	SessionCloser NONE = (userId, deviceId, reason) -> {};
+
 	/**
 	 * @param userId the user whose connections should be dropped
+	 * @param deviceId the one device to drop, or null for every device of that user - a kick revokes the
+	 *   whole account, while a superseded session concerns exactly the device that re-authenticated
 	 * @param reason the close reason sent to the client, e.g. {@code SESSION_SUPERSEDED}
 	 */
-	void closeSocketsFor(@NonNull UUID userId, @NonNull String reason);
+	void closeSocketsFor(@NonNull UUID userId, @Nullable UUID deviceId, @NonNull String reason);
 }

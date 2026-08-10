@@ -199,16 +199,22 @@ class RecoveryServiceTest extends PostgresTest {
 	// --- recovery request/redeem ---
 	
 	@Test
-	void requestRecovery_signsOutTheOldSession() {
+	void redeemRecovery_leavesAnotherDevicesSessionAlone() {
+		// Recovery adds a device rather than taking the account away from the others (it never revoked
+		// their keys, so a displaced device could always have signed straight back in anyway). With one
+		// session per device, the old device simply keeps the one it has.
 		Principal owner = this.owner();
 		this.recovery.requestEmailVerification(owner, "owner@example.com");
 		this.recovery.confirmEmail(owner, this.mail.lastCode());
 		this.recovery.requestRecovery("owner@example.com");
 		String code = this.mail.lastCode();
-		
+
 		RecoveryService.Redeemed redeemed = this.recovery.redeemRecovery(code, TestKeys.ecdsa("tablet").publicKey(), KeyAlgorithm.ECDSA_P256, "Tablet");
-		
-		assertNotNull(redeemed.displaced(), "redemption must displace the account's existing session");
+
+		assertAll(
+			() -> assertNull(redeemed.displaced(), "a brand new device displaces nothing"),
+			() -> assertNotEquals(owner.session().token(), redeemed.session().token())
+		);
 	}
 	
 	@Test

@@ -18,6 +18,17 @@ public interface Connection {
 	@NonNull UUID userId();
 	
 	/**
+	 * The device this socket authenticated with.
+	 * <p>
+	 * A player may be signed in on several devices at once, so "whose connection is this" is only half
+	 * answered by {@link #userId()}: a superseded session concerns one device, and closing the other
+	 * one's socket would drop a device that is perfectly fine out of a running match.
+	 *
+	 * @return the device behind this connection
+	 */
+	@NonNull UUID deviceId();
+
+	/**
 	 * @return their display name, for messages that name a player
 	 */
 	@NonNull String displayName();

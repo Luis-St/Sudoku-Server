@@ -48,11 +48,12 @@ public final class SchemaMigration {
 	
 	/** Every migration, in version order. */
 	public static final List<SqlMigration> ALL = List.of(
-		new InitialSchema(), new PresencePolling(), new ReinstatableKicks(), new MatchHintSetting(), new RecordedGames(), new MatchGivens(), new RescaledDifficulties(), new PooledPuzzles()
+		new InitialSchema(), new PresencePolling(), new ReinstatableKicks(), new MatchHintSetting(), new RecordedGames(), new MatchGivens(), new RescaledDifficulties(), new PooledPuzzles(),
+		new PerDeviceSessions()
 	);
-	
+
 	/** The version the schema is at once {@link #ALL} has been applied, reported by {@code /health}. */
-	public static final int CURRENT_VERSION = 8;
+	public static final int CURRENT_VERSION = 9;
 	
 	private SchemaMigration() {}
 	
@@ -552,6 +553,112 @@ public final class SchemaMigration {
 		@Override
 		public void down(@NonNull SqlMigrationBuilder builder, @NonNull SqlMigrationSchema schema) throws SqlException {
 			builder.dropTable(PUZZLE_POOL);
+		}
+	}
+
+	/**
+	 * Moves the session's uniqueness from the user to the device, so a player can be signed in on more
+	 * than one device at a time.
+	 * <p>
+	 * {@code sessions.user_id} was unique, which is what made "link this device" sign the other one out.
+	 * On its own that was merely the documented trade-off; what made it a defect is that the displaced
+	 * row was <em>deleted</em>, so the displaced client could not tell the difference between "somebody
+	 * else signed in" and "your session expired" - it received a plain {@code UNAUTHORIZED} for both -
+	 * and its {@code SessionGuard} healed the expiry case by silently re-authenticating with the device
+	 * key. That new session displaced the other device, whose next heartbeat did the same thing back.
+	 * Two devices therefore took the session from each other every few seconds, each losing its match
+	 * sockets on every swap, for as long as both apps were open.
+	 * <p>
+	 * {@code superseded_token}/{@code superseded_at} keep the replaced token readable on the row that
+	 * replaced it, which is what lets {@code SessionService.authenticate} answer {@code SESSION_SUPERSEDED}
+	 * instead of {@code UNAUTHORIZED} for the one displacement that still happens: a device replacing its
+	 * own session. They live on the replacing row rather than as a tombstone row of their own precisely
+	 * because {@code device_id} is unique now - a device has exactly one row, whatever has happened to it.
+	 * <p>
+	 * <strong>Both constraint changes are guarded, and by the live schema rather than by {@code hasColumn}.</strong>
+	 * The reason is the one spelled out on {@link ReinstatableKicks}: {@link #table} renders the initial
+	 * migration from {@link Schema} as it stands <em>now</em>, so a database created after this version
+	 * exists already has the constraints the right way round by the time this runs, while one deployed
+	 * before does not. {@code SqlMigrationSchema} tracks single-column uniqueness per column, which is
+	 * exactly the question being asked - there is no {@code IF EXISTS} on a constraint drop to fall back on.
+	 * <p>
+	 * The index is unconditional because nothing creates it anywhere else: {@code user_id}'s lookups
+	 * (a kick, listing a user's sessions) rode on the unique index that is being dropped here.
+	 */
+	private static final class PerDeviceSessions implements SqlMigration {
+
+		/** The names Postgres gives a column-level {@code UNIQUE}, so both paths end up with one shape. */
+		private static final String USER_UNIQUE = "sessions_user_id_key";
+		private static final String DEVICE_UNIQUE = "sessions_device_id_key";
+
+		@Override
+		public @NonNull Version version() {
+			return Version.of(9, 0);
+		}
+
+		@Override
+		public @NonNull String description() {
+			return "one session per device instead of one per user";
+		}
+
+		@Override
+		public void up(@NonNull SqlMigrationBuilder builder, @NonNull SqlMigrationSchema schema) throws SqlException {
+			if (!schema.hasColumn(SESSIONS.name(), SESSION_SUPERSEDED_TOKEN.name())) {
+				builder.addColumn(SESSION_SUPERSEDED_TOKEN, SESSION_SUPERSEDED_TOKEN.type());
+			}
+			if (!schema.hasColumn(SESSIONS.name(), SESSION_SUPERSEDED_AT.name())) {
+				builder.addColumn(SESSION_SUPERSEDED_AT, SESSION_SUPERSEDED_AT.type());
+			}
+
+			// No de-duplication is needed before the device constraint goes on: user_id was unique until
+			// now and a device belongs to exactly one user, so no user can have two rows to collide with.
+			if (isUnique(schema, SESSION_USER_ID)) {
+				builder.dropConstraint(SESSIONS, USER_UNIQUE);
+			}
+			if (!isUnique(schema, SESSION_DEVICE_ID)) {
+				builder.addUniqueConstraint(SESSIONS, DEVICE_UNIQUE, SESSION_DEVICE_ID);
+			}
+
+			builder.createIndex(SESSIONS, "sessions_user_idx", index -> index.columns(SESSION_USER_ID));
+			// The failure path of authentication reads this, and only ever by equality.
+			builder.createIndex(SESSIONS, "sessions_superseded_token_idx", index -> index.columns(SESSION_SUPERSEDED_TOKEN));
+		}
+
+		/**
+		 * Rolling back re-imposes one session per user, which two signed-in devices would violate - so
+		 * every session is dropped rather than a guess made about which device keeps the account. Signing
+		 * in again is a challenge/response the client does by itself.
+		 */
+		@Override
+		public void down(@NonNull SqlMigrationBuilder builder, @NonNull SqlMigrationSchema schema) throws SqlException {
+			builder.data(SESSIONS, queries -> queries.delete().execute());
+
+			builder.dropIndex(SESSIONS, "sessions_superseded_token_idx");
+			builder.dropIndex(SESSIONS, "sessions_user_idx");
+			if (isUnique(schema, SESSION_DEVICE_ID)) {
+				builder.dropConstraint(SESSIONS, DEVICE_UNIQUE);
+			}
+			if (!isUnique(schema, SESSION_USER_ID)) {
+				builder.addUniqueConstraint(SESSIONS, USER_UNIQUE, SESSION_USER_ID);
+			}
+
+			if (schema.hasColumn(SESSIONS.name(), SESSION_SUPERSEDED_AT.name())) {
+				builder.dropColumn(SESSION_SUPERSEDED_AT);
+			}
+			if (schema.hasColumn(SESSIONS.name(), SESSION_SUPERSEDED_TOKEN.name())) {
+				builder.dropColumn(SESSION_SUPERSEDED_TOKEN);
+			}
+		}
+
+		/**
+		 * Whether the live schema already carries a single-column unique index on this column, which is
+		 * how {@link SqlMigrationSchema} records both a column-level {@code UNIQUE} and a named constraint.
+		 */
+		private static boolean isUnique(@NonNull SqlMigrationSchema schema, @NonNull SqlColumn<?, ?> column) throws SqlException {
+			if (!schema.hasColumn(SESSIONS.name(), column.name())) {
+				return false;
+			}
+			return schema.column(SESSIONS.name(), column.name()).unique();
 		}
 	}
 }

@@ -18,7 +18,14 @@ import java.time.Instant;
 import java.util.UUID;
 
 /**
- * Issues and resolves session tokens, and enforces that a user has at most one (server-spec 6.2).
+ * Issues and resolves session tokens, and enforces that a <em>device</em> has at most one
+ * (server-spec 6.2).
+ * <p>
+ * The rule was one session per user until schema v9. Two devices of the same player could then never be
+ * signed in at once - and worse, they could not settle which of them was: linking device B deleted
+ * device A's row, A's next heartbeat got {@code UNAUTHORIZED}, the client's {@code SessionGuard}
+ * silently traded A's device key for a new session, that deleted B's row, and the two carried on
+ * displacing each other every few seconds for as long as both apps were open.
  */
 public final class SessionService {
 	
@@ -55,7 +62,7 @@ public final class SessionService {
 	 * @return the newly issued session, and the displaced one if there was any
 	 */
 	public @NonNull Issued issue(@NonNull SqlTransaction connection, @NonNull UUID userId, @NonNull UUID deviceId, @NonNull Instant now) throws SqlException {
-		Session session = new Session(this.codes.sessionToken(), userId, deviceId, now, now.plus(SESSION_TTL));
+		Session session = Session.issued(this.codes.sessionToken(), userId, deviceId, now, now.plus(SESSION_TTL));
 		Session displaced = this.sessions.replace(connection, session);
 		this.devices.touch(connection, deviceId, now);
 		return new Issued(session, displaced);
@@ -63,11 +70,15 @@ public final class SessionService {
 	
 	/**
 	 * Closes the displaced client's sockets. Call only after the issuing transaction has committed.
+	 * <p>
+	 * Scoped to the displaced <em>device</em>. Closing every socket of the user was correct while a user
+	 * had one session; now that they may have several, it would drop a second device out of a running
+	 * match because the first one happened to re-authenticate.
 	 */
 	public void announceSuperseded(@Nullable Session displaced) {
 		if (displaced != null) {
-			log.info("Session for user {} superseded by a newer login", displaced.userId());
-			this.closer.closeSocketsFor(displaced.userId(), SUPERSEDED_REASON);
+			log.info("Session for device {} of user {} superseded by a newer one on the same device", displaced.deviceId(), displaced.userId());
+			this.closer.closeSocketsFor(displaced.userId(), displaced.deviceId(), SUPERSEDED_REASON);
 		}
 	}
 	
@@ -80,6 +91,12 @@ public final class SessionService {
 		return this.database.read(connection -> {
 			Session session = this.sessions.findByToken(connection, token);
 			if (session == null) {
+				// An unknown token and a replaced one are the same 401 from the outside, and the client has
+				// to react differently to each - so the row that replaced it is asked before giving up.
+				Session replacement = this.sessions.findBySupersededToken(connection, token);
+				if (replacement != null) {
+					throw new ApiException(ErrorCode.SESSION_SUPERSEDED, "This session was replaced by a newer one on the same device");
+				}
 				throw new ApiException(ErrorCode.UNAUTHORIZED, "Unknown session token");
 			}
 			if (session.isExpired(now)) {

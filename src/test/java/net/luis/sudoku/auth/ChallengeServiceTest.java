@@ -69,7 +69,7 @@ class ChallengeServiceTest extends PostgresTest {
 		this.challengeRepository = new AuthChallengeRepository();
 		
 		SignatureVerifier verifier = new SignatureVerifier();
-		SessionCloser closer = (userId, reason) -> this.closedFor.add(userId + ":" + reason);
+		SessionCloser closer = (userId, deviceId, reason) -> this.closedFor.add(userId + ":" + reason);
 		this.sessionService = new SessionService(database, this.sessions, this.users, this.devices,
 			new CodeGenerator(), closer);
 		this.challenges = new ChallengeService(database, this.challengeRepository, this.devices, this.users,
@@ -295,14 +295,37 @@ class ChallengeServiceTest extends PostgresTest {
 		ChallengeService.Challenge challenge = this.challenges.challenge(keys.publicKey());
 		ChallengeService.Authenticated second = this.challenges.verify(challenge.nonce(), keys.sign(challenge.nonce()));
 		
-		Session stored = database.read(connection -> this.sessions.findByUser(connection, registered.user().id()));
+		Session stored = database.read(connection -> this.sessions.findByDevice(connection, registered.device().id()));
 		assertAll(
 			() -> assertNotNull(stored),
 			() -> assertEquals(second.session().token(), stored.token()),
 			() -> assertNotEquals(firstToken, stored.token()),
 			() -> assertNull(database.read(connection -> this.sessions.findByToken(connection, firstToken)),
-				"the displaced token must no longer resolve")
+				"the displaced token must no longer resolve"),
+			() -> assertEquals(firstToken, stored.supersededToken(),
+				"the replaced token stays readable, so its holder can be told which of the two 401s applies")
 		);
+	}
+
+	@Test
+	void authenticate_aDisplacedToken_saysItWasSuperseded() {
+		// The distinction the client cannot make for itself: an unknown token and a replaced one are both
+		// a 401, and only one of them means "somebody re-authenticated on this device".
+		TestKeys keys = TestKeys.ed25519("device-a");
+		RegistrationService.Registered registered = this.register(keys, "Alice");
+		String firstToken = registered.session().token();
+
+		ChallengeService.Challenge challenge = this.challenges.challenge(keys.publicKey());
+		this.challenges.verify(challenge.nonce(), keys.sign(challenge.nonce()));
+
+		ApiException thrown = assertThrows(ApiException.class, () -> this.sessionService.authenticate(firstToken, this.now.get()));
+		assertEquals(ErrorCode.SESSION_SUPERSEDED, thrown.code());
+	}
+
+	@Test
+	void authenticate_anUnknownToken_staysUnauthorized() {
+		ApiException thrown = assertThrows(ApiException.class, () -> this.sessionService.authenticate("never-issued", this.now.get()));
+		assertEquals(ErrorCode.UNAUTHORIZED, thrown.code());
 	}
 	
 	@Test
@@ -317,21 +340,27 @@ class ChallengeServiceTest extends PostgresTest {
 	}
 	
 	@Test
-	void verify_loggingInOnASecondDevice_displacesTheFirstDevicesSession() {
-		// One session per user, not per device: signing in on a tablet signs the phone out (spec 6.2).
+	void verify_loggingInOnASecondDevice_leavesTheFirstDevicesSessionAlone() {
+		// One session per device, not per user (spec 6.2): signing in on a tablet must not sign the phone
+		// out. It used to, which is the whole of the two-devices-fighting bug - the phone then silently
+		// re-authenticated and signed the tablet out in turn, every few seconds, indefinitely.
 		TestKeys phone = TestKeys.ed25519("phone");
 		RegistrationService.Registered registered = this.register(phone, "Alice");
-		
+
 		TestKeys tablet = TestKeys.ecdsa("tablet");
 		database.execute(connection -> this.devices.create(connection, registered.user().id(), tablet.publicKey(),
 			KeyAlgorithm.ECDSA_P256, "Tablet", this.now.get()));
-		
+
 		ChallengeService.Challenge challenge = this.challenges.challenge(tablet.publicKey());
 		ChallengeService.Authenticated authenticated = this.challenges.verify(challenge.nonce(), tablet.sign(challenge.nonce()));
-		
+
 		assertAll(
 			() -> assertEquals(registered.user().id(), authenticated.user().id()),
-			() -> assertNull(database.read(connection -> this.sessions.findByToken(connection, registered.session().token())))
+			() -> assertNotNull(database.read(connection -> this.sessions.findByToken(connection, registered.session().token())),
+				"the phone's session must survive the tablet signing in"),
+			() -> assertNotNull(database.read(connection -> this.sessions.findByToken(connection, authenticated.session().token()))),
+			() -> assertEquals(2, database.read(connection -> this.sessions.findAllByUser(connection, registered.user().id())).size()),
+			() -> assertTrue(this.closedFor.isEmpty(), "nothing was displaced, so no socket may be closed")
 		);
 	}
 	

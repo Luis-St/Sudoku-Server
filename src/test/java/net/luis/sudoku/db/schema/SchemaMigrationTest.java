@@ -3,12 +3,16 @@ package net.luis.sudoku.db.schema;
 import net.luis.sudoku.compat.LegacyDifficulty;
 import net.luis.sudoku.db.Migrations;
 import net.luis.sudoku.difficulty.Difficulty;
+import net.luis.sudoku.domain.KeyAlgorithm;
 import net.luis.sudoku.domain.Match;
+import net.luis.sudoku.domain.Session;
 import net.luis.sudoku.grid.GridSize;
 import net.luis.sudoku.grid.Variant;
 import net.luis.sudoku.match.MatchMode;
 import net.luis.sudoku.permission.Role;
+import net.luis.sudoku.repository.DeviceRepository;
 import net.luis.sudoku.repository.MatchRepository;
+import net.luis.sudoku.repository.SessionRepository;
 import net.luis.sudoku.repository.PreferenceRepository;
 import net.luis.sudoku.repository.UserRepository;
 import net.luis.sudoku.support.PostgresTest;
@@ -53,6 +57,7 @@ class SchemaMigrationTest extends PostgresTest {
 	private final UserRepository users = new UserRepository();
 	private final PreferenceRepository preferences = new PreferenceRepository();
 	private final MatchRepository matches = new MatchRepository();
+	private final DeviceRepository devices = new DeviceRepository();
 	
 	/**
 	 * Every migration up to and including {@code version}.
@@ -92,6 +97,12 @@ class SchemaMigrationTest extends PostgresTest {
 		return database.transaction(transaction -> this.users.create(transaction, displayName, Role.MEMBER, NOW).id());
 	}
 	
+	private UUID createDevice(UUID userId, String key) {
+		return database.transaction(transaction -> this.devices.create(
+			transaction, userId, key.getBytes(java.nio.charset.StandardCharsets.UTF_8), KeyAlgorithm.ED25519, key, NOW
+		).id());
+	}
+
 	private int storedPreference(UUID userId) {
 		return database.read(transaction -> this.preferences.dailyDifficulty(transaction, userId));
 	}
@@ -242,6 +253,100 @@ class SchemaMigrationTest extends PostgresTest {
 		assertEquals("ABCDEF", reloaded.givens());
 	}
 	
+	// --- per-device sessions ---
+
+	/**
+	 * Builds a database whose {@code sessions} table is genuinely the pre-v9 one: unique on
+	 * {@code user_id}, no {@code superseded_*} columns.
+	 * <p>
+	 * The order is load-bearing for the reason spelled out on {@link #migrateToVersionFiveWithoutGivens()}
+	 * - the guards inside migration 9 read the snapshot LUtils recorded when the <em>last</em> migration
+	 * committed, not the live database. So the table is put back into its old shape while migration 8 is
+	 * still pending, and 8's commit is what records a schema that really does look deployed.
+	 */
+	private void migrateToVersionEightWithPerUserSessions() {
+		database.execute(transaction -> {
+			transaction.dropSchema("public", true);
+			transaction.createSchema("public");
+		});
+		this.runMigrations(upToVersion(7));
+		database.withConnection(connection -> {
+			try (Statement statement = connection.createStatement()) {
+				statement.execute("ALTER TABLE sessions DROP COLUMN superseded_token");
+				statement.execute("ALTER TABLE sessions DROP COLUMN superseded_at");
+				statement.execute("ALTER TABLE sessions DROP CONSTRAINT sessions_device_id_key");
+				statement.execute("ALTER TABLE sessions ADD CONSTRAINT sessions_user_id_key UNIQUE (user_id)");
+			}
+			return null;
+		});
+		this.runMigrations(upToVersion(8));
+	}
+
+	private boolean sessionsColumnIsUnique(String column) {
+		return database.withConnection(connection -> {
+			try (PreparedStatement statement = connection.prepareStatement("""
+				SELECT 1
+				FROM pg_index index_
+				JOIN pg_class table_ ON table_.oid = index_.indrelid
+				JOIN pg_attribute attribute ON attribute.attrelid = table_.oid AND attribute.attnum = ANY (index_.indkey)
+				WHERE table_.relname = 'sessions' AND attribute.attname = ? AND index_.indisunique AND index_.indnatts = 1
+				"""
+			)) {
+				statement.setString(1, column);
+				try (ResultSet rows = statement.executeQuery()) {
+					return rows.next();
+				}
+			}
+		});
+	}
+
+	@Test
+	void perDeviceSessions_onADeployedDatabase_movesTheUniquenessFromTheUserToTheDevice() {
+		// Neither branch of migration 9 is exercised by an ordinary run: a database built today already has
+		// the constraints the right way round, so both guards skip. Only a database that predates the
+		// change takes the other path, and that path is the one every deployed server will actually run.
+		this.migrateToVersionEightWithPerUserSessions();
+		assertAll(
+			() -> assertTrue(this.sessionsColumnIsUnique("user_id"), "the arrangement must start from the old shape, or this test proves nothing"),
+			() -> assertFalse(this.sessionsColumnIsUnique("device_id"))
+		);
+
+		this.runMigrations(upToVersion(9));
+
+		assertAll(
+			() -> assertFalse(this.sessionsColumnIsUnique("user_id"), "a user may be signed in on several devices"),
+			() -> assertTrue(this.sessionsColumnIsUnique("device_id"), "but a device holds exactly one session")
+		);
+	}
+
+	@Test
+	void perDeviceSessions_onADeployedDatabase_letsTwoDevicesOfOneUserHoldASessionEachAfterwards() {
+		// The DDL landing is only half of it: the point is that the write path can then do what the old
+		// constraint refused, which is what the two-devices bug was.
+		this.migrateToVersionEightWithPerUserSessions();
+		this.runMigrations(upToVersion(9));
+		UUID player = this.createUser("Two-Devices");
+		UUID phone = this.createDevice(player, "phone-key");
+		UUID tablet = this.createDevice(player, "tablet-key");
+
+		SessionRepository sessions = new SessionRepository();
+		database.execute(transaction -> sessions.replace(transaction, Session.issued("token-phone", player, phone, NOW, NOW.plusSeconds(3600))));
+		database.execute(transaction -> sessions.replace(transaction, Session.issued("token-tablet", player, tablet, NOW, NOW.plusSeconds(3600))));
+
+		assertEquals(2, database.read(transaction -> sessions.findAllByUser(transaction, player)).size());
+	}
+
+	@Test
+	void perDeviceSessions_onAFreshDatabase_appliesCleanlyAndSkipsBothConstraintChanges() {
+		// The other branch: a database created after this version exists already has the constraints the
+		// right way round, and re-running the drop or the add on it would fail rather than no-op.
+		assertEquals(SchemaMigration.CURRENT_VERSION, Migrations.migrate(database));
+		assertAll(
+			() -> assertFalse(this.sessionsColumnIsUnique("user_id")),
+			() -> assertTrue(this.sessionsColumnIsUnique("device_id"))
+		);
+	}
+
 	// --- the list itself ---
 	
 	@Test

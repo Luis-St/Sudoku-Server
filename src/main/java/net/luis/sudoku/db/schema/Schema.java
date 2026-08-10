@@ -163,11 +163,27 @@ public final class Schema {
 	public static final SqlTable<Session> SESSIONS = SqlTable.create(Session.class, "sessions");
 	// --- sessions ------------------------------------------------------------------------------
 	public static final SqlColumn<Session, String> SESSION_TOKEN = SESSIONS.column("token", SqlTypes.TEXT, Session::token, col -> col.primaryKey().notNull());
-	/** UNIQUE enforces the single-active-session rule (spec 6.2) in the schema, not just in code. */
-	public static final SqlColumn<Session, UUID> SESSION_USER_ID = SESSIONS.column("user_id", UUID_TYPE, Session::userId, col -> col.notNull().unique());
-	public static final SqlColumn<Session, UUID> SESSION_DEVICE_ID = SESSIONS.column("device_id", UUID_TYPE, Session::deviceId, SqlColumnBuilder::notNull);
+	/**
+	 * Not unique: a session belongs to a device, and a user may have several devices signed in at once
+	 * (spec 6.2). It was unique until schema v9, which is what made linking a second device sign the
+	 * first one out - see {@link SchemaMigration.PerDeviceSessions}.
+	 */
+	public static final SqlColumn<Session, UUID> SESSION_USER_ID = SESSIONS.column("user_id", UUID_TYPE, Session::userId, SqlColumnBuilder::notNull);
+	/** UNIQUE enforces the one-session-per-device rule (spec 6.2) in the schema, not just in code. */
+	public static final SqlColumn<Session, UUID> SESSION_DEVICE_ID = SESSIONS.column("device_id", UUID_TYPE, Session::deviceId, col -> col.notNull().unique());
 	public static final SqlColumn<Session, Instant> SESSION_ISSUED_AT = SESSIONS.column("issued_at", TIMESTAMP, Session::issuedAt, SqlColumnBuilder::notNull);
 	public static final SqlColumn<Session, Instant> SESSION_EXPIRES_AT = SESSIONS.column("expires_at", TIMESTAMP, Session::expiresAt, SqlColumnBuilder::notNull);
+	/**
+	 * The token this row replaced, kept only until the next re-issue, so a client still holding it is
+	 * told {@code SESSION_SUPERSEDED} rather than a bare {@code UNAUTHORIZED}.
+	 * <p>
+	 * It lives on the replacing row instead of as a tombstone row of its own precisely because
+	 * {@link #SESSION_DEVICE_ID} is unique: a device has exactly one row, whatever has happened to it.
+	 * Nullable, and null for every device that has only ever signed in once.
+	 */
+	public static final SqlColumn<Session, String> SESSION_SUPERSEDED_TOKEN = SESSIONS.column("superseded_token", SqlTypes.TEXT, Session::supersededToken);
+	/** When {@link #SESSION_SUPERSEDED_TOKEN} stopped being valid. Null exactly when that column is null. */
+	public static final SqlColumn<Session, Instant> SESSION_SUPERSEDED_AT = SESSIONS.column("superseded_at", TIMESTAMP, Session::supersededAt);
 	public static final SqlTable<AuthChallengeRow> AUTH_CHALLENGES = SqlTable.create(AuthChallengeRow.class, "auth_challenges");
 	// --- auth_challenges -----------------------------------------------------------------------
 	public static final SqlColumn<AuthChallengeRow, byte[]> CHALLENGE_NONCE = AUTH_CHALLENGES.column("nonce", SqlTypes.LARGE_BYTES, AuthChallengeRow::nonce, col -> col.primaryKey().notNull());
