@@ -135,6 +135,7 @@ public class Application {
 		var dailyHandler = new DailyHandler(services.authentication(), services.dailyService());
 		var statsHandler = new StatsHandler(services.authentication(), services.statsService(), services.presenceService());
 		var currencyHandler = new CurrencyHandler(services.authentication(), services.currencyService());
+		var learnHandler = new LearnHandler(services.authentication(), services.learnService());
 		var matchHandler = new MatchHandler(services.authentication(), services.matchService(), services.presenceService(), services.rateLimiter());
 		var presenceHandler = new PresenceHandler(services.authentication(), services.presenceService(), services.config().presence());
 		var puzzleHandler = new PuzzleHandler(services.authentication(), services.puzzleQueue());
@@ -212,6 +213,12 @@ public class Application {
 		// Currency
 		javalin.routes.get("/api/v1/currency", currencyHandler::balance);
 		javalin.routes.post("/api/v1/currency/sync", currencyHandler::sync);
+		
+		// Learn area. Additive, so no API version moved: everything here works offline and these routes only
+		// ever make a second device start from what the first one already did.
+		javalin.routes.get("/api/v1/learn/progress", learnHandler::progress);
+		javalin.routes.post("/api/v1/learn/sync", learnHandler::sync);
+		javalin.routes.delete("/api/v1/learn/{technique}", learnHandler::reset);
 		
 		// Matches
 		javalin.routes.post("/api/v1/matches", matchHandler::create);

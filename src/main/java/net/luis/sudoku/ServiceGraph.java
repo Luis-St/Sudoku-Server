@@ -3,6 +3,7 @@ package net.luis.sudoku;
 import net.luis.sudoku.auth.*;
 import net.luis.sudoku.config.ServerConfig;
 import net.luis.sudoku.currency.CurrencyService;
+import net.luis.sudoku.learning.LearnService;
 import net.luis.sudoku.daily.DailyService;
 import net.luis.sudoku.db.*;
 import net.luis.sudoku.device.DeviceLinkService;
@@ -62,6 +63,7 @@ public final class ServiceGraph implements AutoCloseable {
 	private final CurrencyLedgerRepository ledger = new CurrencyLedgerRepository();
 	private final MatchRepository matchRepository = new MatchRepository();
 	private final PresenceRepository presenceRepository = new PresenceRepository();
+	private final LearnProgressRepository learnProgressRepository = new LearnProgressRepository();
 	private final MatchRequestRepository matchRequests = new MatchRequestRepository();
 	
 	private final Clock clock;
@@ -80,6 +82,7 @@ public final class ServiceGraph implements AutoCloseable {
 	private final DailyService dailyService;
 	private final StatsService statsService;
 	private final CurrencyService currencyService;
+	private final LearnService learnService;
 	private final MatchRegistry matchRegistry = new MatchRegistry();
 	private final PresenceService presenceService;
 	private final MatchService matchService;
@@ -126,6 +129,7 @@ public final class ServiceGraph implements AutoCloseable {
 		
 		this.matchService = new MatchService(this.database, this.matchRepository, this.matchRegistry, this.puzzleQueue, this.currencyService, config, this.codes, clock);
 		this.presenceService = new PresenceService(this.database, this.presenceRepository, this.matchRequests, config.presence(), clock);
+		this.learnService = new LearnService(this.database, this.learnProgressRepository, clock);
 		
 		this.registrationService.ensureBootstrapInvite(config.bootstrapInvite());
 		// Live board state is memory-resident, so anything left running is wreckage: abandon and refund
@@ -286,6 +290,10 @@ public final class ServiceGraph implements AutoCloseable {
 	
 	public @NonNull MatchRepository matchRepository() {
 		return this.matchRepository;
+	}
+	
+	public @NonNull LearnService learnService() {
+		return this.learnService;
 	}
 	
 	public @NonNull PresenceRepository presenceRepository() {

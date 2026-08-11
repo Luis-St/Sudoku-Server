@@ -403,6 +403,36 @@ public final class Schema {
 	/** Diagnostic only: how old a pool is answers "did the workers stall", which nothing else does. */
 	public static final SqlColumn<PuzzlePoolRow, Instant> POOL_CREATED_AT = PUZZLE_POOL.column("created_at", TIMESTAMP, PuzzlePoolRow::createdAt, SqlColumnBuilder::notNull);
 	
+	/**
+	 * One player's progress through the learn area, one row per finished exercise.
+	 * <p>
+	 * The learn area is local first and works with the phone in flight mode, so this table is a copy of what
+	 * a device already holds rather than the place the progress lives. What it buys is a second device: the
+	 * same account picking up on a tablet sees the techniques it has already mastered instead of an empty
+	 * wiki.
+	 * <p>
+	 * <strong>Only finished exercises are stored.</strong> Locked and open are derived from the rows around
+	 * them on the client, so writing them here would give the same fact a second place to be wrong, and the
+	 * rows would have to be created for all forty-one techniques on the day an account is made.
+	 * <p>
+	 * <strong>A merge keeps the better state, never the newer row.</strong> Two devices are both allowed to
+	 * work offline, so a stale {@code PARTIAL} arriving after a {@code SOLVED} must not overwrite it and
+	 * silently un-earn an achievement the player has already been shown. {@link #LEARN_UPDATED_AT} is kept
+	 * for diagnostics rather than as the tie-breaker, which is exactly what it must not be.
+	 */
+	public static final SqlTable<LearnProgressRow> LEARN_PROGRESS = SqlTable.create(LearnProgressRow.class, "learn_progress");
+	
+	// --- learn_progress ------------------------------------------------------------------------
+	public static final SqlColumn<LearnProgressRow, UUID> LEARN_USER_ID = LEARN_PROGRESS.column("user_id", UUID_TYPE, LearnProgressRow::userId, col -> col.primaryKey().notNull());
+	/** The technique's enum name, which is a stable identifier the client and the core already share. */
+	public static final SqlColumn<LearnProgressRow, String> LEARN_TECHNIQUE = LEARN_PROGRESS.column("technique", SqlTypes.TEXT, LearnProgressRow::technique, col -> col.primaryKey().notNull());
+	public static final SqlColumn<LearnProgressRow, Integer> LEARN_LEVEL = LEARN_PROGRESS.column("level", SqlTypes.INTEGER, LearnProgressRow::level, col -> col.primaryKey().notNull());
+	public static final SqlColumn<LearnProgressRow, Integer> LEARN_SUB_LEVEL = LEARN_PROGRESS.column("sub_level", SqlTypes.INTEGER, LearnProgressRow::subLevel, col -> col.primaryKey().notNull());
+	/** {@code SOLVED} or {@code PARTIAL}: an exercise finished with the technique, or finished without it. */
+	public static final SqlColumn<LearnProgressRow, String> LEARN_STATE = LEARN_PROGRESS.column("state", SqlTypes.TEXT, LearnProgressRow::state, SqlColumnBuilder::notNull);
+	/** Diagnostic only. It is deliberately not what a merge compares - see the table's note. */
+	public static final SqlColumn<LearnProgressRow, Instant> LEARN_UPDATED_AT = LEARN_PROGRESS.column("updated_at", TIMESTAMP, LearnProgressRow::updatedAt, SqlColumnBuilder::notNull);
+	
 	private Schema() {}
 	
 	/** A reference whose rows are deleted with the row they belong to. */
@@ -442,6 +472,7 @@ public final class Schema {
 		MATCH_PARTICIPANTS.compositePrimaryKey(PARTICIPANT_MATCH_ID, PARTICIPANT_USER_ID);
 		DAILY_ASSIGNMENTS.compositePrimaryKey(ASSIGNMENT_USER_ID, ASSIGNMENT_DATE);
 		RECORDED_GAMES.compositePrimaryKey(RECORDED_USER_ID, RECORDED_GAME_ID);
+		LEARN_PROGRESS.compositePrimaryKey(LEARN_USER_ID, LEARN_TECHNIQUE, LEARN_LEVEL, LEARN_SUB_LEVEL);
 		
 		cascade(DEVICES, DEVICE_USER_ID, USERS, USER_ID);
 		setNull(INVITES, INVITE_CREATED_BY, USERS, USER_ID);
@@ -464,6 +495,7 @@ public final class Schema {
 		cascade(DAILY_PREFERENCES, PREFERENCE_USER_ID, USERS, USER_ID);
 		cascade(DAILY_ASSIGNMENTS, ASSIGNMENT_USER_ID, USERS, USER_ID);
 		cascade(PRESENCE, PRESENCE_USER_ID, USERS, USER_ID);
+		cascade(LEARN_PROGRESS, LEARN_USER_ID, USERS, USER_ID);
 		// Every reference cascades, including the match: a request whose match is gone is not a request
 		// that should be delivered, so the row going with it is the behaviour, not a side effect.
 		cascade(MATCH_REQUESTS, REQUEST_TARGET_USER_ID, USERS, USER_ID);
@@ -561,6 +593,11 @@ public final class Schema {
 	 * {@code stats}, so a repeat upload of it is a retry and not a second game.
 	 */
 	public record RecordedGameRow(@NonNull UUID userId, @NonNull UUID gameId, @NonNull Instant recordedAt) {}
+	
+	/** A row of {@code learn_progress}: one finished exercise of one technique, for one player. */
+	public record LearnProgressRow(
+		@NonNull UUID userId, @NonNull String technique, int level, int subLevel, @NonNull String state, @NonNull Instant updatedAt
+	) {}
 	
 	/**
 	 * A row of {@code puzzle_pool}: one pre-generated puzzle, as everything needed to rebuild it and

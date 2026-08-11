@@ -49,11 +49,11 @@ public final class SchemaMigration {
 	/** Every migration, in version order. */
 	public static final List<SqlMigration> ALL = List.of(
 		new InitialSchema(), new PresencePolling(), new ReinstatableKicks(), new MatchHintSetting(), new RecordedGames(), new MatchGivens(), new RescaledDifficulties(), new PooledPuzzles(),
-		new PerDeviceSessions()
+		new PerDeviceSessions(), new LearnProgressTable()
 	);
 
 	/** The version the schema is at once {@link #ALL} has been applied, reported by {@code /health}. */
-	public static final int CURRENT_VERSION = 9;
+	public static final int CURRENT_VERSION = 10;
 	
 	private SchemaMigration() {}
 	
@@ -659,6 +659,42 @@ public final class SchemaMigration {
 				return false;
 			}
 			return schema.column(SESSIONS.name(), column.name()).unique();
+		}
+	}
+	
+	/**
+	 * Adds the learn area's progress table, so a second device sees the techniques an account has already
+	 * mastered instead of an empty wiki.
+	 * <p>
+	 * A new table rather than columns on an existing one, and therefore no {@code hasColumn} guard: the
+	 * initial migration creates the tables it names and no others, and this one is not among them, so it is
+	 * absent from a freshly created database exactly as it is from an old one.
+	 * <p>
+	 * The only query on it that is not by primary key is "everything this player has", which is the sync,
+	 * so that is the one index it gets.
+	 */
+	private static final class LearnProgressTable implements SqlMigration {
+		
+		@Override
+		public @NonNull Version version() {
+			return Version.of(10, 0);
+		}
+		
+		@Override
+		public @NonNull String description() {
+			return "remember a player's learn area progress across their devices";
+		}
+		
+		@Override
+		public void up(@NonNull SqlMigrationBuilder builder, @NonNull SqlMigrationSchema schema) throws SqlException {
+			table(builder, LEARN_PROGRESS, LEARN_USER_ID, LEARN_TECHNIQUE, LEARN_LEVEL, LEARN_SUB_LEVEL);
+			
+			builder.createIndex(LEARN_PROGRESS, "learn_progress_user_idx", index -> index.columns(LEARN_USER_ID));
+		}
+		
+		@Override
+		public void down(@NonNull SqlMigrationBuilder builder, @NonNull SqlMigrationSchema schema) throws SqlException {
+			builder.dropTable(LEARN_PROGRESS);
 		}
 	}
 }

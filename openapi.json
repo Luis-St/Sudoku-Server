@@ -607,6 +607,84 @@
         }
       }
     },
+    "/api/v1/learn/progress" : {
+      "get" : {
+        "tags" : [ "Learn" ],
+        "summary" : "Your learn area progress",
+        "description" : "Every exercise this account has finished, on any of its devices, plus how many techniques it has mastered. A technique is mastered when all of its exercises were solved USING it, so an exercise finished without the technique counts as done and earns nothing.",
+        "operationId" : "getLearnProgress",
+        "responses" : {
+          "200" : {
+            "description" : "OK",
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/LearnProgressResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/learn/sync" : {
+      "post" : {
+        "tags" : [ "Learn" ],
+        "summary" : "Report what this device has finished",
+        "description" : "The server keeps whichever state is FURTHER ALONG, never whichever arrived later: both devices of an account may work offline for as long as they like, so a stale PARTIAL must not land on top of a SOLVED and un-earn an achievement the player has already been shown. The response carries everything the account holds afterwards, which is what the device adopts.",
+        "operationId" : "syncLearnProgress",
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/LearnSyncRequest"
+              }
+            }
+          }
+        },
+        "responses" : {
+          "200" : {
+            "description" : "OK",
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/LearnProgressResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/learn/{technique}" : {
+      "delete" : {
+        "tags" : [ "Learn" ],
+        "summary" : "Clear one technique's training",
+        "description" : "The player asking to start a technique over. It is the one call that may take a solve away, which is why it names a single technique rather than clearing the area.",
+        "operationId" : "resetLearnTechnique",
+        "parameters" : [ {
+          "name" : "technique",
+          "in" : "path",
+          "description" : "The technique's identifier",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "description" : "OK",
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/LearnProgressResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/match-requests/{id}" : {
       "delete" : {
         "tags" : [ "Presence" ],
@@ -2347,6 +2425,57 @@
           }
         }
       },
+      "LearnSyncRequest" : {
+        "type" : "object",
+        "properties" : {
+          "requireEntries" : {
+            "type" : "array",
+            "items" : {
+              "$ref" : "#/components/schemas/LearnSyncEntry"
+            }
+          },
+          "entries" : {
+            "type" : "array",
+            "items" : {
+              "$ref" : "#/components/schemas/LearnSyncEntry"
+            }
+          }
+        }
+      },
+      "LearnSyncEntry" : {
+        "type" : "object",
+        "properties" : {
+          "requireTechnique" : {
+            "type" : "string"
+          },
+          "requireLevel" : {
+            "type" : "integer",
+            "format" : "int32"
+          },
+          "requireSubLevel" : {
+            "type" : "integer",
+            "format" : "int32"
+          },
+          "requireState" : {
+            "type" : "string"
+          },
+          "technique" : {
+            "type" : "string"
+          },
+          "level" : {
+            "type" : "integer",
+            "format" : "int32"
+          },
+          "subLevel" : {
+            "type" : "integer",
+            "format" : "int32"
+          },
+          "state" : {
+            "type" : "string"
+          }
+        },
+        "required" : [ "requireLevel", "requireSubLevel" ]
+      },
       "LinkDeviceRequest" : {
         "type" : "object",
         "properties" : {
@@ -2834,6 +2963,46 @@
           }
         },
         "required" : [ "elapsedMs", "attempts" ]
+      },
+      "LearnProgressResponse" : {
+        "type" : "object",
+        "properties" : {
+          "entries" : {
+            "type" : "array",
+            "items" : {
+              "$ref" : "#/components/schemas/LearnProgressEntry"
+            }
+          },
+          "mastered" : {
+            "type" : "integer",
+            "format" : "int32"
+          },
+          "accepted" : {
+            "type" : "integer",
+            "format" : "int32"
+          }
+        },
+        "required" : [ "mastered", "accepted" ]
+      },
+      "LearnProgressEntry" : {
+        "type" : "object",
+        "properties" : {
+          "technique" : {
+            "type" : "string"
+          },
+          "level" : {
+            "type" : "integer",
+            "format" : "int32"
+          },
+          "subLevel" : {
+            "type" : "integer",
+            "format" : "int32"
+          },
+          "state" : {
+            "type" : "string"
+          }
+        },
+        "required" : [ "level", "subLevel" ]
       },
       "LinkCodeResponse" : {
         "type" : "object",
