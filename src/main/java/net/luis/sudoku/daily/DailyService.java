@@ -317,12 +317,24 @@ public final class DailyService {
 	}
 	
 	/**
-	 * Spends banked restore points to repair a broken streak, patching it up to yesterday so today's
-	 * ordinary {@link #submit} sees a consecutive continuation.
+	 * Spends banked restore points to repair a broken streak.
+	 * <p>
+	 * Two shapes of gap, repaired the same way from the player's side. A gap that is still open - today's
+	 * daily unsolved - is patched up to yesterday, so today's ordinary {@link #submit} sees a consecutive
+	 * continuation. A break the player has already solved past is repaired from what
+	 * {@link Streak#completedOn} wrote down about it, for {@link Streak#RESTORE_WINDOW_DAYS} days after the
+	 * run restarted.
+	 * <p>
+	 * That second half is issue 2.2.0/6: the gap used to be nothing but the distance between
+	 * {@code lastCompletedDate} and today, so the moment today's daily was solved the distance was zero,
+	 * every restore came back {@code STREAK_RESTORE_NOT_NEEDED}, and the banked points could no longer be
+	 * spent on that break at all. Playing the daily is precisely what the player was going to do, so the
+	 * window was usually closed before they knew it existed.
 	 *
 	 * @throws ApiException {@code STREAK_RESTORE_NOT_NEEDED} if the streak has never started, or there is
-	 *   no gap to repair; {@code INSUFFICIENT_RESTORE_POINTS} if there are fewer banked points than missed
-	 *   days; {@code INSUFFICIENT_BALANCE} if the player cannot afford the Rhubarb cost
+	 *   no gap left to repair inside its window; {@code INSUFFICIENT_RESTORE_POINTS} if there are fewer
+	 *   banked points than missed days; {@code INSUFFICIENT_BALANCE} if the player cannot afford the
+	 *   Rhubarb cost
 	 */
 	public @NonNull Streak restoreStreak(@NonNull Principal actor) {
 		LocalDate today = this.today();
@@ -335,16 +347,23 @@ public final class DailyService {
 			}
 			
 			long gap = ChronoUnit.DAYS.between(lastCompleted, today);
-			int missedDays = (int) (gap - 1);
-			if (missedDays <= 0) {
-				throw new ApiException(ErrorCode.STREAK_RESTORE_NOT_NEEDED, "There is no gap to restore");
+			int openGapDays = (int) (gap - 1);
+			// The open gap comes first: it is the break that is still growing, and the remembered one, if
+			// there is also a remembered one, belongs to the run before it and is repaired on its own.
+			boolean repairRecordedBreak = openGapDays <= 0;
+			int missedDays = repairRecordedBreak ? streak.breakMissedDays() : openGapDays;
+			if (repairRecordedBreak && !streak.hasRepairableBreak(today)) {
+				LocalDate expired = streak.restorableUntil();
+				throw new ApiException(ErrorCode.STREAK_RESTORE_NOT_NEEDED, expired == null
+					? "There is no gap to restore"
+					: "That streak break could only be restored until " + expired);
 			}
 			if (missedDays > streak.restorePoints()) {
 				throw new ApiException(ErrorCode.INSUFFICIENT_RESTORE_POINTS, "You need " + missedDays + " restore points, but only have " + streak.restorePoints());
 			}
 			
 			this.currency.spend(connection, actor.userId(), missedDays * RESTORE_COST_PER_DAY, LedgerReason.SPEND_STREAK_RESTORE);
-			Streak restored = streak.restoredBy(missedDays, today.minusDays(1));
+			Streak restored = repairRecordedBreak ? streak.repairedBreak() : streak.restoredBy(missedDays, today.minusDays(1));
 			this.streaks.save(connection, restored);
 			return restored;
 		});

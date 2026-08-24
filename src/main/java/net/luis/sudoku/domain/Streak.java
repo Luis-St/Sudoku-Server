@@ -14,16 +14,35 @@ import java.util.UUID;
  * @param longest the best run ever achieved
  * @param lastCompletedDate the most recent day solved, or null if never
  * @param restorePoints banked streak-restore points, capped at {@link #MAX_RESTORE_POINTS}
+ * @param breakMissedDays the days missed by the most recent break that has not been repaired, 0 if there
+ *   is none
+ * @param breakPreviousStreak the run length that break ended, so repairing it can hand the days back
+ * @param breakRecordedOn the day the run restarted after that break, from which its restore window runs;
+ *   null if there is no unrepaired break
  */
-public record Streak(@NonNull UUID userId, int current, int longest, @Nullable LocalDate lastCompletedDate, int restorePoints) {
+public record Streak(
+	@NonNull UUID userId, int current, int longest, @Nullable LocalDate lastCompletedDate, int restorePoints,
+	int breakMissedDays, int breakPreviousStreak, @Nullable LocalDate breakRecordedOn
+) {
 	
 	/** Every this many consecutive days banks one restore point. */
 	public static final int POINT_THRESHOLD_DAYS = 7;
 	/** A banked point repairs one missed day at {@code RESTORE_COST_PER_DAY} Rhubarb. */
 	public static final int MAX_RESTORE_POINTS = 3;
+	/**
+	 * How many days after the run restarts a break stays repairable (issue 2.2.0/6).
+	 * <p>
+	 * A gap used to be visible only as the distance between {@code lastCompletedDate} and today, which meant
+	 * solving today's daily erased it: the last completed date became today, the distance became zero, and
+	 * every restore afterwards was refused as {@code STREAK_RESTORE_NOT_NEEDED} with the banked points still
+	 * sitting there unspendable. Since playing the daily is the one thing a player in that position is
+	 * certain to do, the window was in practice closed before they ever saw it. The break is therefore
+	 * remembered on the row and stays repairable for this many days past the restart.
+	 */
+	public static final int RESTORE_WINDOW_DAYS = 7;
 	
 	public static @NonNull Streak none(@NonNull UUID userId) {
-		return new Streak(userId, 0, 0, null, 0);
+		return new Streak(userId, 0, 0, null, 0, 0, 0, null);
 	}
 	
 	/**
@@ -43,7 +62,7 @@ public record Streak(@NonNull UUID userId, int current, int longest, @Nullable L
 	 */
 	public @NonNull Streak completedOn(@NonNull LocalDate date) {
 		if (this.lastCompletedDate == null) {
-			return new Streak(this.userId, 1, Math.max(1, this.longest), date, this.restorePoints);
+			return new Streak(this.userId, 1, Math.max(1, this.longest), date, this.restorePoints, this.breakMissedDays, this.breakPreviousStreak, this.breakRecordedOn);
 		}
 		if (!date.isAfter(this.lastCompletedDate)) {
 			return this;
@@ -54,7 +73,16 @@ public record Streak(@NonNull UUID userId, int current, int longest, @Nullable L
 		int points = consecutive && next % POINT_THRESHOLD_DAYS == 0
 			? Math.min(MAX_RESTORE_POINTS, this.restorePoints + 1)
 			: this.restorePoints;
-		return new Streak(this.userId, next, Math.max(next, this.longest), date, points);
+		if (consecutive) {
+			return new Streak(this.userId, next, Math.max(next, this.longest), date, points, this.breakMissedDays, this.breakPreviousStreak, this.breakRecordedOn);
+		}
+		
+		// The break this solve just walked past, written down so it survives its own repair window rather
+		// than being erased by the very solve that restarted the run - see RESTORE_WINDOW_DAYS. Only the
+		// most recent one is kept: an older unrepaired break is superseded here, since a player who has let
+		// a second run lapse is no longer restoring the first.
+		int missed = (int) (date.toEpochDay() - this.lastCompletedDate.toEpochDay()) - 1;
+		return new Streak(this.userId, next, Math.max(next, this.longest), date, points, missed, this.current, date);
 	}
 	
 	/**
@@ -91,7 +119,7 @@ public record Streak(@NonNull UUID userId, int current, int longest, @Nullable L
 		LocalDate anchor = this.lastCompletedDate == null || claimedLastCompleted.isAfter(this.lastCompletedDate)
 			? claimedLastCompleted
 			: this.lastCompletedDate;
-		return new Streak(this.userId, claimedCurrent, Math.max(claimedCurrent, this.longest), anchor, this.restorePoints);
+		return new Streak(this.userId, claimedCurrent, Math.max(claimedCurrent, this.longest), anchor, this.restorePoints, this.breakMissedDays, this.breakPreviousStreak, this.breakRecordedOn);
 	}
 	
 	/**
@@ -102,6 +130,53 @@ public record Streak(@NonNull UUID userId, int current, int longest, @Nullable L
 	 */
 	public @NonNull Streak restoredBy(int days, @NonNull LocalDate through) {
 		int next = this.current + days;
-		return new Streak(this.userId, next, Math.max(next, this.longest), through, this.restorePoints - days);
+		return new Streak(this.userId, next, Math.max(next, this.longest), through, this.restorePoints - days, this.breakMissedDays, this.breakPreviousStreak, this.breakRecordedOn);
+	}
+	
+	/**
+	 * The last day the remembered break can still be repaired, or null when there is none to repair.
+	 *
+	 * @return {@link #breakRecordedOn} plus {@link #RESTORE_WINDOW_DAYS}, the day the offer expires after
+	 */
+	public @Nullable LocalDate restorableUntil() {
+		if (this.breakRecordedOn == null || this.breakMissedDays <= 0) {
+			return null;
+		}
+		return this.breakRecordedOn.plusDays(RESTORE_WINDOW_DAYS);
+	}
+	
+	/** Whether the remembered break is still inside its window on {@code today}. */
+	public boolean hasRepairableBreak(@NonNull LocalDate today) {
+		LocalDate until = this.restorableUntil();
+		return until != null && !today.isAfter(until);
+	}
+	
+	/**
+	 * The days a restore would repair right now: the live gap while today is still unsolved, and otherwise
+	 * the remembered break for as long as its window is open. 0 when there is nothing to repair.
+	 */
+	public int repairableMissedDays(@NonNull LocalDate today) {
+		if (this.lastCompletedDate != null) {
+			int gap = (int) (today.toEpochDay() - this.lastCompletedDate.toEpochDay()) - 1;
+			if (gap > 0) {
+				return gap;
+			}
+		}
+		return this.hasRepairableBreak(today) ? this.breakMissedDays : 0;
+	}
+	
+	/**
+	 * Repairs the remembered break: the days it cost and the run it ended are handed back, so the count
+	 * reads as though the gap had been bridged before the current run started.
+	 * <p>
+	 * The anchor is deliberately left alone - unlike {@link #restoredBy}, which patches a still-open gap up
+	 * to yesterday, this repairs a break the player has already solved past, and moving
+	 * {@code lastCompletedDate} backwards would make the next solve read as a fresh break.
+	 * <p>
+	 * Pure: the caller validates the spend is affordable (points and currency) before calling this.
+	 */
+	public @NonNull Streak repairedBreak() {
+		int next = this.current + this.breakMissedDays + this.breakPreviousStreak;
+		return new Streak(this.userId, next, Math.max(next, this.longest), this.lastCompletedDate, this.restorePoints - this.breakMissedDays, 0, 0, null);
 	}
 }

@@ -213,7 +213,7 @@ public class DailyHandler {
 			request.parseSolveOrder()
 		);
 		
-		ctx.json(DailyResultResponse.of(this.daily.submit(actor, submit)));
+		ctx.json(DailyResultResponse.of(this.daily.submit(actor, submit), this.daily.today()));
 	}
 	
 	@OpenApi(
@@ -238,7 +238,7 @@ public class DailyHandler {
 		StreakSyncRequest request = ctx.bodyAsClass(StreakSyncRequest.class);
 		
 		Streak merged = this.daily.syncStreak(actor, request.requireCurrent(), request.parseLastCompletedDate());
-		ctx.json(DailyResultResponse.StreakResponse.of(merged));
+		ctx.json(DailyResultResponse.StreakResponse.of(merged, this.daily.today()));
 	}
 	
 	@OpenApi(
@@ -252,7 +252,7 @@ public class DailyHandler {
 	)
 	public void streak(@NonNull Context ctx) {
 		Principal actor = this.authentication.require(ctx);
-		ctx.json(DailyResultResponse.StreakResponse.of(this.daily.streak(actor.userId())));
+		ctx.json(DailyResultResponse.StreakResponse.of(this.daily.streak(actor.userId()), this.daily.today()));
 	}
 	
 	@OpenApi(
@@ -271,7 +271,7 @@ public class DailyHandler {
 	)
 	public void restoreStreak(@NonNull Context ctx) {
 		Principal actor = this.authentication.require(ctx);
-		ctx.json(DailyResultResponse.StreakResponse.of(this.daily.restoreStreak(actor)));
+		ctx.json(DailyResultResponse.StreakResponse.of(this.daily.restoreStreak(actor), this.daily.today()));
 	}
 	
 	@OpenApi(

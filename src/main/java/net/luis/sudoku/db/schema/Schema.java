@@ -217,6 +217,14 @@ public final class Schema {
 	public static final SqlColumn<Streak, LocalDate> STREAK_LAST_COMPLETED = STREAKS.column("last_completed_date", SqlTypes.LOCAL_DATE, Streak::lastCompletedDate);
 	/** Banked at every 7th consecutive day, capped at {@link Streak#MAX_RESTORE_POINTS}; spent to repair a gap. */
 	public static final SqlColumn<Streak, Integer> STREAK_RESTORE_POINTS = STREAKS.column("restore_points", SqlTypes.INTEGER, Streak::restorePoints, col -> col.notNull().defaultValue(0));
+	/**
+	 * The most recent break that has not been repaired: the days it cost, the run it ended, and the day the
+	 * run restarted. Remembered rather than derived from {@code last_completed_date}, because solving the
+	 * daily moves that date to today and would otherwise erase the very gap the restore is for.
+	 */
+	public static final SqlColumn<Streak, Integer> STREAK_BREAK_MISSED_DAYS = STREAKS.column("break_missed_days", SqlTypes.INTEGER, Streak::breakMissedDays, col -> col.notNull().defaultValue(0));
+	public static final SqlColumn<Streak, Integer> STREAK_BREAK_PREVIOUS = STREAKS.column("break_previous_streak", SqlTypes.INTEGER, Streak::breakPreviousStreak, col -> col.notNull().defaultValue(0));
+	public static final SqlColumn<Streak, LocalDate> STREAK_BREAK_RECORDED_ON = STREAKS.column("break_recorded_on", SqlTypes.LOCAL_DATE, Streak::breakRecordedOn);
 	public static final SqlTable<StatsEntry> STATS = SqlTable.create(StatsEntry.class, "stats");
 	public static final SqlColumn<StatsEntry, UUID> STATS_USER_ID = STATS.column("user_id", UUID_TYPE, StatsEntry::userId, col -> col.primaryKey().notNull());
 	// --- stats ---------------------------------------------------------------------------------

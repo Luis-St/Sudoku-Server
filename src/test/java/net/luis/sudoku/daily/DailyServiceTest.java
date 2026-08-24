@@ -542,7 +542,12 @@ class DailyServiceTest extends PostgresTest {
 	}
 	
 	private void seedStreak(UUID userId, int current, int longest, LocalDate lastCompleted, int restorePoints) {
-		database.execute(connection -> this.streaks.save(connection, new Streak(userId, current, longest, lastCompleted, restorePoints)));
+		database.execute(connection -> this.streaks.save(connection, new Streak(userId, current, longest, lastCompleted, restorePoints, 0, 0, null)));
+	}
+	
+	/** A run that ended in a break the player has already solved past, as {@code completedOn} records it. */
+	private void seedBrokenStreak(UUID userId, int current, LocalDate lastCompleted, int restorePoints, int missedDays, int previousStreak, LocalDate brokenOn) {
+		database.execute(connection -> this.streaks.save(connection, new Streak(userId, current, previousStreak + missedDays + current, lastCompleted, restorePoints, missedDays, previousStreak, brokenOn)));
 	}
 	
 	@Test
@@ -650,6 +655,85 @@ class DailyServiceTest extends PostgresTest {
 		
 		ApiException e = assertThrows(ApiException.class, () -> this.daily.restoreStreak(player));
 		assertEquals(ErrorCode.STREAK_RESTORE_NOT_NEEDED, e.code());
+	}
+	
+	@Test
+	void restoreStreak_afterTodaysDailyClosedTheGap_stillRepairsTheBreak() {
+		// Issue 2.2.0/6: solving today used to move the last completed date to today, so the gap the
+		// restore was for stopped existing and the banked points could never be spent on it.
+		Principal player = this.player("Owner");
+		this.seedStreak(player.userId(), 5, 5, this.daily.today().minusDays(3), 2);
+		this.currency.sync(player.userId(), 100, 5);
+		this.daily.submit(player, this.solvedSubmission(this.daily.today(), 3));
+		// Read after the submission, which mints the daily bonus of its own.
+		long before = this.currency.balance(player.userId());
+		
+		Streak restored = this.daily.restoreStreak(player);
+		
+		assertAll(
+			() -> assertEquals(8, restored.current(), "the five days, the two missed ones and today"),
+			() -> assertEquals(this.daily.today(), restored.lastCompletedDate(), "today stays the anchor"),
+			() -> assertEquals(0, restored.restorePoints()),
+			() -> assertEquals(before - 20, this.currency.balance(player.userId()), "ten Rhubarb per missed day")
+		);
+	}
+	
+	@Test
+	void restoreStreak_afterARepairedBreak_isRejected() {
+		Principal player = this.player("Owner");
+		this.seedStreak(player.userId(), 5, 5, this.daily.today().minusDays(2), 2);
+		this.currency.sync(player.userId(), 100, 5);
+		this.daily.submit(player, this.solvedSubmission(this.daily.today(), 3));
+		this.daily.restoreStreak(player);
+		
+		ApiException e = assertThrows(ApiException.class, () -> this.daily.restoreStreak(player));
+		assertEquals(ErrorCode.STREAK_RESTORE_NOT_NEEDED, e.code(), "one break is repaired once");
+	}
+	
+	@Test
+	void restoreStreak_afterTheWindowHasClosed_isRejected() {
+		Principal player = this.player("Owner");
+		LocalDate brokenOn = this.daily.today().minusDays(Streak.RESTORE_WINDOW_DAYS + 1);
+		this.seedBrokenStreak(player.userId(), 3, this.daily.today(), 3, 2, 5, brokenOn);
+		this.currency.sync(player.userId(), 100, 5);
+		
+		ApiException e = assertThrows(ApiException.class, () -> this.daily.restoreStreak(player));
+		assertAll(
+			() -> assertEquals(ErrorCode.STREAK_RESTORE_NOT_NEEDED, e.code()),
+			() -> assertTrue(e.getMessage().contains(brokenOn.plusDays(Streak.RESTORE_WINDOW_DAYS).toString()), "the message names the day the window closed")
+		);
+	}
+	
+	@Test
+	void restoreStreak_onTheLastDayOfTheWindow_isStillAccepted() {
+		Principal player = this.player("Owner");
+		LocalDate brokenOn = this.daily.today().minusDays(Streak.RESTORE_WINDOW_DAYS);
+		this.seedBrokenStreak(player.userId(), 3, this.daily.today(), 3, 2, 5, brokenOn);
+		this.currency.sync(player.userId(), 100, 5);
+		
+		Streak restored = this.daily.restoreStreak(player);
+		
+		assertAll(
+			() -> assertEquals(10, restored.current()),
+			() -> assertEquals(1, restored.restorePoints()),
+			() -> assertNull(restored.breakRecordedOn(), "the repaired break is not offered again")
+		);
+	}
+	
+	@Test
+	void streak_afterAMissedDay_remembersTheBreakForItsWindow() {
+		Principal player = this.player("Owner");
+		this.daily.submit(player, this.solvedSubmission(this.daily.today(), 3));
+		
+		this.now.set(NOW.plus(java.time.Duration.ofDays(3)));
+		DailyService.Submission later = this.daily.submit(player, this.solvedSubmission(this.daily.today(), 3));
+		
+		assertAll(
+			() -> assertEquals(2, later.streak().breakMissedDays(), "two days went by unsolved"),
+			() -> assertEquals(1, later.streak().breakPreviousStreak()),
+			() -> assertEquals(this.daily.today(), later.streak().breakRecordedOn()),
+			() -> assertEquals(2, later.streak().repairableMissedDays(this.daily.today()))
+		);
 	}
 	
 	@Test

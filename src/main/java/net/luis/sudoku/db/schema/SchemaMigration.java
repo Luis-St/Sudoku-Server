@@ -49,11 +49,11 @@ public final class SchemaMigration {
 	/** Every migration, in version order. */
 	public static final List<SqlMigration> ALL = List.of(
 		new InitialSchema(), new PresencePolling(), new ReinstatableKicks(), new MatchHintSetting(), new RecordedGames(), new MatchGivens(), new RescaledDifficulties(), new PooledPuzzles(),
-		new PerDeviceSessions(), new LearnProgressTable()
+		new PerDeviceSessions(), new LearnProgressTable(), new RestorableStreakBreak()
 	);
 
 	/** The version the schema is at once {@link #ALL} has been applied, reported by {@code /health}. */
-	public static final int CURRENT_VERSION = 10;
+	public static final int CURRENT_VERSION = 11;
 	
 	private SchemaMigration() {}
 	
@@ -695,6 +695,56 @@ public final class SchemaMigration {
 		@Override
 		public void down(@NonNull SqlMigrationBuilder builder, @NonNull SqlMigrationSchema schema) throws SqlException {
 			builder.dropTable(LEARN_PROGRESS);
+		}
+	}
+
+	/**
+	 * Remembers a streak break so it can still be repaired after the run has restarted (issue 2.2.0/6).
+	 * <p>
+	 * The gap used to exist only as the distance between {@code last_completed_date} and today, so solving
+	 * today's daily closed it: the restore was refused as {@code STREAK_RESTORE_NOT_NEEDED} and the banked
+	 * points could never be spent on that break again. See {@link net.luis.sudoku.domain.Streak}.
+	 * <p>
+	 * Guarded with {@code hasColumn} like {@link ReinstatableKicks}: a freshly created database already has
+	 * these columns, because {@link InitialSchema} renders {@code streaks} from {@link Schema} as it stands
+	 * now.
+	 */
+	private static final class RestorableStreakBreak implements SqlMigration {
+		
+		@Override
+		public @NonNull Version version() {
+			return Version.of(11, 0);
+		}
+		
+		@Override
+		public @NonNull String description() {
+			return "remember a streak break so it stays restorable after the run restarts";
+		}
+		
+		@Override
+		public void up(@NonNull SqlMigrationBuilder builder, @NonNull SqlMigrationSchema schema) throws SqlException {
+			if (!schema.hasColumn(STREAKS.name(), STREAK_BREAK_MISSED_DAYS.name())) {
+				builder.addColumn(STREAK_BREAK_MISSED_DAYS, STREAK_BREAK_MISSED_DAYS.type(), options -> options.notNull().defaultValue(0));
+			}
+			if (!schema.hasColumn(STREAKS.name(), STREAK_BREAK_PREVIOUS.name())) {
+				builder.addColumn(STREAK_BREAK_PREVIOUS, STREAK_BREAK_PREVIOUS.type(), options -> options.notNull().defaultValue(0));
+			}
+			if (!schema.hasColumn(STREAKS.name(), STREAK_BREAK_RECORDED_ON.name())) {
+				builder.addColumn(STREAK_BREAK_RECORDED_ON, STREAK_BREAK_RECORDED_ON.type());
+			}
+		}
+		
+		@Override
+		public void down(@NonNull SqlMigrationBuilder builder, @NonNull SqlMigrationSchema schema) throws SqlException {
+			if (schema.hasColumn(STREAKS.name(), STREAK_BREAK_RECORDED_ON.name())) {
+				builder.dropColumn(STREAK_BREAK_RECORDED_ON);
+			}
+			if (schema.hasColumn(STREAKS.name(), STREAK_BREAK_PREVIOUS.name())) {
+				builder.dropColumn(STREAK_BREAK_PREVIOUS);
+			}
+			if (schema.hasColumn(STREAKS.name(), STREAK_BREAK_MISSED_DAYS.name())) {
+				builder.dropColumn(STREAK_BREAK_MISSED_DAYS);
+			}
 		}
 	}
 }

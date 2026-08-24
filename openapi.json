@@ -2817,9 +2817,16 @@
           "restorePoints" : {
             "type" : "integer",
             "format" : "int32"
+          },
+          "restorableMissedDays" : {
+            "type" : "integer",
+            "format" : "int32"
+          },
+          "restorableUntil" : {
+            "type" : "string"
           }
         },
-        "required" : [ "current", "longest", "restorePoints" ]
+        "required" : [ "current", "longest", "restorePoints", "restorableMissedDays" ]
       },
       "DailyV2Response" : {
         "type" : "object",
