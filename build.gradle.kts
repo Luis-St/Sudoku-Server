@@ -73,6 +73,27 @@ dependencies {
 	testImplementation(libs.testcontainers.junit)
 }
 
+// The running server has to be able to name its own build (`GET /health`), and the version is declared
+// here - so it is written into a resource the jar carries rather than copied into a Java constant that
+// would then have to be bumped twice. On the main resources, so tests and `./gradlew run` see the same
+// value the shipped jar does.
+val versionResourceDir = layout.buildDirectory.dir("generated/version")
+val generateVersionResource = tasks.register("generateVersionResource") {
+	description = "Writes the project version into a resource the server reads at runtime"
+	group = "api"
+
+	inputs.property("version", version.toString())
+	outputs.dir(versionResourceDir)
+
+	doLast {
+		val file = versionResourceDir.get().file("net/luis/sudoku/version.properties").asFile
+		file.parentFile.mkdirs()
+		file.writeText("version=$version\n")
+	}
+}
+
+sourceSets["main"].resources.srcDir(generateVersionResource.map { versionResourceDir.get() })
+
 tasks.test {
 	useJUnitPlatform()
 }

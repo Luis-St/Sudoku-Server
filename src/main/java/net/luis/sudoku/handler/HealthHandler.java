@@ -18,8 +18,8 @@ import java.util.function.IntSupplier;
 /**
  * Liveness endpoint (server-spec 14).
  * <p>
- * Both numbers and the database probe are supplied rather than read directly, so this class stays
- * constructible without a service graph behind it.
+ * The build version, both numbers and the database probe are supplied rather than read directly, so this
+ * class stays constructible without a service graph behind it.
  * <p>
  * The probe is the point. Answering {@code UP} purely because the HTTP thread is running says nothing:
  * every route on this server needs the database, so a process whose pool has died still answers, still
@@ -31,6 +31,7 @@ public class HealthHandler {
 	
 	private static final Logger log = LoggerFactory.getLogger(HealthHandler.class);
 	
+	private final String version;
 	private final int schemaVersion;
 	private final IntSupplier activeMatchCount;
 	private final BooleanSupplier databaseReachable;
@@ -55,7 +56,8 @@ public class HealthHandler {
 	 */
 	private final AtomicBoolean reachable = new AtomicBoolean(true);
 	
-	public HealthHandler(int schemaVersion, @NonNull IntSupplier activeMatchCount, @NonNull BooleanSupplier databaseReachable, @NonNull Clock clock) {
+	public HealthHandler(@NonNull String version, int schemaVersion, @NonNull IntSupplier activeMatchCount, @NonNull BooleanSupplier databaseReachable, @NonNull Clock clock) {
+		this.version = version;
 		this.schemaVersion = schemaVersion;
 		this.activeMatchCount = activeMatchCount;
 		this.databaseReachable = databaseReachable;
@@ -93,7 +95,7 @@ public class HealthHandler {
 		}
 		
 		ctx.status(up ? HttpStatus.OK : HttpStatus.SERVICE_UNAVAILABLE);
-		ctx.json(new HealthResponse(up ? "UP" : "DOWN", this.uptimeSeconds(), this.schemaVersion, this.activeMatchCount.getAsInt()));
+		ctx.json(new HealthResponse(up ? "UP" : "DOWN", this.version, this.uptimeSeconds(), this.schemaVersion, this.activeMatchCount.getAsInt()));
 	}
 	
 	/**

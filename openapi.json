@@ -2899,6 +2899,9 @@
           "status" : {
             "type" : "string"
           },
+          "version" : {
+            "type" : "string"
+          },
           "uptimeSeconds" : {
             "type" : "integer",
             "format" : "int64"

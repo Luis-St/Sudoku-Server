@@ -13,7 +13,7 @@ import static org.junit.jupiter.api.Assertions.*;
 class HealthHandlerTest {
 	
 	private static HealthHandler handler(MovableClock clock) {
-		return new HealthHandler(8, () -> 0, () -> true, clock);
+		return new HealthHandler("2.0.0", 8, () -> 0, () -> true, clock);
 	}
 	
 	@Test
