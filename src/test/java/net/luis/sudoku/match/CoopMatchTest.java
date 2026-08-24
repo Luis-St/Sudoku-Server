@@ -483,6 +483,98 @@ class CoopMatchTest {
 	}
 	
 	@Test
+	void place_aCorrectDigit_clearsThatDigitFromThePeersNotes() {
+		// Multiplayer item 1 of 2.2.0: spec 5.6's auto-clear-peers, which co-op never had. Single-player does
+		// it in the client's board editor, which no multiplayer mode goes through - and the co-op notes are
+		// the group's and live here, so this is the only place that can rub the placed digit out of them.
+		// It goes out as an ordinary NOTE removal, so a client applies it through the path it already has.
+		this.start(false, this.alice, this.bob);
+		int cell = MatchFixture.holes(this.puzzle).getFirst();
+		int peer = this.peerHole(cell);
+		int digit = this.puzzle.solutionAt(cell);
+		send(this.coop, this.alice, MessageType.NOTE, Map.of("cell", peer, "digit", digit, "add", true));
+		this.bob.clear();
+		this.carol.clear();
+		
+		place(this.coop, this.alice, cell, digit);
+		
+		MessageEnvelope note = this.bob.lastOf(MessageType.NOTE);
+		connect(this.coop, this.carol);
+		assertAll(
+			() -> assertNotNull(note),
+			() -> assertEquals(peer, note.payloadOrEmpty().get("cell")),
+			() -> assertEquals(digit, note.payloadOrEmpty().get("digit")),
+			() -> assertEquals(false, note.payloadOrEmpty().get("add")),
+			// And it is gone from the snapshot too, so a reconnecting player is not handed it back.
+			() -> assertEquals(Map.of(), this.carol.lastOf(MessageType.MATCH_STATE).payloadOrEmpty().get("notes"))
+		);
+	}
+	
+	@Test
+	void place_aCorrectDigit_leavesANoteOnAnotherDigitAlone() {
+		// Only the placed digit becomes impossible. Everything else the peer cell could still hold is the
+		// group's own work and has to survive the entry.
+		this.start(false, this.alice, this.bob);
+		int cell = MatchFixture.holes(this.puzzle).getFirst();
+		int peer = this.peerHole(cell);
+		int digit = this.puzzle.solutionAt(cell);
+		int other = digit == 1 ? 2 : 1;
+		send(this.coop, this.alice, MessageType.NOTE, Map.of("cell", peer, "digit", other, "add", true));
+		this.carol.clear();
+		
+		place(this.coop, this.alice, cell, digit);
+		
+		connect(this.coop, this.carol);
+		assertEquals(
+			Map.of(Integer.toString(peer), 1 << other),
+			this.carol.lastOf(MessageType.MATCH_STATE).payloadOrEmpty().get("notes")
+		);
+	}
+	
+	@Test
+	void place_aCorrectDigit_leavesANoteOutsideItsUnitsAlone() {
+		// A cell that shares no row, column or region with the entry learns nothing from it, so its notes
+		// are none of auto-clear-peers' business.
+		this.start(false, this.alice, this.bob);
+		int cell = MatchFixture.holes(this.puzzle).getFirst();
+		int elsewhere = this.nonPeerHole(cell);
+		int digit = this.puzzle.solutionAt(cell);
+		send(this.coop, this.alice, MessageType.NOTE, Map.of("cell", elsewhere, "digit", digit, "add", true));
+		this.carol.clear();
+		
+		place(this.coop, this.alice, cell, digit);
+		
+		connect(this.coop, this.carol);
+		assertEquals(
+			Map.of(Integer.toString(elsewhere), 1 << digit),
+			this.carol.lastOf(MessageType.MATCH_STATE).payloadOrEmpty().get("notes")
+		);
+	}
+	
+	/** @return another empty cell sharing the given cell's row or column - one auto-clear-peers reaches */
+	private int peerHole(int cell) {
+		int n = MatchFixture.SIZE.n();
+		for (int hole : MatchFixture.holes(this.puzzle)) {
+			if (hole != cell && (hole / n == cell / n || hole % n == cell % n)) {
+				return hole;
+			}
+		}
+		throw new IllegalStateException("the fixture puzzle has no second empty cell in the units of " + cell);
+	}
+	
+	/** @return an empty cell sharing no row, column or region with the given one */
+	private int nonPeerHole(int cell) {
+		int n = MatchFixture.SIZE.n();
+		for (int hole : MatchFixture.holes(this.puzzle)) {
+			boolean sameRegion = this.puzzle.puzzle().partition().regionOf(hole) == this.puzzle.puzzle().partition().regionOf(cell);
+			if (hole != cell && hole / n != cell / n && hole % n != cell % n && !sameRegion) {
+				return hole;
+			}
+		}
+		throw new IllegalStateException("the fixture puzzle has no empty cell outside the units of " + cell);
+	}
+	
+	@Test
 	void onMessage_aDuelOnlyType_isRejected() {
 		this.start(false, this.alice, this.bob);
 		this.alice.clear();

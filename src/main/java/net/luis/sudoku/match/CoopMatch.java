@@ -3,6 +3,7 @@ package net.luis.sudoku.match;
 import net.luis.sudoku.config.MatchConfig;
 import net.luis.sudoku.domain.Match;
 import net.luis.sudoku.generation.GeneratedPuzzle;
+import net.luis.sudoku.grid.Puzzle;
 import org.jspecify.annotations.NonNull;
 import org.jspecify.annotations.Nullable;
 
@@ -110,6 +111,11 @@ public final class CoopMatch extends LiveMatch {
 			// The notes on a solved cell annotate nothing. Dropped here rather than left for the clients to
 			// forget individually, so a reconnecting player is not handed candidates for a filled cell.
 			this.notes.remove(cell);
+			// Multiplayer item 1 of 2.2.0: and the digit is impossible everywhere it can now see itself, so
+			// it goes out of the notes all down the row, column and region as well - spec 5.6's
+			// auto-clear-peers, which co-op never had because the notes are held here rather than in the
+			// client's board editor.
+			this.clearPeerNotes(cell, digit);
 			if (cell.equals(this.hintCell)) {
 				// The offer has been taken - by its owner spending it, or by anybody simply solving the cell
 				// first, which is just as good an answer to "look here".
@@ -164,6 +170,66 @@ public final class CoopMatch extends LiveMatch {
 		if (this.match.livesEnabled() && this.sharedLivesLeft <= 0) {
 			this.endMatch(null, EndReason.LIVES_EXHAUSTED);
 		}
+	}
+	
+	/**
+	 * Removes a placed digit from the shared notes of every cell that shares its row, column or region.
+	 * <p>
+	 * Spec 5.6's auto-clear-peers. Single-player does this in the client's board editor, which co-op does not
+	 * go through: the pen layer is placed here and the notes are held here, so this is the only place that
+	 * can do it for the group. Without it four people read a note grid that still offered a digit already
+	 * sitting in the same unit, and every one of them had to rub it out by hand.
+	 * </p>
+	 * <p>
+	 * Each removal is broadcast as an ordinary {@link MessageType#NOTE} frame, so a client applies it through
+	 * the path it already has and no new message type is needed - which also means a client that has not been
+	 * updated is corrected by the server rather than left with the stale candidates.
+	 * </p>
+	 *
+	 * @param cell The cell the digit was placed in
+	 * @param digit The digit that was placed
+	 */
+	private void clearPeerNotes(int cell, int digit) {
+		int bit = 1 << digit;
+		for (int peer : this.peersOf(cell)) {
+			int mask = this.notes.getOrDefault(peer, 0);
+			if ((mask & bit) == 0) {
+				continue;
+			}
+			int updated = mask & ~bit;
+			if (updated == 0) {
+				this.notes.remove(peer);
+			} else {
+				this.notes.put(peer, updated);
+			}
+			this.broadcast(MessageEnvelope.of(MessageType.NOTE, Map.of(
+				"cell", peer,
+				"digit", digit,
+				"add", false
+			)));
+		}
+	}
+	
+	/**
+	 * Returns every other cell sharing the given cell's row, column or region.
+	 *
+	 * @param cell The cell to collect the peers of
+	 * @return The peer cell indices, without the cell itself
+	 */
+	private @NonNull Set<Integer> peersOf(int cell) {
+		Puzzle puzzle = this.puzzle.puzzle();
+		Set<Integer> peers = new HashSet<>();
+		for (int peer : puzzle.rowCells(puzzle.size().rowOf(cell))) {
+			peers.add(peer);
+		}
+		for (int peer : puzzle.columnCells(puzzle.size().columnOf(cell))) {
+			peers.add(peer);
+		}
+		for (int peer : puzzle.regionCells(puzzle.partition().regionOf(cell))) {
+			peers.add(peer);
+		}
+		peers.remove(cell);
+		return peers;
 	}
 	
 	/**
