@@ -912,6 +912,44 @@ class DailyServiceTest extends PostgresTest {
 	}
 	
 	@Test
+	void syncStreak_aClaimThatCountsOverARememberedBreak_isNotBelieved() {
+		// Issue 2.2.2/1, end to end. A device whose own count walked straight over the missed day offered
+		// the pre-break run back with today's date on it; the server adopted it, and the restore that
+		// followed then handed the same run over a second time out of `breakPreviousStreak`.
+		Principal player = this.player("Owner");
+		LocalDate today = this.daily.today();
+		this.seedStreak(player.userId(), 22, 22, today.minusDays(2), 3);
+		this.currency.sync(player.userId(), 100, 5);
+		this.daily.submit(player, this.solvedSubmission(today, 3));
+		
+		Streak merged = this.daily.syncStreak(player, 23, today);
+		Streak restored = this.daily.restoreStreak(player);
+		
+		assertAll(
+			() -> assertEquals(1, merged.current(), "the run restarted today, so a 23 day run ending today is not one"),
+			() -> assertEquals(24, restored.current(), "the twenty-two days, the missed one and today - counted once"),
+			() -> assertEquals(2, restored.restorePoints(), "one point spent on the one missed day")
+		);
+	}
+	
+	@Test
+	void syncStreak_aClaimThatFitsInsideTheRunSinceTheBreak_isStillAdopted() {
+		// The cap is evidence about one run, not a blanket refusal: days solved offline since the break
+		// restarted the count are exactly what this endpoint is for.
+		Principal player = this.player("Owner");
+		LocalDate today = this.daily.today();
+		this.seedBrokenStreak(player.userId(), 1, today.minusDays(2), 1, 1, 5, today.minusDays(2));
+		
+		Streak merged = this.daily.syncStreak(player, 3, today);
+		
+		assertAll(
+			() -> assertEquals(3, merged.current()),
+			() -> assertEquals(today, merged.lastCompletedDate()),
+			() -> assertEquals(1, merged.breakMissedDays(), "the break is still there to repair")
+		);
+	}
+	
+	@Test
 	void leaderboard_forLisa_isAllowed() {
 		Principal player = this.player("Owner");
 		this.daily.submit(player, this.solvedSubmission(this.daily.today(), 6));

@@ -103,6 +103,9 @@ public record Streak(
 	 * {@code restorePoints} are deliberately untouched. They are a spendable resource earned every
 	 * {@link #POINT_THRESHOLD_DAYS} days through verified solves, and minting them from an unverified
 	 * claim would turn a self-reported number into currency.
+	 * <p>
+	 * A claim is believed only as far as {@link #claimableRunLength} allows: a remembered break is
+	 * evidence about the current run that the claim cannot talk over.
 	 *
 	 * @param claimedCurrent the client's own consecutive-day count
 	 * @param claimedLastCompleted the day that count ends on, which becomes the anchor the next verified
@@ -110,7 +113,8 @@ public record Streak(
 	 * @return the merged streak, or {@code this} when the claim adds nothing
 	 */
 	public @NonNull Streak mergedWith(int claimedCurrent, @NonNull LocalDate claimedLastCompleted) {
-		if (claimedCurrent <= this.current) {
+		int accepted = Math.min(claimedCurrent, this.claimableRunLength(claimedLastCompleted));
+		if (accepted <= this.current) {
 			return this;
 		}
 		// Keep the later anchor: a bigger count ending earlier than what is stored would move the streak
@@ -119,7 +123,29 @@ public record Streak(
 		LocalDate anchor = this.lastCompletedDate == null || claimedLastCompleted.isAfter(this.lastCompletedDate)
 			? claimedLastCompleted
 			: this.lastCompletedDate;
-		return new Streak(this.userId, claimedCurrent, Math.max(claimedCurrent, this.longest), anchor, this.restorePoints, this.breakMissedDays, this.breakPreviousStreak, this.breakRecordedOn);
+		return new Streak(this.userId, accepted, Math.max(accepted, this.longest), anchor, this.restorePoints, this.breakMissedDays, this.breakPreviousStreak, this.breakRecordedOn);
+	}
+	
+	/**
+	 * The longest run a claim ending on {@code claimedLastCompleted} may be believed for, which is
+	 * unbounded unless there is a remembered break to contradict it.
+	 * <p>
+	 * <strong>This is what stops a break being paid for twice</strong> (issue 2.2.2/1). A remembered break
+	 * names the day the current run restarted, so a run ending on {@code claimedLastCompleted} cannot be
+	 * longer than the days since then - and a claim that says otherwise has counted straight over the gap,
+	 * which is precisely the thing {@link #repairedBreak} then charges restore points to undo. Adopting
+	 * such a claim and repairing the break afterwards handed the player the run before the break twice
+	 * over: once inside the claim, and once more from {@link #breakPreviousStreak}.
+	 * <p>
+	 * Believing the break over the claim is the safe half of that choice: the break was written down from
+	 * a verified solve, the claim is a device's word, and what the claim is denied here is exactly what the
+	 * player can still buy back with the points they have banked.
+	 */
+	private int claimableRunLength(@NonNull LocalDate claimedLastCompleted) {
+		if (this.breakRecordedOn == null || this.breakMissedDays <= 0) {
+			return Integer.MAX_VALUE;
+		}
+		return (int) (claimedLastCompleted.toEpochDay() - this.breakRecordedOn.toEpochDay()) + 1;
 	}
 	
 	/**
