@@ -130,7 +130,7 @@ public record Streak(
 	 * The longest run a claim ending on {@code claimedLastCompleted} may be believed for, which is
 	 * unbounded unless there is a remembered break to contradict it.
 	 * <p>
-	 * <strong>This is what stops a break being paid for twice</strong> (issue 2.2.2/1). A remembered break
+	 * <strong>This is what stops a break being paid for twice</strong> (issue 2.3.0/1). A remembered break
 	 * names the day the current run restarted, so a run ending on {@code claimedLastCompleted} cannot be
 	 * longer than the days since then - and a claim that says otherwise has counted straight over the gap,
 	 * which is precisely the thing {@link #repairedBreak} then charges restore points to undo. Adopting

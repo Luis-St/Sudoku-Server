@@ -913,7 +913,7 @@ class DailyServiceTest extends PostgresTest {
 	
 	@Test
 	void syncStreak_aClaimThatCountsOverARememberedBreak_isNotBelieved() {
-		// Issue 2.2.2/1, end to end. A device whose own count walked straight over the missed day offered
+		// Issue 2.3.0/1, end to end. A device whose own count walked straight over the missed day offered
 		// the pre-break run back with today's date on it; the server adopted it, and the restore that
 		// followed then handed the same run over a second time out of `breakPreviousStreak`.
 		Principal player = this.player("Owner");
