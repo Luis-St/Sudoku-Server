@@ -26,7 +26,8 @@ public enum MessageType {
 	 */
 	NOTE(Direction.BOTH),
 	/**
-	 * {@code { cell }} to ask, {@code { clear: true }} to withdraw - co-op only; the shared hint offer.
+	 * {@code { cell }} to ask, {@code { clear: true }} to withdraw, {@code { used: true }} to report a hint the
+	 * sender was charged - co-op only; the shared hint offer.
 	 * <p>
 	 * {@link Direction#BOTH} and held by the match rather than each client, because a hint on a shared board
 	 * is a statement about the board: everybody sees the offered cell marked, so the group can decide

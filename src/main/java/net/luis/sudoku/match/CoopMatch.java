@@ -25,6 +25,8 @@ public final class CoopMatch extends LiveMatch {
 	
 	/** Spec 11.3: a single pool of five for the whole group, not five each. */
 	public static final int SHARED_LIVES = 5;
+	/** The client's per player hint cap, mirrored so a charge past it is not counted. */
+	public static final int MAX_HINTS_PER_PLAYER = 5;
 	
 	private final BitSet filled;
 	private final int holes;
@@ -38,6 +40,14 @@ public final class CoopMatch extends LiveMatch {
 	 */
 	private @Nullable Integer hintCell;
 	private @Nullable UUID hintOwner;
+	/**
+	 * Hints each player has been charged, reported by their client and handed back in their own snapshot.
+	 * <p>
+	 * The client decides when a hint is spent, since the hint engine runs there. Kept here so a reconnect does
+	 * not reset the count: before this, a player who dropped out came back with all five hints again.
+	 * </p>
+	 */
+	private final Map<UUID, Integer> hintsUsed = new HashMap<>();
 	
 	public CoopMatch(@NonNull Match match, @NonNull GeneratedPuzzle puzzle, @NonNull MatchConfig config, @NonNull MatchCallbacks callbacks) {
 		super(match, puzzle, config, callbacks);
@@ -274,7 +284,7 @@ public final class CoopMatch extends LiveMatch {
 	}
 	
 	/**
-	 * Claims or withdraws the shared hint offer.
+	 * Claims or withdraws the shared hint offer, or records a hint charged to the sender.
 	 * <p>
 	 * The <i>cell</i> is chosen by the client - shared-core's hint engine runs there, and the server has no
 	 * reason to duplicate it. What the server owns is the fact that a hint is pending and whose it is, which
@@ -286,12 +296,23 @@ public final class CoopMatch extends LiveMatch {
 	 * digit. The cap stays per player because the client charges whoever presses reveal, so nothing here has
 	 * to know whose it was.
 	 * </p>
+	 * <p>
+	 * {@code { used: true }} is that charge, reported by the client that made it. It touches no offer: a hint
+	 * is also charged for a digit the player typed themselves into the cell a hint had shown them, and the
+	 * count is only kept so the player's own snapshot can carry it.
+	 * </p>
 	 */
 	private void onHint(@NonNull UUID userId, @NonNull Map<String, Object> payload) {
 		if (this.state() != MatchState.RUNNING || this.hasEnded() || !this.match.hintsEnabled()) {
 			return;
 		}
 		
+		if (payload.get("used") instanceof Boolean used && used) {
+			if (this.participant(userId) != null) {
+				this.hintsUsed.merge(userId, 1, (current, one) -> Math.min(MAX_HINTS_PER_PLAYER, current + one));
+			}
+			return;
+		}
 		if (payload.get("clear") instanceof Boolean clear && clear) {
 			this.clearHint();
 			return;
@@ -367,6 +388,9 @@ public final class CoopMatch extends LiveMatch {
 		// A match setting, not a per-player one: everybody on one shared board plays the same game, and a
 		// joiner has no other way to learn what the creator configured.
 		payload.put("hintsEnabled", this.match.hintsEnabled());
+		// Per recipient, unlike everything around it: the cap is per player, so each snapshot names only the
+		// hints its own reader has spent.
+		payload.put("hintsUsed", this.hintsUsed.getOrDefault(forUser, 0));
 		payload.put("livesLeft", this.match.livesEnabled() ? this.sharedLivesLeft : null);
 		payload.put("participants", MatchPayloads.participants(this.participants().values()));
 		
@@ -384,6 +408,10 @@ public final class CoopMatch extends LiveMatch {
 	
 	int sharedLivesLeft() {
 		return this.sharedLivesLeft;
+	}
+	
+	int hintsUsed(@NonNull UUID userId) {
+		return this.hintsUsed.getOrDefault(userId, 0);
 	}
 	
 	int filledCount() {

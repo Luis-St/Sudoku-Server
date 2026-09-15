@@ -348,6 +348,39 @@ class CoopMatchTest {
 	}
 	
 	@Test
+	void hintUsed_isCountedPerPlayerAndReturnedInTheirOwnSnapshot() {
+		this.start(false, this.alice, this.bob);
+		send(this.coop, this.alice, MessageType.HINT, Map.of("used", true));
+		send(this.coop, this.alice, MessageType.HINT, Map.of("used", true));
+		
+		connect(this.coop, this.alice);
+		connect(this.coop, this.bob);
+		
+		// A reconnect must not hand a player their hints back, and one player's charge is nobody else's.
+		assertAll(
+			() -> assertEquals(2, this.alice.lastOf(MessageType.MATCH_STATE).payloadOrEmpty().get("hintsUsed")),
+			() -> assertEquals(0, this.bob.lastOf(MessageType.MATCH_STATE).payloadOrEmpty().get("hintsUsed"))
+		);
+	}
+	
+	@Test
+	void hintUsed_touchesNoOfferAndStopsAtTheCap() {
+		this.start(false, this.alice, this.bob);
+		int cell = MatchFixture.holes(this.puzzle).getFirst();
+		send(this.coop, this.bob, MessageType.HINT, Map.of("cell", cell));
+		this.bob.clear();
+		
+		for (int i = 0; i < CoopMatch.MAX_HINTS_PER_PLAYER + 2; i++) {
+			send(this.coop, this.alice, MessageType.HINT, Map.of("used", true));
+		}
+		
+		assertAll(
+			() -> assertEquals(CoopMatch.MAX_HINTS_PER_PLAYER, this.coop.hintsUsed(this.alice.userId())),
+			() -> assertFalse(this.bob.sawType(MessageType.HINT), "a charge is not an offer")
+		);
+	}
+	
+	@Test
 	void resign_withThreePlayers_leavesTheMatchRunning() {
 		this.start(false, this.alice, this.bob, this.carol);
 		
