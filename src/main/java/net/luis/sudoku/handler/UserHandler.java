@@ -43,7 +43,9 @@ public class UserHandler {
 		summary = "The caller's own account",
 		description = "Role and email-verification state as they are right now. A client learns its role at sign-in and "
 			+ "has no other way to notice a promotion, and nothing else reports whether the recovery address was ever "
-			+ "verified - both would otherwise stay whatever they were when the session was created.",
+			+ "verified - both would otherwise stay whatever they were when the session was created. Also carries "
+			+ "forceUpdate for the calling device, which is how an operator tells one client to replace its local "
+			+ "state with the server's.",
 		operationId = "currentAccount",
 		path = "/api/v1/users/me",
 		methods = HttpMethod.GET,
@@ -53,7 +55,7 @@ public class UserHandler {
 	public void me(@NonNull Context ctx) {
 		// The principal is re-read from the database on every request, so this is current by construction.
 		Principal actor = this.authentication.require(ctx);
-		ctx.json(AccountResponse.of(actor.user()));
+		ctx.json(AccountResponse.of(actor.user(), actor.device()));
 	}
 	
 	@OpenApi(

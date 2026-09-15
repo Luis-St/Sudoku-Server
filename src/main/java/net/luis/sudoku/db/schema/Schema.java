@@ -120,6 +120,16 @@ public final class Schema {
 	public static final SqlColumn<Device, Boolean> DEVICE_REVOKED = DEVICES.column("revoked", SqlTypes.BOOLEAN, Device::revoked, col -> col.notNull().defaultValue(false));
 	/** Which revocations a reinstatement undoes (spec 7.2) - see {@link Device#revokedByKick()}. */
 	public static final SqlColumn<Device, Boolean> DEVICE_REVOKED_BY_KICK = DEVICES.column("revoked_by_kick", SqlTypes.BOOLEAN, Device::revokedByKick, col -> col.notNull().defaultValue(false));
+	/**
+	 * The one column in this schema that no code path writes (spec 7.3).
+	 * <p>
+	 * It is raised and lowered by hand, in SQL, from the operator's database tool, and read by
+	 * {@code /users/me} so the device it names replaces its local copy of the account with the server's.
+	 * There is deliberately no route, no service and no repository method that sets it: a switch the
+	 * application can flip is a switch the application can flip <em>by accident</em>, and what it discards
+	 * is the player's own device state.
+	 */
+	public static final SqlColumn<Device, Boolean> DEVICE_FORCE_UPDATE = DEVICES.column("force_update", SqlTypes.BOOLEAN, Device::forceUpdate, col -> col.notNull().defaultValue(false));
 	public static final SqlTable<Invite> INVITES = SqlTable.create(Invite.class, "invites");
 	
 	// --- invites -------------------------------------------------------------------------------

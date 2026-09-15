@@ -49,11 +49,11 @@ public final class SchemaMigration {
 	/** Every migration, in version order. */
 	public static final List<SqlMigration> ALL = List.of(
 		new InitialSchema(), new PresencePolling(), new ReinstatableKicks(), new MatchHintSetting(), new RecordedGames(), new MatchGivens(), new RescaledDifficulties(), new PooledPuzzles(),
-		new PerDeviceSessions(), new LearnProgressTable(), new RestorableStreakBreak()
+		new PerDeviceSessions(), new LearnProgressTable(), new RestorableStreakBreak(), new ForcedResync()
 	);
 
 	/** The version the schema is at once {@link #ALL} has been applied, reported by {@code /health}. */
-	public static final int CURRENT_VERSION = 11;
+	public static final int CURRENT_VERSION = 12;
 	
 	private SchemaMigration() {}
 	
@@ -744,6 +744,46 @@ public final class SchemaMigration {
 			}
 			if (schema.hasColumn(STREAKS.name(), STREAK_BREAK_MISSED_DAYS.name())) {
 				builder.dropColumn(STREAK_BREAK_MISSED_DAYS);
+			}
+		}
+	}
+
+	/**
+	 * Adds the operator's switch for making one device throw its local state away and take the server's
+	 * (server-spec 7.3).
+	 * <p>
+	 * On {@code devices} rather than {@code users} because the repair is aimed at one client: a player whose
+	 * phone is holding a balance or a streak that the account no longer has does not need their tablet
+	 * reset as well.
+	 * <p>
+	 * The column defaults to {@code false} and <strong>nothing in the server ever writes it</strong> - see
+	 * {@link Schema#DEVICE_FORCE_UPDATE}. Guarded with {@code hasColumn} like every added column since
+	 * {@link ReinstatableKicks}, because a freshly created database already has it: {@link InitialSchema}
+	 * renders {@code devices} from {@link Schema} as it stands now.
+	 */
+	private static final class ForcedResync implements SqlMigration {
+		
+		@Override
+		public @NonNull Version version() {
+			return Version.of(12, 0);
+		}
+		
+		@Override
+		public @NonNull String description() {
+			return "let an operator mark one device for a full resync from the server";
+		}
+		
+		@Override
+		public void up(@NonNull SqlMigrationBuilder builder, @NonNull SqlMigrationSchema schema) throws SqlException {
+			if (!schema.hasColumn(DEVICES.name(), DEVICE_FORCE_UPDATE.name())) {
+				builder.addColumn(DEVICE_FORCE_UPDATE, DEVICE_FORCE_UPDATE.type(), options -> options.notNull().defaultValue(false));
+			}
+		}
+		
+		@Override
+		public void down(@NonNull SqlMigrationBuilder builder, @NonNull SqlMigrationSchema schema) throws SqlException {
+			if (schema.hasColumn(DEVICES.name(), DEVICE_FORCE_UPDATE.name())) {
+				builder.dropColumn(DEVICE_FORCE_UPDATE);
 			}
 		}
 	}

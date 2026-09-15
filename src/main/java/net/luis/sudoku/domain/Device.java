@@ -23,6 +23,11 @@ import java.util.UUID;
  *   deliberately. Reinstating a user restores exactly these keys: a device its owner revoked - a phone
  *   they lost, say - must stay dead through a kick and a reinstatement, and the two are indistinguishable
  *   without recording which of them did it.
+ * @param forceUpdate true while this device is to throw away its local copy of the account's state and
+ *   take the server's instead (server-spec 7.3). <b>Nothing in this application ever writes it.</b> It is
+ *   set by hand, in SQL, from whatever tool the operator manages the database with, and cleared the same
+ *   way - which is why it sits on the device rather than on the user: a repair is aimed at the one client
+ *   that has drifted, and the account's other devices are not to be disturbed by it.
  */
 public record Device(
 	@NonNull UUID id,
@@ -33,7 +38,8 @@ public record Device(
 	@NonNull Instant createdAt,
 	@Nullable Instant lastSeenAt,
 	boolean revoked,
-	boolean revokedByKick
+	boolean revokedByKick,
+	boolean forceUpdate
 ) {
 	
 	public Device {
