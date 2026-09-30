@@ -1,4 +1,4 @@
-FROM eclipse-temurin:25-jdk-alpine as builder
+FROM eclipse-temurin:25-jdk-alpine AS builder
 
 RUN jlink \
     --add-modules "java.base,java.compiler,java.desktop,java.instrument,java.management,java.naming,java.net.http,java.rmi,java.scripting,java.security.jgss,java.sql,jdk.unsupported" \
