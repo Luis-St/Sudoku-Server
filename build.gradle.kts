@@ -13,12 +13,9 @@ java {
 }
 
 repositories {
-	// shared-core (sudoku-lib) has never been published remotely, so it resolves from ~/.m2.
-	// LUtils resolves from the Artifactory - it's reachable for fetching, just not currently
-	// publishable to (that's a separate, unrelated outage).
-	mavenLocal()
+	// shared-core (sudoku-lib) and LUtils
 	maven {
-		url = uri("https://maven.luis-st.net/libraries/")
+		url = uri("https://artifact.luis-st.net/maven/libraries/")
 	}
 	mavenCentral()
 }
